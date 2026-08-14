@@ -124,9 +124,10 @@ services:
       - key: WAHA_API_BASE_URL
         value: https://gm-delivery-waha-demo-gm.onrender.com
       - key: WAHA_API_KEY
-        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: WAHA_API_KEY }
+        fromService: { type: web, name: gm-delivery-waha-demo-gm, envVarKey: WAHA_API_KEY }
       - key: WAHA_HMAC_SECRET
-        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: WAHA_HMAC_SECRET }
+        fromService:
+          { type: web, name: gm-delivery-waha-demo-gm, envVarKey: WHATSAPP_HOOK_HMAC_KEY }
       - key: WAHA_WEBHOOK_REQUIRE_SIGNATURE
         value: "true"
       - key: WAHA_WEBHOOK_BASE_URL

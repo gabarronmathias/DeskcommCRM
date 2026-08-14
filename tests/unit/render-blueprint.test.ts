@@ -37,6 +37,9 @@ describe("Blueprint do SaaS no Render", () => {
     ).toHaveLength(3);
     expect(blueprint).toContain("value: https://gm-delivery-worker-demo-gm.onrender.com/healthz");
     expect(blueprint).toContain("healthCheckPath: /healthz");
+    expect(
+      blueprint.match(/name: gm-delivery-waha-demo-gm, envVarKey: WAHA_API_KEY/g),
+    ).toHaveLength(2);
   });
 
   it("nao grava os segredos fornecidos pelo operador no Git", () => {
