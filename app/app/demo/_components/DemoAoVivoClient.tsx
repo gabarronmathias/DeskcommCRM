@@ -121,10 +121,12 @@ export function DemoAoVivoClient({
   organizationId,
   organizationName,
   wahaConfigured,
+  wakeUrls,
 }: {
   organizationId: string;
   organizationName: string;
   wahaConfigured: boolean;
+  wakeUrls: string[];
 }) {
   const channels = useChannelSessions({ refetchInterval: 3_000 });
   const counts = useConversationCounts(organizationId, { refetchInterval: 5_000 });
@@ -135,6 +137,14 @@ export function DemoAoVivoClient({
   const [qrTick, setQrTick] = useState(0);
   const [armedAt, setArmedAt] = useState<number | null>(null);
   const [presentationMode, setPresentationMode] = useState(false);
+
+  useEffect(() => {
+    // Os servicos gratuitos do Render dormem quando ficam ociosos. Uma chamada
+    // sem credenciais basta para acorda-los antes de o apresentador gerar o QR.
+    for (const url of wakeUrls) {
+      void fetch(url, { cache: "no-store", mode: "no-cors" }).catch(() => undefined);
+    }
+  }, [wakeUrls]);
 
   const sessions = channels.data ?? [];
   const connected = sessions.find((session) => session.status === "WORKING");

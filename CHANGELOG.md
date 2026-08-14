@@ -10,8 +10,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ### Adicionado
 
-- Blueprint `render.yaml` e runbook para manter uma demonstracao permanente no Render,
-  com app, worker e WAHA privado em disco persistente e de baixo custo.
+- Blueprint `render.yaml` e runbook para uma demonstracao gratuita sob demanda no Render,
+  com app, worker e WAHA acordados automaticamente pela tela de apresentacao.
 
 ## [1.3.0] — 2026-08-13
 

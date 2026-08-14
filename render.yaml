@@ -1,13 +1,13 @@
-# GM Delivery SaaS — infraestrutura declarativa para o Render.
+# GM Delivery Demo — infraestrutura gratuita para o Render.
 # Banco/Auth/Realtime/Storage continuam no Supabase; Redis REST continua no Upstash.
-# O Render hospeda o app, o motor de automacao e um WAHA persistente.
-# Este Blueprint e dimensionado para demonstracao 24/7 com uma sessao WhatsApp.
+# Os tres processos usam Web Services gratuitos e acordam sob demanda.
+# A sessao WhatsApp e efemera: apos restart/spin-down, escaneie o QR novamente.
 
 services:
   - type: web
-    name: gm-delivery-saas
+    name: gm-delivery-demo-gm
     runtime: docker
-    plan: starter
+    plan: free
     region: virginia
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -43,29 +43,28 @@ services:
       - key: IMPERSONATE_COOKIE_SECRET
         generateValue: true
       - key: WAHA_API_BASE_URL
-        fromService:
-          type: pserv
-          name: gm-delivery-waha
-          property: hostport
+        value: https://gm-delivery-waha-demo-gm.onrender.com
       - key: WAHA_API_KEY
-        fromService: { type: pserv, name: gm-delivery-waha, envVarKey: WAHA_API_KEY }
+        fromService: { type: web, name: gm-delivery-waha-demo-gm, envVarKey: WAHA_API_KEY }
       - key: WAHA_HMAC_SECRET
-        fromService: { type: pserv, name: gm-delivery-waha, envVarKey: WHATSAPP_HOOK_HMAC_KEY }
+        fromService:
+          { type: web, name: gm-delivery-waha-demo-gm, envVarKey: WHATSAPP_HOOK_HMAC_KEY }
       - key: WAHA_WEBHOOK_REQUIRE_SIGNATURE
         value: "true"
       - key: WAHA_WEBHOOK_BASE_URL
-        fromService:
-          type: web
-          name: gm-delivery-saas
-          property: hostport
+        value: https://gm-delivery-demo-gm.onrender.com
       - key: UPSTASH_REDIS_REST_URL
         sync: false
       - key: UPSTASH_REDIS_REST_TOKEN
         sync: false
       - key: NEXT_PUBLIC_APP_URL
-        sync: false
+        value: https://gm-delivery-demo-gm.onrender.com
       - key: NEXT_PUBLIC_ADMIN_URL
-        sync: false
+        value: https://gm-delivery-demo-gm.onrender.com
+      - key: DEMO_WORKER_WAKE_URL
+        value: https://gm-delivery-worker-demo-gm.onrender.com/healthz
+      - key: DEMO_WAHA_WAKE_URL
+        value: https://gm-delivery-waha-demo-gm.onrender.com/api/server/health
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: OPENAI_API_KEY
@@ -83,89 +82,93 @@ services:
       - key: NUVEMSHOP_ENABLED
         value: "false"
 
-  - type: worker
-    name: gm-delivery-worker
+  - type: web
+    name: gm-delivery-worker-demo-gm
     runtime: docker
-    plan: starter
+    plan: free
     region: virginia
     dockerfilePath: ./Dockerfile.worker
     dockerContext: .
     autoDeployTrigger: checksPass
     maxShutdownDelaySeconds: 90
+    healthCheckPath: /healthz
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: "10000"
+      - key: HEALTH_PORT
+        value: "10000"
       - key: NEXT_PUBLIC_SUPABASE_URL
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: NEXT_PUBLIC_SUPABASE_URL }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: NEXT_PUBLIC_SUPABASE_URL }
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: NEXT_PUBLIC_SUPABASE_ANON_KEY }
+        fromService:
+          { type: web, name: gm-delivery-demo-gm, envVarKey: NEXT_PUBLIC_SUPABASE_ANON_KEY }
       - key: SUPABASE_SERVICE_ROLE_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: SUPABASE_SERVICE_ROLE_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: SUPABASE_SERVICE_ROLE_KEY }
       - key: SUPABASE_DB_URL
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: SUPABASE_DB_URL }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: SUPABASE_DB_URL }
       - key: INTERNAL_SECRET
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: INTERNAL_SECRET }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: INTERNAL_SECRET }
       - key: INTERNAL_CRON_SECRET
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: INTERNAL_CRON_SECRET }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: INTERNAL_CRON_SECRET }
       - key: CPF_ENCRYPTION_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: CPF_ENCRYPTION_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: CPF_ENCRYPTION_KEY }
       - key: NUVEMSHOP_OAUTH_ENCRYPTION_KEY
         fromService:
-          { type: web, name: gm-delivery-saas, envVarKey: NUVEMSHOP_OAUTH_ENCRYPTION_KEY }
+          { type: web, name: gm-delivery-demo-gm, envVarKey: NUVEMSHOP_OAUTH_ENCRYPTION_KEY }
       - key: WAHA_BYO_ENCRYPTION_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: WAHA_BYO_ENCRYPTION_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: WAHA_BYO_ENCRYPTION_KEY }
       - key: AI_CRED_AES_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: AI_CRED_AES_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: AI_CRED_AES_KEY }
       - key: IMPERSONATE_COOKIE_SECRET
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: IMPERSONATE_COOKIE_SECRET }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: IMPERSONATE_COOKIE_SECRET }
       - key: WAHA_API_BASE_URL
-        fromService: { type: pserv, name: gm-delivery-waha, property: hostport }
+        value: https://gm-delivery-waha-demo-gm.onrender.com
       - key: WAHA_API_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: WAHA_API_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: WAHA_API_KEY }
       - key: WAHA_HMAC_SECRET
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: WAHA_HMAC_SECRET }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: WAHA_HMAC_SECRET }
       - key: WAHA_WEBHOOK_REQUIRE_SIGNATURE
         value: "true"
       - key: WAHA_WEBHOOK_BASE_URL
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: WAHA_WEBHOOK_BASE_URL }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: WAHA_WEBHOOK_BASE_URL }
       - key: UPSTASH_REDIS_REST_URL
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: UPSTASH_REDIS_REST_URL }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: UPSTASH_REDIS_REST_URL }
       - key: UPSTASH_REDIS_REST_TOKEN
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: UPSTASH_REDIS_REST_TOKEN }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: UPSTASH_REDIS_REST_TOKEN }
       - key: NEXT_PUBLIC_APP_URL
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: NEXT_PUBLIC_APP_URL }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: NEXT_PUBLIC_APP_URL }
       - key: NEXT_PUBLIC_ADMIN_URL
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: NEXT_PUBLIC_ADMIN_URL }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: NEXT_PUBLIC_ADMIN_URL }
       - key: ANTHROPIC_API_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: ANTHROPIC_API_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: ANTHROPIC_API_KEY }
       - key: OPENAI_API_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: OPENAI_API_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: OPENAI_API_KEY }
       - key: OPENROUTER_API_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: OPENROUTER_API_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: OPENROUTER_API_KEY }
       - key: AGENT_DISPATCH_CONSUMER
         value: engine
       - key: RAG_EMBEDDING_API_KEY
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: OPENAI_API_KEY }
+        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: OPENAI_API_KEY }
 
-  - type: pserv
-    name: gm-delivery-waha
+  - type: web
+    name: gm-delivery-waha-demo-gm
     runtime: image
-    plan: starter
+    plan: free
     region: virginia
     numInstances: 1
     image:
       url: devlikeapro/waha:latest-2026.7.2
-    disk:
-      name: waha-sessions
-      mountPath: /app/.sessions
-      sizeGB: 1
     envVars:
+      - key: PORT
+        value: "3000"
       - key: WHATSAPP_DEFAULT_ENGINE
         value: NOWEB
       - key: WAHA_API_KEY
         generateValue: true
       - key: WHATSAPP_HOOK_URL
-        sync: false
+        value: https://gm-delivery-demo-gm.onrender.com/api/v1/webhooks/waha
       - key: WHATSAPP_HOOK_EVENTS
         value: message,message.any,message.ack,message.edited,message.revoked,session.status,state.change
       - key: WHATSAPP_HOOK_HMAC_KEY

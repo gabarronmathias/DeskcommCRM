@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "GM Delivery SaaS no Render",
-    "subtitle": "atendimento, automacao, CRM e central de comando em uma operacao multi-tenant",
+    "subtitle": "demonstracao gratuita sob demanda com atendimento, automacao, CRM e comando",
     "output": "render-saas.html",
     "quality_profile": "standard"
   },
@@ -43,16 +43,8 @@
       "lane": "render",
       "col": 2,
       "type": "service",
-      "label": "WAHA privado",
-      "sublabel": "NOWEB + uma sessao de demo"
-    },
-    {
-      "id": "disk",
-      "lane": "render",
-      "col": 2,
-      "type": "database",
-      "label": "Disco de sessoes",
-      "sublabel": "/app/.sessions"
+      "label": "WAHA protegido",
+      "sublabel": "NOWEB + sessao efemera"
     },
     {
       "id": "worker",
@@ -82,7 +74,6 @@
   "edges": [
     { "id": "e1", "from": "usuario", "to": "app", "label": "opera o SaaS" },
     { "id": "e2", "from": "app", "to": "waha", "label": "cria sessao e protege o QR" },
-    { "id": "e3", "from": "waha", "to": "disk", "label": "persiste pareamento" },
     { "id": "e4", "from": "waha", "to": "whatsapp", "label": "recebe e envia" },
     { "id": "e5", "from": "waha", "to": "app", "label": "webhook assinado" },
     { "id": "e6", "from": "app", "to": "crm", "label": "dados por organization_id" },
@@ -102,11 +93,11 @@
     },
     {
       "dot": "amber",
-      "title": "Limite inicial",
+      "title": "Plano gratuito",
       "items": [
-        "uma instancia WAHA possui o disco",
-        "o canal tem breve indisponibilidade durante deploy do servico com disco",
-        "escala horizontal exige roteamento de sessoes por organizacao"
+        "os servicos acordam sob demanda depois de ficarem ociosos",
+        "a tela de demo aquece worker e WAHA automaticamente",
+        "sem disco, um novo QR e necessario depois do spin-down"
       ]
     }
   ]
