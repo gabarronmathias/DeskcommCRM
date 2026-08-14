@@ -12,7 +12,6 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     autoDeployTrigger: checksPass
-    maxShutdownDelaySeconds: 60
     envVars:
       - key: NODE_ENV
         value: production
@@ -90,7 +89,6 @@ services:
     dockerfilePath: ./Dockerfile.worker
     dockerContext: .
     autoDeployTrigger: checksPass
-    maxShutdownDelaySeconds: 90
     healthCheckPath: /healthz
     envVars:
       - key: NODE_ENV

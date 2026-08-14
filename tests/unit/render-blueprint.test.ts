@@ -15,6 +15,7 @@ describe("Blueprint do SaaS no Render", () => {
       expect(blueprint).toContain(`name: ${service}`);
     }
     expect(blueprint.match(/plan: free/g)).toHaveLength(3);
+    expect(blueprint).not.toContain("maxShutdownDelaySeconds");
     expect(blueprint).toContain("dockerfilePath: ./Dockerfile.worker");
     expect(blueprint).not.toContain("name: gm-delivery-scheduler");
   });
