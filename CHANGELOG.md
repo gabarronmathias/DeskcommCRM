@@ -12,6 +12,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - Blueprint `render.yaml` e runbook para uma demonstracao gratuita sob demanda no Render,
   com app, worker e WAHA acordados automaticamente pela tela de apresentacao.
+- Modo `DEMO_FREE_TIER` para usar o fallback Redis em memoria e dispensar Upstash na demo.
 
 ## [1.3.0] — 2026-08-13
 

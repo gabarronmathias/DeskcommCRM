@@ -43,16 +43,14 @@ describe("Blueprint do SaaS no Render", () => {
   });
 
   it("nao grava os segredos fornecidos pelo operador no Git", () => {
-    for (const key of [
-      "SUPABASE_SERVICE_ROLE_KEY",
-      "SUPABASE_DB_URL",
-      "UPSTASH_REDIS_REST_TOKEN",
-    ]) {
+    for (const key of ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_DB_URL"]) {
       const declaration = new RegExp(`key: ${key}\\n\\s+sync: false`);
       expect(blueprint).toMatch(declaration);
     }
     expect(blueprint).toContain(
       "value: https://gm-delivery-demo-gm.onrender.com/api/v1/webhooks/waha",
     );
+    expect(blueprint).toContain("key: DEMO_FREE_TIER");
+    expect(blueprint).not.toContain("key: UPSTASH_REDIS_REST_URL");
   });
 });

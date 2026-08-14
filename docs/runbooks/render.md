@@ -2,7 +2,7 @@
 
 Este deploy deixa o SaaS acessível sob demanda sem cobrança do Render. O app,
 o worker e o WAHA usam Web Services gratuitos; Supabase continua responsável por
-banco, Auth, RLS, Realtime e Storage, e Upstash continua fornecendo Redis via REST.
+banco, Auth, RLS, Realtime e Storage. Nesta demo, limites e debounce usam memória.
 
 > O plano gratuito não fica continuamente acordado. Após 15 minutos sem tráfego,
 > o Render suspende o serviço e o primeiro acesso pode levar cerca de um minuto.
@@ -42,8 +42,8 @@ Os serviços compartilham a franquia mensal gratuita do workspace. Com uso pontu
 e suspensão automática, ela é adequada à demonstração; não equivale a operação
 24/7. Não é necessário cadastrar cartão para este Blueprint.
 
-Supabase e Upstash também podem ser usados em seus planos gratuitos. A resposta de
-IA requer uma chave com crédito existente ou uma opção gratuita disponível; sem
+Supabase pode ser usado em seu plano gratuito. A resposta de IA requer uma chave
+com crédito existente ou uma opção gratuita disponível; sem
 ela, Inbox, CRM, QR e atendimento humano continuam demonstráveis.
 
 ## Dependências externas
@@ -51,9 +51,8 @@ ela, Inbox, CRM, QR e atendimento humano continuam demonstráveis.
 Antes de criar o Blueprint, tenha:
 
 1. um projeto Supabase gratuito com o `baseline.sql`/migrations desta versão aplicados;
-2. URL REST e token de um banco Upstash Redis gratuito;
-3. opcionalmente, uma chave de IA para mostrar resposta automática;
-4. o repositório conectado ao Render.
+2. opcionalmente, uma chave de IA para mostrar resposta automática;
+3. o repositório conectado ao Render.
 
 Render Postgres sozinho não substitui Supabase: o produto usa também Auth, RLS,
 Realtime e Storage. Render Key Value também não substitui diretamente o Upstash,
@@ -72,8 +71,6 @@ porque o código atual fala com a API REST do Upstash.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key do Supabase                                 |
 | `SUPABASE_SERVICE_ROLE_KEY`     | service role do Supabase                             |
 | `SUPABASE_DB_URL`               | connection string direta/pooler do Postgres Supabase |
-| `UPSTASH_REDIS_REST_URL`        | endpoint REST do Upstash                             |
-| `UPSTASH_REDIS_REST_TOKEN`      | token REST do Upstash                                |
 | chaves de IA                    | preencha uma se quiser mostrar resposta automática   |
 
 As URLs públicas já estão fixadas no Blueprint. Os demais segredos são gerados
@@ -102,6 +99,7 @@ Em **Authentication > URL Configuration** no Supabase:
 
 - Todos os serviços ficam na região `virginia`.
 - A tela de demonstração dispara chamadas de aquecimento para worker e WAHA.
+- `DEMO_FREE_TIER=true` ativa o fallback Redis em memória somente nesta demo.
 - Um status `401` no aquecimento do WAHA é aceitável: a chamada já acordou o serviço.
 - Use apenas uma sessão WhatsApp por vez nesta demonstração.
 - Não configure monitor externo para impedir o spin-down: manter três serviços

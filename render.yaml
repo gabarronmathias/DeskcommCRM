@@ -19,6 +19,8 @@ services:
         value: "10000"
       - key: HOSTNAME
         value: 0.0.0.0
+      - key: DEMO_FREE_TIER
+        value: "true"
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -52,10 +54,6 @@ services:
         value: "true"
       - key: WAHA_WEBHOOK_BASE_URL
         value: https://gm-delivery-demo-gm.onrender.com
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: NEXT_PUBLIC_APP_URL
         value: https://gm-delivery-demo-gm.onrender.com
       - key: NEXT_PUBLIC_ADMIN_URL
@@ -97,6 +95,8 @@ services:
         value: "10000"
       - key: HEALTH_PORT
         value: "10000"
+      - key: DEMO_FREE_TIER
+        value: "true"
       - key: NEXT_PUBLIC_SUPABASE_URL
         fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: NEXT_PUBLIC_SUPABASE_URL }
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -132,10 +132,6 @@ services:
         value: "true"
       - key: WAHA_WEBHOOK_BASE_URL
         fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: WAHA_WEBHOOK_BASE_URL }
-      - key: UPSTASH_REDIS_REST_URL
-        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: UPSTASH_REDIS_REST_URL }
-      - key: UPSTASH_REDIS_REST_TOKEN
-        fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: UPSTASH_REDIS_REST_TOKEN }
       - key: NEXT_PUBLIC_APP_URL
         fromService: { type: web, name: gm-delivery-demo-gm, envVarKey: NEXT_PUBLIC_APP_URL }
       - key: NEXT_PUBLIC_ADMIN_URL

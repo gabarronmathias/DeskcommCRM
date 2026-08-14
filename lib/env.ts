@@ -12,6 +12,7 @@ import { z } from "zod";
 import { normalizeWahaBaseUrl } from "@/lib/waha/base-url";
 
 const isProd = process.env.NODE_ENV === "production";
+const allowDemoInMemoryRedis = process.env.DEMO_FREE_TIER === "true";
 
 /**
  * Durante `next build` (NEXT_PHASE=phase-production-build) os segredos de runtime
@@ -30,9 +31,7 @@ const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
  * pra permitir setup parcial (ex: dev sem WAHA quando trabalhando só na UI).
  */
 const required = (name: string) =>
-  isProd
-    ? z.string().min(1, `${name} é obrigatória em produção`)
-    : z.string().default("");
+  isProd ? z.string().min(1, `${name} é obrigatória em produção`) : z.string().default("");
 
 const requiredAlways = (name: string) => z.string().min(1, `${name} é obrigatória`);
 
@@ -82,8 +81,14 @@ const schema = z.object({
   WAHA_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional().default("false"),
 
   // Upstash Redis
-  UPSTASH_REDIS_REST_URL: required("UPSTASH_REDIS_REST_URL"),
-  UPSTASH_REDIS_REST_TOKEN: required("UPSTASH_REDIS_REST_TOKEN"),
+  // A demonstracao gratuita usa o fallback em memoria que os consumidores ja
+  // implementam. Fora desse modo explicito, producao continua exigindo Redis.
+  UPSTASH_REDIS_REST_URL: allowDemoInMemoryRedis
+    ? z.string().optional().default("")
+    : required("UPSTASH_REDIS_REST_URL"),
+  UPSTASH_REDIS_REST_TOKEN: allowDemoInMemoryRedis
+    ? z.string().optional().default("")
+    : required("UPSTASH_REDIS_REST_TOKEN"),
 
   // AI providers — env-gated. Worker no-ops with skip="ai_gateway_key_missing"
   // when AI_GATEWAY_API_KEY is absent, so production boot must not be fatal.
@@ -173,14 +178,8 @@ const schema = z.object({
     .transform((v) => v === "true"),
 
   // App URLs
-  NEXT_PUBLIC_APP_URL: z
-    .string()
-    .url()
-    .default("http://localhost:3000"),
-  NEXT_PUBLIC_ADMIN_URL: z
-    .string()
-    .url()
-    .default("http://localhost:3000"),
+  NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  NEXT_PUBLIC_ADMIN_URL: z.string().url().default("http://localhost:3000"),
 
   // Marca da instalação (white-label) — ver lib/branding.ts.
   // Sem prefixo NEXT_PUBLIC_ de propósito: essas seriam queimadas no bundle
