@@ -1,0 +1,177 @@
+services:
+  - type: web
+    name: deskcomm-web
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/render-healthz
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: INTERNAL_SECRET
+        generateValue: true
+      - key: CPF_ENCRYPTION_KEY
+        generateValue: true
+      - key: WAHA_BYO_ENCRYPTION_KEY
+        generateValue: true
+      - key: AI_CRED_AES_KEY
+        generateValue: true
+      - key: WAHA_API_BASE_URL
+        fromService:
+          type: web
+          name: deskcomm-waha
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: WAHA_API_KEY
+        fromService:
+          type: web
+          name: deskcomm-waha
+          envVarKey: WAHA_API_KEY
+      - key: WAHA_WEBHOOK_BASE_URL
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_ADMIN_URL
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: AGENT_DISPATCH_CONSUMER
+        value: engine
+      - key: EVENT_LOG_WORKER_ENABLED
+        value: "false"
+
+  # Render não oferece worker gratuito. Para a DEMO, o worker expõe /healthz
+  # como web service usando a porta do health server que já existe no projeto.
+  - type: web
+    name: deskcomm-worker
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile.worker
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: HEALTH_PORT
+        value: "10000"
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_DB_URL
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: SUPABASE_DB_URL
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: NEXT_PUBLIC_SUPABASE_URL
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: NEXT_PUBLIC_SUPABASE_ANON_KEY
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: SUPABASE_SERVICE_ROLE_KEY
+      - key: INTERNAL_SECRET
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: INTERNAL_SECRET
+      - key: CPF_ENCRYPTION_KEY
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: CPF_ENCRYPTION_KEY
+      - key: WAHA_BYO_ENCRYPTION_KEY
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: WAHA_BYO_ENCRYPTION_KEY
+      - key: AI_CRED_AES_KEY
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: AI_CRED_AES_KEY
+      - key: WAHA_API_BASE_URL
+        fromService:
+          type: web
+          name: deskcomm-waha
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: WAHA_API_KEY
+        fromService:
+          type: web
+          name: deskcomm-waha
+          envVarKey: WAHA_API_KEY
+      - key: WAHA_WEBHOOK_BASE_URL
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_ADMIN_URL
+        fromService:
+          type: web
+          name: deskcomm-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: AGENT_DISPATCH_CONSUMER
+        value: engine
+
+  - type: web
+    name: deskcomm-waha
+    runtime: image
+    plan: free
+    region: oregon
+    image:
+      url: docker.io/devlikeapro/waha:latest-2026.7.2
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: WHATSAPP_API_PORT
+        value: "10000"
+      - key: WHATSAPP_API_HOSTNAME
+        value: 0.0.0.0
+      - key: WAHA_API_KEY
+        generateValue: true
+      - key: WAHA_BASE_URL
+        fromService:
+          type: web
+          name: deskcomm-waha
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: WHATSAPP_DEFAULT_ENGINE
+        value: NOWEB
+      - key: WAHA_DASHBOARD_ENABLED
+        value: "false"
+      - key: WHATSAPP_SWAGGER_ENABLED
+        value: "false"
+      - key: WHATSAPP_API_KEY_EXCLUDE_PATH
+        value: ping,health
+      - key: WHATSAPP_HOOK_EVENTS
+        value: message,message.any,message.ack,message.edited,message.revoked,session.status,state.change
