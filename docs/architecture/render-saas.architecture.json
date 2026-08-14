@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "GM Delivery SaaS no Render",
+    "subtitle": "atendimento, automacao, CRM e central de comando em uma operacao multi-tenant",
+    "output": "render-saas.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "cliente", "label": "Cliente" },
+    { "id": "render", "label": "Render" },
+    { "id": "dados", "label": "Servicos gerenciados" }
+  ],
+  "mainPath": ["usuario", "app", "waha", "whatsapp", "worker", "crm"],
+  "nodes": [
+    {
+      "id": "usuario",
+      "lane": "cliente",
+      "col": 0,
+      "type": "frontend",
+      "label": "Cliente autenticado",
+      "sublabel": "QR, Inbox, CRM e comando"
+    },
+    {
+      "id": "whatsapp",
+      "lane": "cliente",
+      "col": 3,
+      "type": "service",
+      "label": "WhatsApp",
+      "sublabel": "mensagens passivas e ativas"
+    },
+    {
+      "id": "app",
+      "lane": "render",
+      "col": 1,
+      "type": "service",
+      "label": "Web app",
+      "sublabel": "Next.js + API multi-tenant"
+    },
+    {
+      "id": "waha",
+      "lane": "render",
+      "col": 2,
+      "type": "service",
+      "label": "WAHA privado",
+      "sublabel": "NOWEB + multiplas sessoes"
+    },
+    {
+      "id": "disk",
+      "lane": "render",
+      "col": 2,
+      "type": "database",
+      "label": "Disco de sessoes",
+      "sublabel": "/app/.sessions"
+    },
+    {
+      "id": "worker",
+      "lane": "render",
+      "col": 4,
+      "type": "service",
+      "label": "Worker de automacao",
+      "sublabel": "agente, fila e follow-up"
+    },
+    {
+      "id": "scheduler",
+      "lane": "render",
+      "col": 4,
+      "type": "service",
+      "label": "Scheduler",
+      "sublabel": "rotas cron"
+    },
+    {
+      "id": "crm",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "Supabase",
+      "sublabel": "RLS, Auth, Realtime e Storage"
+    },
+    {
+      "id": "redis",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "Upstash Redis",
+      "sublabel": "rate limit e debounce"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "usuario", "to": "app", "label": "opera o SaaS" },
+    { "id": "e2", "from": "app", "to": "waha", "label": "cria sessao e protege o QR" },
+    { "id": "e3", "from": "waha", "to": "disk", "label": "persiste pareamento" },
+    { "id": "e4", "from": "waha", "to": "whatsapp", "label": "recebe e envia" },
+    { "id": "e5", "from": "waha", "to": "app", "label": "webhook assinado" },
+    { "id": "e6", "from": "app", "to": "crm", "label": "dados por organization_id" },
+    { "id": "e7", "from": "worker", "to": "crm", "label": "consome fila e move funil" },
+    { "id": "e8", "from": "worker", "to": "waha", "label": "automacao ativa" },
+    { "id": "e9", "from": "scheduler", "to": "app", "label": "dispara tarefas internas" },
+    { "id": "e10", "from": "app", "to": "redis", "label": "limites compartilhados" }
+  ],
+  "cards": [
+    {
+      "dot": "sky",
+      "title": "Isolamento",
+      "items": [
+        "cada usuario resolve uma organizacao ativa",
+        "RLS e filtros por organization_id protegem CRM e atendimento",
+        "cada canal guarda seu waha_session_name"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Limite inicial",
+      "items": [
+        "uma instancia WAHA possui o disco",
+        "o canal tem breve indisponibilidade durante deploy do servico com disco",
+        "escala horizontal exige roteamento de sessoes por organizacao"
+      ]
+    }
+  ]
+}

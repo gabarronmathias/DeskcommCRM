@@ -1,0 +1,193 @@
+# GM Delivery SaaS — infraestrutura declarativa para o Render.
+# Banco/Auth/Realtime/Storage continuam no Supabase; Redis REST continua no Upstash.
+# O Render hospeda app, motor de automacao, scheduler e WAHA persistente.
+
+services:
+  - type: web
+    name: gm-delivery-saas
+    runtime: docker
+    plan: starter
+    region: virginia
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: HOSTNAME
+        value: 0.0.0.0
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: INTERNAL_SECRET
+        generateValue: true
+      - key: INTERNAL_CRON_SECRET
+        generateValue: true
+      - key: CPF_ENCRYPTION_KEY
+        generateValue: true
+      - key: NUVEMSHOP_OAUTH_ENCRYPTION_KEY
+        generateValue: true
+      - key: WAHA_BYO_ENCRYPTION_KEY
+        generateValue: true
+      - key: AI_CRED_AES_KEY
+        generateValue: true
+      - key: IMPERSONATE_COOKIE_SECRET
+        generateValue: true
+      - key: WAHA_API_BASE_URL
+        fromService:
+          type: pserv
+          name: gm-delivery-waha
+          property: hostport
+      - key: WAHA_API_KEY
+        fromService: { type: pserv, name: gm-delivery-waha, envVarKey: WAHA_API_KEY }
+      - key: WAHA_HMAC_SECRET
+        fromService: { type: pserv, name: gm-delivery-waha, envVarKey: WHATSAPP_HOOK_HMAC_KEY }
+      - key: WAHA_WEBHOOK_REQUIRE_SIGNATURE
+        value: "true"
+      - key: WAHA_WEBHOOK_BASE_URL
+        fromService:
+          type: web
+          name: gm-delivery-saas
+          property: hostport
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_ADMIN_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: AI_GATEWAY_API_KEY
+        sync: false
+      - key: AGENT_DISPATCH_CONSUMER
+        value: engine
+      - key: EVENT_LOG_WORKER_ENABLED
+        value: "false"
+      - key: INTERNAL_AGENT_RUN_STUB
+        value: "false"
+      - key: NUVEMSHOP_ENABLED
+        value: "false"
+
+  - type: worker
+    name: gm-delivery-worker
+    runtime: docker
+    plan: starter
+    region: virginia
+    dockerfilePath: ./Dockerfile.worker
+    dockerContext: .
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 90
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: NEXT_PUBLIC_SUPABASE_URL }
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: NEXT_PUBLIC_SUPABASE_ANON_KEY }
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: SUPABASE_SERVICE_ROLE_KEY }
+      - key: SUPABASE_DB_URL
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: SUPABASE_DB_URL }
+      - key: INTERNAL_SECRET
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: INTERNAL_SECRET }
+      - key: INTERNAL_CRON_SECRET
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: INTERNAL_CRON_SECRET }
+      - key: CPF_ENCRYPTION_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: CPF_ENCRYPTION_KEY }
+      - key: NUVEMSHOP_OAUTH_ENCRYPTION_KEY
+        fromService:
+          { type: web, name: gm-delivery-saas, envVarKey: NUVEMSHOP_OAUTH_ENCRYPTION_KEY }
+      - key: WAHA_BYO_ENCRYPTION_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: WAHA_BYO_ENCRYPTION_KEY }
+      - key: AI_CRED_AES_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: AI_CRED_AES_KEY }
+      - key: IMPERSONATE_COOKIE_SECRET
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: IMPERSONATE_COOKIE_SECRET }
+      - key: WAHA_API_BASE_URL
+        fromService: { type: pserv, name: gm-delivery-waha, property: hostport }
+      - key: WAHA_API_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: WAHA_API_KEY }
+      - key: WAHA_HMAC_SECRET
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: WAHA_HMAC_SECRET }
+      - key: WAHA_WEBHOOK_REQUIRE_SIGNATURE
+        value: "true"
+      - key: WAHA_WEBHOOK_BASE_URL
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: WAHA_WEBHOOK_BASE_URL }
+      - key: UPSTASH_REDIS_REST_URL
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: UPSTASH_REDIS_REST_URL }
+      - key: UPSTASH_REDIS_REST_TOKEN
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: UPSTASH_REDIS_REST_TOKEN }
+      - key: NEXT_PUBLIC_APP_URL
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: NEXT_PUBLIC_APP_URL }
+      - key: NEXT_PUBLIC_ADMIN_URL
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: NEXT_PUBLIC_ADMIN_URL }
+      - key: ANTHROPIC_API_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: ANTHROPIC_API_KEY }
+      - key: OPENAI_API_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: OPENAI_API_KEY }
+      - key: OPENROUTER_API_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: OPENROUTER_API_KEY }
+      - key: AGENT_DISPATCH_CONSUMER
+        value: engine
+      - key: RAG_EMBEDDING_API_KEY
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: OPENAI_API_KEY }
+
+  - type: worker
+    name: gm-delivery-scheduler
+    runtime: docker
+    plan: starter
+    region: virginia
+    dockerfilePath: ./Dockerfile.scheduler
+    dockerContext: .
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: TZ
+        value: UTC
+      - key: INTERNAL_SECRET
+        fromService: { type: web, name: gm-delivery-saas, envVarKey: INTERNAL_SECRET }
+      - key: SCHEDULER_APP_ORIGIN
+        fromService: { type: web, name: gm-delivery-saas, property: hostport }
+
+  - type: pserv
+    name: gm-delivery-waha
+    runtime: image
+    plan: standard
+    region: virginia
+    numInstances: 1
+    image:
+      url: devlikeapro/waha:latest-2026.7.2
+    disk:
+      name: waha-sessions
+      mountPath: /app/.sessions
+      sizeGB: 10
+    envVars:
+      - key: WHATSAPP_DEFAULT_ENGINE
+        value: NOWEB
+      - key: WAHA_API_KEY
+        generateValue: true
+      - key: WHATSAPP_HOOK_URL
+        sync: false
+      - key: WHATSAPP_HOOK_EVENTS
+        value: message,message.any,message.ack,message.edited,message.revoked,session.status,state.change
+      - key: WHATSAPP_HOOK_HMAC_KEY
+        generateValue: true
+      - key: WAHA_DASHBOARD_ENABLED
+        value: "false"
+      - key: WAHA_PRINT_QR
+        value: "false"
+      - key: WAHA_WORKER_RESTART_SESSIONS
+        value: "true"

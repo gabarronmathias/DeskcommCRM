@@ -125,6 +125,26 @@ test.describe("navegação agrupada", () => {
     await expect(page.getByRole("tab", { name: /oficial/i })).toBeVisible();
   });
 
+  test("abre o cockpit comercial pelo grupo Canais", async ({ page }) => {
+    await loginAdmin(page);
+
+    await sidebar(page).getByRole("link", { name: "Demonstração ao vivo" }).click();
+    await page.waitForURL(/\/app\/demo/);
+
+    await expect(
+      page.getByRole("heading", {
+        name: /Do primeiro “oi” ao próximo passo, na frente do cliente/i,
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Conecte o WhatsApp" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Central de atendimento" })).toBeVisible();
+
+    await page.screenshot({
+      path: path.join(EVIDENCE, "demo-ao-vivo-desktop.png"),
+      fullPage: true,
+    });
+  });
+
   test("o ⌘K acha o canal oficial por nome, mesmo sem tela própria", async ({ page }) => {
     await loginAdmin(page);
 

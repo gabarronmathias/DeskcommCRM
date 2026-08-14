@@ -18,12 +18,15 @@ if [ -z "${INTERNAL_SECRET:-}" ]; then
   exit 1
 fi
 
-# Constante, não configuração: `app` é o nome do serviço na rede interna do
-# compose, e o scheduler não fala com mais nada. A primeira versão disto lia um
-# `SCHEDULER_APP_ORIGIN` que o compose nunca repassava e nenhum template
-# documentava — controle decorativo, que é pior que controle nenhum: quem o
-# encontrasse no código o definiria no `.env` e não veria efeito.
-APP_ORIGIN="http://app:3000"
+# No Compose, `app` continua sendo o nome estável do serviço. No Render, o
+# Blueprint injeta o host:porta real pela rede privada. O valor vem sem esquema
+# quando nasce de `fromService`, por isso normalizamos aqui uma única vez.
+APP_ORIGIN="${SCHEDULER_APP_ORIGIN:-http://app:3000}"
+case "$APP_ORIGIN" in
+  http://*|https://*) ;;
+  *) APP_ORIGIN="http://$APP_ORIGIN" ;;
+esac
+APP_ORIGIN="${APP_ORIGIN%/}"
 
 # O crond executa cada linha por `/bin/sh -c`, então o segredo é REAVALIADO pelo
 # shell na hora de disparar. Interpolá-lo cru dentro de aspas duplas fazia com

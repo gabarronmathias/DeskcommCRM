@@ -25,6 +25,7 @@ import { NextResponse } from "next/server";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { createClient } from "@/lib/supabase/server";
+import { normalizeWahaBaseUrl } from "@/lib/waha/base-url";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +79,7 @@ export async function GET(
     });
   }
 
-  const baseUrl = process.env.WAHA_API_BASE_URL;
+  const baseUrl = normalizeWahaBaseUrl(process.env.WAHA_API_BASE_URL);
   const apiKey = process.env.WAHA_API_KEY;
   if (!baseUrl || !apiKey || apiKey === "dev_plaintext_change_me") {
     return new NextResponse(null, { status: 503 });

@@ -63,6 +63,13 @@ check "as $ROTAS_CODIGO rotas do código estão no crontab (achei $ROTAS_CRONTAB
 check "uma linha por cron, nenhuma vazia" \
   test "$(grep -c . "$TMP/crontab")" -eq "$(wc -l < "$TMP/crontab" | tr -d ' ')"
 
+echo "scheduler: aceita o host privado entregue pelo Render"
+export SCHEDULER_APP_ORIGIN="gm-delivery-saas:10000"
+RC="$(rodar 'segredo-render')"
+unset SCHEDULER_APP_ORIGIN
+check "o host:porta do Render recebe esquema HTTP" \
+  grep -q 'http://gm-delivery-saas:10000/api/v1/cron/' "$TMP/crontab"
+
 echo "scheduler: o segredo atravessa o sh do crond intacto"
 # Os três caracteres que quebram interpolação ingênua, de uma vez só.
 HOSTIL='seg`whoami`redo$HOME-com'\''aspa-e-"aspas"'

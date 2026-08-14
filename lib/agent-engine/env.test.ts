@@ -57,3 +57,15 @@ describe("loadEnv — a chave da OpenAI existe no contrato do worker", () => {
     expect(env.OPENAI_API_KEY).toBeUndefined();
   });
 });
+
+describe("loadEnv — a chave da OpenRouter existe no contrato do worker", () => {
+  it("OPENROUTER_API_KEY chega ao motor da automacao", () => {
+    const env = loadEnv({ ...REQUIRED, OPENROUTER_API_KEY: "sk-or-v1-abc" });
+    expect(env.OPENROUTER_API_KEY).toBe("sk-or-v1-abc");
+  });
+
+  it("valor vazio preserva o fluxo BYOK", () => {
+    const env = loadEnv({ ...REQUIRED, OPENROUTER_API_KEY: "" });
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
+  });
+});

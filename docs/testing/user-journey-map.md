@@ -603,3 +603,23 @@ fresca ponta a ponta com a marca de um revendedor — `install.sh` numa VPS, res
 `vps-fresh-onboarding`: os testes provam que cada peça faz o que diz, não que a jornada de
 quem compra funciona inteira. Os defeitos de marca que mais custam caro moram exatamente aí,
 porque são vistos primeiro por um terceiro.
+
+---
+
+## O prospect vê o ciclo inteiro numa única demonstração? (2026-08-14)
+
+**Jornada nova `[P0]`:** um admin abre `/app/demo`, conecta um WhatsApp por QR, arma a escuta,
+recebe uma mensagem real e chega à conversa exata sem reconstruir o caminho entre Conexões,
+Inbox e CRM. Esta é a primeira impressão comercial do produto; falhar em verde aqui faz o
+apresentador descobrir o defeito na frente do prospect.
+
+| # | Caso | Estado |
+|---|---|---|
+| `D1` `[P0]` | Admin encontra **Demonstração ao vivo** no grupo Canais | coberto estruturalmente por `lib/navigation/registry.ts` + `navegacao-completude.test.ts`; prova de dobra pendente |
+| `D2` `[P0]` | Sem número conectado, **Gerar QR agora** cria sessão e exibe o QR protegido | implementado; prova contra WAHA real pendente |
+| `D3` `[P0]` | Ao parear, o status muda para **Conectado** sem reload | implementado com polling de 3s na fonte canônica; prova contra aparelho real pendente |
+| `D4` `[P0]` | Mensagem enviada depois de **Reiniciar escuta** acende o sinal e oferece a conversa exata | implementado sobre `conversations` + Realtime; prova com mensagem real pendente |
+| `D5` `[P1]` | Falta de configuração ou oscilação não vira silêncio: a tela explica o próximo passo e oferece contingência | coberto na UI; prova visual pendente |
+
+Mapa da peça: [`../architecture/demo-ao-vivo.architecture.json`](../architecture/demo-ao-vivo.architecture.json).
+Roteiro operacional: [`../runbooks/demo-ao-vivo.md`](../runbooks/demo-ao-vivo.md).

@@ -6,6 +6,8 @@
  */
 import { z } from 'zod';
 
+import { normalizeWahaBaseUrl } from '@/lib/waha/base-url';
+
 import {
   RETORNO_MAX_AHEAD_MS_PADRAO,
   RETORNO_MIN_AHEAD_MS_PADRAO,
@@ -29,6 +31,7 @@ const envSchema = z.object({
   // OpenAI e a chave no `.env` continuava sem credencial utilizável, e a única
   // saída era cadastrar BYOK pela tela — sem nada dizendo isso.
   OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
   // Modelo default do agente quando a org não define o dela (knob, nunca constante).
   AGENT_DEFAULT_MODEL: z.string().min(1).default('claude-sonnet-4-5'),
   // Teto de conexões por pool do pg. Sem valor = pg decide (default 10).
@@ -45,7 +48,7 @@ const envSchema = z.object({
   // WAHA direto (admin-plane, regra dura nº 4): reconcilia o espelho
   // channel_sessions com o status real e reenvia mensagens AI presas em queued.
   // Opcionais no boot: sem WAHA_API_BASE_URL/KEY o watchdog fica OFF (warn).
-  WAHA_API_BASE_URL: z.string().url().optional(),
+  WAHA_API_BASE_URL: z.string().transform(normalizeWahaBaseUrl).pipe(z.string().url()).optional(),
   WAHA_API_KEY: z.string().min(1).optional(),
   WATCHDOG_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   WATCHDOG_REDRIVE_MIN_AGE_MS: z.coerce.number().int().positive().default(30_000),

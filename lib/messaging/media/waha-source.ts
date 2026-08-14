@@ -14,6 +14,7 @@ import {
   MediaTooLargeError,
   type FetchedMedia,
 } from "@/lib/messaging/media/types";
+import { normalizeWahaBaseUrl } from "@/lib/waha/base-url";
 
 const FETCH_TIMEOUT_MS = 30_000;
 
@@ -21,12 +22,12 @@ export async function fetchWahaMedia(
   mediaUrl: string,
   hintMime?: string | null,
 ): Promise<FetchedMedia> {
-  const base = process.env.WAHA_API_BASE_URL;
+  const base = normalizeWahaBaseUrl(process.env.WAHA_API_BASE_URL);
   let url: URL;
   try {
     const advertised = new URL(mediaUrl);
     // Host/porta descartados: só path+query sobrevivem, resolvidos na base.
-    url = new URL(advertised.pathname + advertised.search, base ?? "");
+    url = new URL(advertised.pathname + advertised.search, base);
   } catch {
     throw new Error("waha_media_untrusted_host");
   }

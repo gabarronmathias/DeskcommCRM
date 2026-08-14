@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Demonstração ao vivo — do QR ao próximo passo",
+    "subtitle": "o cockpit apenas conduz e observa; canal, atendimento e CRM continuam sendo as fontes reais",
+    "output": "demo-ao-vivo.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "humano", "label": "Quem apresenta" },
+    { "id": "cockpit", "label": "Cockpit de demonstração" },
+    { "id": "canal", "label": "Canal" },
+    { "id": "operacao", "label": "Operação viva" }
+  ],
+  "mainPath": ["apresentador", "cockpit", "sessions", "waha", "conversations", "inbox"],
+  "nodes": [
+    {
+      "id": "apresentador",
+      "lane": "humano",
+      "col": 0,
+      "type": "frontend",
+      "label": "Admin apresentador",
+      "sublabel": "conecta · inicia escuta · narra"
+    },
+    {
+      "id": "prospect",
+      "lane": "humano",
+      "col": 3,
+      "type": "service",
+      "label": "Celular do prospect",
+      "sublabel": "envia uma mensagem real"
+    },
+    {
+      "id": "cockpit",
+      "lane": "cockpit",
+      "col": 1,
+      "type": "frontend",
+      "label": "/app/demo",
+      "sublabel": "QR · sinal ao vivo · roteiro"
+    },
+    {
+      "id": "sessions",
+      "lane": "canal",
+      "col": 2,
+      "type": "api",
+      "label": "/api/v1/channel-sessions",
+      "sublabel": "cria sessão · status · QR protegido"
+    },
+    {
+      "id": "waha",
+      "lane": "canal",
+      "col": 3,
+      "type": "service",
+      "label": "Transporte WhatsApp",
+      "sublabel": "pareamento e eventos reais"
+    },
+    {
+      "id": "conversations",
+      "lane": "operacao",
+      "col": 4,
+      "type": "database",
+      "label": "conversations + Realtime",
+      "sublabel": "fonte única do sinal ao vivo"
+    },
+    {
+      "id": "inbox",
+      "lane": "operacao",
+      "col": 5,
+      "type": "frontend",
+      "label": "Inbox",
+      "sublabel": "atendimento humano ↔ IA"
+    },
+    {
+      "id": "crm",
+      "lane": "operacao",
+      "col": 5,
+      "type": "frontend",
+      "label": "Kanban · Radar · Métricas",
+      "sublabel": "contexto, próximo passo e resultado"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "apresentador", "to": "cockpit", "label": "abre pela navegação" },
+    { "id": "e2", "from": "cockpit", "to": "sessions", "label": "gera QR e observa status" },
+    { "id": "e3", "from": "sessions", "to": "waha", "label": "inicia e pareia a sessão" },
+    {
+      "id": "e4",
+      "from": "prospect",
+      "to": "waha",
+      "label": "envia o primeiro oi",
+      "route": "highlight"
+    },
+    { "id": "e5", "from": "waha", "to": "conversations", "label": "webhook inbound" },
+    {
+      "id": "e6",
+      "from": "conversations",
+      "to": "cockpit",
+      "label": "Realtime confirma a entrada",
+      "route": "highlight"
+    },
+    { "id": "e7", "from": "cockpit", "to": "inbox", "label": "abre a conversa exata" },
+    { "id": "e8", "from": "inbox", "to": "crm", "label": "continuidade até o próximo passo" },
+    {
+      "id": "e9",
+      "from": "crm",
+      "to": "cockpit",
+      "label": "falha ou pendência volta visível no roteiro",
+      "route": "highlight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "sky",
+      "title": "O cockpit não cria uma segunda verdade",
+      "items": [
+        "status do canal vem do mesmo useChannelSessions usado em Conexões",
+        "conversa recente vem do mesmo Realtime usado na Inbox",
+        "os atalhos abrem as telas operacionais reais — não há CRM cenográfico"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Anti-morte da própria demonstração",
+      "items": [
+        "serviço ausente aparece antes do QR, com porta direta para Conexões",
+        "rede externa instável tem contingência declarada com conversa existente",
+        "o erro volta à tela e muda a próxima ação; não termina apenas em log"
+      ]
+    }
+  ]
+}

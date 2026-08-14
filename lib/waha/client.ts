@@ -9,12 +9,14 @@
  * So WAHA_API_KEY in .env.local IS the hex hash.
  */
 import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alcance";
+import { normalizeWahaBaseUrl } from "@/lib/waha/base-url";
 
 export class WahaClient {
-  constructor(
-    private readonly baseUrl: string,
-    private readonly apiKey: string,
-  ) {}
+  private readonly baseUrl: string;
+
+  constructor(baseUrl: string, private readonly apiKey: string) {
+    this.baseUrl = normalizeWahaBaseUrl(baseUrl);
+  }
 
   /**
    * Idempotent: ensures session exists, then starts it.

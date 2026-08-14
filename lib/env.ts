@@ -9,6 +9,8 @@
 
 import { z } from "zod";
 
+import { normalizeWahaBaseUrl } from "@/lib/waha/base-url";
+
 const isProd = process.env.NODE_ENV === "production";
 
 /**
@@ -65,7 +67,7 @@ const schema = z.object({
   SUPABASE_DB_URL: required("SUPABASE_DB_URL"),
 
   // WAHA
-  WAHA_API_BASE_URL: required("WAHA_API_BASE_URL"),
+  WAHA_API_BASE_URL: required("WAHA_API_BASE_URL").transform(normalizeWahaBaseUrl),
   WAHA_API_KEY: required("WAHA_API_KEY"),
   WAHA_WEBHOOK_BASE_URL: required("WAHA_WEBHOOK_BASE_URL"),
   // Segredo com que o WAHA assina os webhooks. O compose já o entrega ao
@@ -199,6 +201,9 @@ const schema = z.object({
    * poder; a validação do valor é do resolvedor, que degrada e diz o motivo.
    */
   APP_ACCENT_HEX: z.string().optional().default(""),
+
+  // Host interno do app para o scheduler em plataformas sem o DNS `app` do Compose.
+  SCHEDULER_APP_ORIGIN: z.string().optional().default(""),
 });
 
 let parsed = schema.safeParse(process.env);

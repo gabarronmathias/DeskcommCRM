@@ -8,6 +8,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+### Adicionado
+
+- Blueprint `render.yaml` e runbook para operar o produto como SaaS multi-tenant no Render,
+  com app, worker, scheduler e WAHA privado em disco persistente.
+
 ## [1.3.0] — 2026-08-13
 
 Esta versão mexe em como o sistema **chega e se atualiza** no seu servidor. Em uso, três

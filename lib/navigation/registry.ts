@@ -25,6 +25,7 @@ import {
   Palette,
   Plugs,
   PlugsConnected,
+  QrCode,
   PuzzlePiece,
   Receipt,
   Robot,
@@ -329,6 +330,16 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   },
 
   // ---- Canais — por onde as mensagens entram e saem ----
+  {
+    href: "/app/demo",
+    label: "Demonstração ao vivo",
+    description:
+      "Conecte um WhatsApp por QR e acompanhe a primeira conversa chegando ao atendimento e ao CRM.",
+    icon: QrCode,
+    group: "canais",
+    minRole: "admin",
+    sidebar: true,
+  },
   {
     href: "/app/connections",
     label: "Conexões",

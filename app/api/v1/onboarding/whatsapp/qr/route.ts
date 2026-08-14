@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { normalizeWahaBaseUrl } from "@/lib/waha/base-url";
 
 /**
  * Proxy WAHA's QR endpoint so the browser can <img src="..." /> without
@@ -13,7 +14,7 @@ export async function GET() {
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return new NextResponse(null, { status: 404 });
 
-  const baseUrl = process.env.WAHA_API_BASE_URL;
+  const baseUrl = normalizeWahaBaseUrl(process.env.WAHA_API_BASE_URL);
   const apiKey = process.env.WAHA_API_KEY;
   if (!baseUrl || !apiKey || apiKey === "dev_plaintext_change_me") {
     return new NextResponse(null, { status: 503 });
