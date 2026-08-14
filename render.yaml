@@ -1,6 +1,7 @@
 # GM Delivery SaaS — infraestrutura declarativa para o Render.
 # Banco/Auth/Realtime/Storage continuam no Supabase; Redis REST continua no Upstash.
-# O Render hospeda app, motor de automacao, scheduler e WAHA persistente.
+# O Render hospeda o app, o motor de automacao e um WAHA persistente.
+# Este Blueprint e dimensionado para demonstracao 24/7 com uma sessao WhatsApp.
 
 services:
   - type: web
@@ -146,26 +147,10 @@ services:
       - key: RAG_EMBEDDING_API_KEY
         fromService: { type: web, name: gm-delivery-saas, envVarKey: OPENAI_API_KEY }
 
-  - type: worker
-    name: gm-delivery-scheduler
-    runtime: docker
-    plan: starter
-    region: virginia
-    dockerfilePath: ./Dockerfile.scheduler
-    dockerContext: .
-    autoDeployTrigger: checksPass
-    envVars:
-      - key: TZ
-        value: UTC
-      - key: INTERNAL_SECRET
-        fromService: { type: web, name: gm-delivery-saas, envVarKey: INTERNAL_SECRET }
-      - key: SCHEDULER_APP_ORIGIN
-        fromService: { type: web, name: gm-delivery-saas, property: hostport }
-
   - type: pserv
     name: gm-delivery-waha
     runtime: image
-    plan: standard
+    plan: starter
     region: virginia
     numInstances: 1
     image:
@@ -173,7 +158,7 @@ services:
     disk:
       name: waha-sessions
       mountPath: /app/.sessions
-      sizeGB: 10
+      sizeGB: 1
     envVars:
       - key: WHATSAPP_DEFAULT_ENGINE
         value: NOWEB

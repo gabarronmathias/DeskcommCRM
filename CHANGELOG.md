@@ -10,8 +10,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ### Adicionado
 
-- Blueprint `render.yaml` e runbook para operar o produto como SaaS multi-tenant no Render,
-  com app, worker, scheduler e WAHA privado em disco persistente.
+- Blueprint `render.yaml` e runbook para manter uma demonstracao permanente no Render,
+  com app, worker e WAHA privado em disco persistente e de baixo custo.
 
 ## [1.3.0] — 2026-08-13
 

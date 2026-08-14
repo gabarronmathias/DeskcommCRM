@@ -44,7 +44,7 @@
       "col": 2,
       "type": "service",
       "label": "WAHA privado",
-      "sublabel": "NOWEB + multiplas sessoes"
+      "sublabel": "NOWEB + uma sessao de demo"
     },
     {
       "id": "disk",
@@ -61,14 +61,6 @@
       "type": "service",
       "label": "Worker de automacao",
       "sublabel": "agente, fila e follow-up"
-    },
-    {
-      "id": "scheduler",
-      "lane": "render",
-      "col": 4,
-      "type": "service",
-      "label": "Scheduler",
-      "sublabel": "rotas cron"
     },
     {
       "id": "crm",
@@ -96,7 +88,6 @@
     { "id": "e6", "from": "app", "to": "crm", "label": "dados por organization_id" },
     { "id": "e7", "from": "worker", "to": "crm", "label": "consome fila e move funil" },
     { "id": "e8", "from": "worker", "to": "waha", "label": "automacao ativa" },
-    { "id": "e9", "from": "scheduler", "to": "app", "label": "dispara tarefas internas" },
     { "id": "e10", "from": "app", "to": "redis", "label": "limites compartilhados" }
   ],
   "cards": [

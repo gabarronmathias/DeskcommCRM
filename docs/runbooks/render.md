@@ -1,22 +1,38 @@
-# Runbook — SaaS no Render
+# Runbook — demonstração permanente no Render
 
-Este deploy transforma a instalacao self-host em uma operacao SaaS compartilhada,
-sem trocar as fontes de verdade do produto. O Render executa quatro servicos; o
+Este deploy mantem uma demonstracao do SaaS disponivel 24/7,
+sem trocar as fontes de verdade do produto. O Render executa tres servicos; o
 Supabase continua responsavel por banco, Auth, RLS, Realtime e Storage, e o
 Upstash continua fornecendo Redis via REST.
 
 ## Arquitetura implantada
 
-| Servico                 | Tipo no Render          | Funcao                                              |
-| ----------------------- | ----------------------- | --------------------------------------------------- |
-| `gm-delivery-saas`      | Web Service             | Next.js, API, atendimento, CRM e central de comando |
-| `gm-delivery-worker`    | Background Worker       | agente de IA, fila, follow-ups e automacao ativa    |
-| `gm-delivery-scheduler` | Background Worker       | dispara as rotas cron do produto                    |
-| `gm-delivery-waha`      | Private Service + disco | sessoes WhatsApp, QR e webhooks                     |
+| Servico              | Tipo no Render          | Funcao                                              |
+| -------------------- | ----------------------- | --------------------------------------------------- |
+| `gm-delivery-saas`   | Web Service             | Next.js, API, atendimento, CRM e central de comando |
+| `gm-delivery-worker` | Background Worker       | agente de IA, fila, follow-ups e automacao ativa    |
+| `gm-delivery-waha`   | Private Service + disco | sessoes WhatsApp, QR e webhooks                     |
 
 O WAHA nao recebe URL publica. O browser pede o QR ao app autenticado, o app fala
 com o WAHA pela rede privada e devolve apenas a imagem. O disco em
 `/app/.sessions` preserva os pareamentos entre deploys e reinicios.
+
+O scheduler de rotinas recorrentes fica fora deste ambiente economico. Isso nao
+impede mensagem inbound, resposta imediata do agente, Inbox ou CRM. Follow-ups,
+watchers e demais rotinas cron entram no ambiente de producao quando houver cliente.
+
+## Custo mensal da demonstracao
+
+| Recurso             | Plano           |             Custo |
+| ------------------- | --------------- | ----------------: |
+| App                 | Starter         |          US$ 7,00 |
+| Worker de automacao | Starter         |          US$ 7,00 |
+| WAHA                | Starter         |          US$ 7,00 |
+| Disco de sessoes    | 1 GB            |          US$ 0,25 |
+| **Total Render**    | Hobby + compute | **US$ 21,25/mes** |
+
+Supabase, Upstash e consumo de IA sao externos ao Render. Para a demonstracao,
+use os respectivos planos gratuitos e uma chave de IA com limite de gasto.
 
 ## Dependencias externas
 
@@ -90,9 +106,9 @@ Nao liberar clientes antes de completar esta sequencia:
 
 - O Blueprint fixa todos os servicos na regiao `virginia` para manter a rede
   privada co-localizada e reduzir a latencia para o Brasil.
-- O WAHA comeca no plano `standard` (2 GB) e com uma unica instancia. O disco
+- O WAHA comeca no plano `starter` (512 MB) e com uma unica sessao de demonstracao. O disco
   persistente nao pode ser compartilhado por replicas.
-- O app, worker e scheduler comecam em `starter`; subir o app para `standard` e
+- O app e o worker comecam em `starter`; subir o app para `standard` e
   o primeiro ajuste se houver pressao de memoria.
 - O disco do WAHA impede deploy sem interrupcao apenas nesse servico. Durante a
   troca, o painel continua no ar e o canal pode ficar indisponivel por alguns
@@ -103,7 +119,7 @@ Nao liberar clientes antes de completar esta sequencia:
 
 ## Rollback
 
-App, worker e scheduler podem voltar para um deploy anterior pelo historico do
+App e worker podem voltar para um deploy anterior pelo historico do
 Render. Nao apague nem recrie o disco do WAHA durante rollback. Se o problema for
 somente o canal, mantenha o app no ar, reverta o WAHA e valide uma sessao de teste
 antes de reabrir automacoes ativas.

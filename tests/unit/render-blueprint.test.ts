@@ -6,17 +6,12 @@ import { describe, expect, it } from "vitest";
 const blueprint = readFileSync(join(__dirname, "..", "..", "render.yaml"), "utf8");
 
 describe("Blueprint do SaaS no Render", () => {
-  it("declara as quatro pecas operacionais", () => {
-    for (const service of [
-      "gm-delivery-saas",
-      "gm-delivery-worker",
-      "gm-delivery-scheduler",
-      "gm-delivery-waha",
-    ]) {
+  it("declara as tres pecas necessarias para a demonstracao permanente", () => {
+    for (const service of ["gm-delivery-saas", "gm-delivery-worker", "gm-delivery-waha"]) {
       expect(blueprint).toContain(`name: ${service}`);
     }
     expect(blueprint).toContain("dockerfilePath: ./Dockerfile.worker");
-    expect(blueprint).toContain("dockerfilePath: ./Dockerfile.scheduler");
+    expect(blueprint).not.toContain("name: gm-delivery-scheduler");
   });
 
   it("mantem o WAHA privado, pinado e com sessao persistente", () => {
@@ -24,17 +19,13 @@ describe("Blueprint do SaaS no Render", () => {
       /type: pserv[\s\S]*name: gm-delivery-waha[\s\S]*devlikeapro\/waha:latest-2026\.7\.2/,
     );
     expect(blueprint).toContain("mountPath: /app/.sessions");
+    expect(blueprint).toContain("sizeGB: 1");
     expect(blueprint).toContain("WHATSAPP_DEFAULT_ENGINE");
     expect(blueprint).toContain("value: NOWEB");
   });
 
-  it("liga app, worker e scheduler pela rede privada", () => {
-    expect(blueprint).toMatch(
-      /key: WAHA_API_BASE_URL[\s\S]*type: pserv[\s\S]*property: hostport/,
-    );
-    expect(blueprint).toMatch(
-      /key: SCHEDULER_APP_ORIGIN[\s\S]*name: gm-delivery-saas[\s\S]*property: hostport/,
-    );
+  it("liga app e worker ao WAHA pela rede privada", () => {
+    expect(blueprint).toMatch(/key: WAHA_API_BASE_URL[\s\S]*type: pserv[\s\S]*property: hostport/);
   });
 
   it("nao grava os segredos fornecidos pelo operador no Git", () => {
@@ -49,4 +40,3 @@ describe("Blueprint do SaaS no Render", () => {
     }
   });
 });
-
