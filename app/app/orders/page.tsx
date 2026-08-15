@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import OrderAlert from "./OrderAlert";
 
 type FoodStatus =
   | "new"
@@ -312,6 +313,7 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <OrderAlert newCount={newCount} />
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
