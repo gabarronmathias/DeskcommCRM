@@ -176,6 +176,31 @@ export default function FoodStorefrontPage() {
   const currency = catalog?.tenant.currency ?? "BRL";
   const wine = catalog?.tenant.accent_hex ?? "#6f2f35";
   const soft = catalog?.tenant.accent_soft_hex ?? "#f1e7da";
+  const storefront = catalog?.tenant.storefront ?? {};
+const heroImage = storefront.hero_image_url || HERO_IMAGE;
+const subbrand = storefront.subbrand || "Padaria & confeitaria";
+const logoMode = storefront.logo_mode || "mark";
+const heroEyebrow =
+  storefront.hero_eyebrow ||
+  `${catalog?.tenant.display_name ?? ""} • feito para o seu momento`;
+
+const quickCards =
+  storefront.quick_cards?.length === 3
+    ? storefront.quick_cards
+    : [
+        {
+          title: "Forno ao longo do dia",
+          text: "Pães, salgados e doces sempre frescos.",
+        },
+        {
+          title: "Peça do seu jeito",
+          text: "Retirada ou entrega em poucos passos.",
+        },
+        {
+          title: "Boas combinações",
+          text: "Sugestões relevantes para completar o pedido.",
+        },
+      ];
 
   const productMap = useMemo(
     () => new Map((catalog?.products ?? []).map((product) => [product.id, product])),
@@ -435,18 +460,25 @@ export default function FoodStorefrontPage() {
 
       <div className="store-wrap">
         <header className="food-header">
-          <div className="logo">
-            {catalog.tenant.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img className="logo-image" src={catalog.tenant.logo_url} alt={catalog.tenant.app_name} />
-            ) : (
-              <div className="mark">{catalog.tenant.app_name.slice(0, 1).toUpperCase()}</div>
-            )}
-            <div>
-              <div className="brand">{catalog.tenant.display_name || catalog.tenant.app_name}</div>
-              <div className="subbrand">Padaria &amp; confeitaria</div>
-            </div>
-          </div>
+          <div className={`logo ${logoMode === "wordmark" ? "logo-wordmark" : ""}`}>
+  {catalog.tenant.logo_url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className={`logo-image ${logoMode === "wordmark" ? "logo-image-wordmark" : ""}`}
+      src={catalog.tenant.logo_url}
+      alt={catalog.tenant.app_name}
+    />
+  ) : (
+    <div className="mark">{catalog.tenant.app_name.slice(0, 1).toUpperCase()}</div>
+  )}
+
+  {logoMode !== "wordmark" ? (
+    <div>
+      <div className="brand">{catalog.tenant.display_name || catalog.tenant.app_name}</div>
+      <div className="subbrand">{subbrand}</div>
+    </div>
+  ) : null}
+</div>
 
           <div className="head-actions">
             <button
@@ -462,11 +494,11 @@ export default function FoodStorefrontPage() {
         <section
           className="hero"
           style={{
-            backgroundImage: `linear-gradient(90deg,rgba(28,18,12,.78),rgba(28,18,12,.18)),url('${HERO_IMAGE}')`,
+            backgroundImage: `linear-gradient(90deg,rgba(20,16,10,.80),rgba(20,16,10,.20)),url('${heroImage}')`,
           }}
         >
           <div className="hero-content">
-            <div className="eyebrow">{catalog.tenant.display_name} • feito para o seu momento</div>
+            <div className="eyebrow">{heroEyebrow}</div>
             <h1>{heroTitle}</h1>
             <p>{heroText}</p>
             <div className="hero-cta">
@@ -483,19 +515,13 @@ export default function FoodStorefrontPage() {
         </section>
 
         <div className="quick">
-          <div className="quick-card">
-            <strong>Forno ao longo do dia</strong>
-            <small>Pães, salgados e doces sempre frescos.</small>
-          </div>
-          <div className="quick-card">
-            <strong>Peça do seu jeito</strong>
-            <small>Retirada ou entrega em poucos passos.</small>
-          </div>
-          <div className="quick-card">
-            <strong>Boas combinações</strong>
-            <small>Sugestões relevantes para completar o pedido.</small>
-          </div>
-        </div>
+  {quickCards.map((card) => (
+    <div className="quick-card" key={card.title}>
+      <strong>{card.title}</strong>
+      <small>{card.text}</small>
+    </div>
+  ))}
+</div>
 
         <section id="menu">
           <div className="section-head">
@@ -570,7 +596,7 @@ export default function FoodStorefrontPage() {
                     }
                   >
                     {!product.image_url ? <span className="fallback-emoji">{product.emoji ?? "🍽️"}</span> : null}
-                    <span className="badge">{category?.name ?? "Capri"}</span>
+                    <span className="badge">{category?.name ?? catalog.tenant.display_name}</span>
                   </div>
                   <div className="pbody">
                     <h3>{product.name}</h3>
@@ -949,8 +975,10 @@ const styles = `
 .store-wrap{max-width:1180px;margin:auto;padding:0 22px 120px}
 .food-header{height:82px;display:flex;align-items:center;justify-content:space-between;gap:18px}
 .logo{display:flex;align-items:center;gap:12px}
-.mark,.logo-image{width:40px;height:40px;border:1px solid color-mix(in srgb,var(--wine) 30%,transparent);border-radius:50%;display:grid;place-items:center;color:var(--wine);font-family:'Playfair Display',serif;font-size:18px;font-weight:700;background:#fff;object-fit:cover}
-.brand{font-family:'Playfair Display',serif;font-size:30px;line-height:1;color:var(--wine)}
+.mark{width:40px;height:40px;border:1px solid color-mix(in srgb,var(--wine) 30%,transparent);border-radius:50%;display:grid;place-items:center;color:var(--wine);font-family:'Playfair Display',serif;font-size:18px;font-weight:700;background:#fff}
+.logo-image{width:40px;height:40px;border:1px solid color-mix(in srgb,var(--wine) 30%,transparent);border-radius:50%;background:#fff;object-fit:cover}
+.logo-wordmark{min-width:0}
+.logo-image-wordmark{width:250px;height:64px;max-width:38vw;border:0;border-radius:0;background:transparent;object-fit:contain;object-position:left center}.brand{font-family:'Playfair Display',serif;font-size:30px;line-height:1;color:var(--wine)}
 .subbrand{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-top:3px}
 .head-actions{display:flex;align-items:center;gap:9px}
 .ghost{border:1px solid var(--line);background:rgba(255,255,255,.78);border-radius:999px;padding:10px 14px;color:var(--ink)}
@@ -1070,6 +1098,7 @@ const styles = `
 @media(max-width:620px){
   .store-wrap{padding:0 14px 110px}
   .food-header{height:70px}.brand{font-size:26px}
+  .logo-image-wordmark{width:190px;height:52px;max-width:62vw}
   .hero{height:360px;border-radius:24px;background-position:57% center}
   .hero-content{padding:28px}.hero h1{font-size:42px;max-width:330px}
   .hero p{font-size:15px;max-width:330px}.hero-cta .light{display:none}
