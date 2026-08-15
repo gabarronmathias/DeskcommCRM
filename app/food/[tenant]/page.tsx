@@ -3,6 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 
+type StorefrontConfig = {
+  identity?: string;
+  subbrand?: string;
+  logo_mode?: "mark" | "wordmark";
+  hero_image_url?: string;
+  hero_eyebrow?: string;
+  quick_cards?: Array<{
+    title: string;
+    text: string;
+  }>;
+};
+
 type Tenant = {
   slug: string;
   display_name: string;
@@ -16,6 +28,7 @@ type Tenant = {
   whatsapp_number: string | null;
   free_shipping_threshold_cents: number | null;
   currency: string;
+  storefront: StorefrontConfig | null;
 };
 
 type Category = {
