@@ -144,6 +144,14 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     sidebar: true,
   },
   {
+  href: "/app/orders",
+  label: "Pedidos",
+  description: "Pedidos do cardápio, produção, retirada e entrega em tempo real.",
+  icon: Receipt,
+  group: "atendimento",
+  sidebar: true,
+},
+  {
     href: "/app/radar",
     label: "Radar",
     description: "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.",
