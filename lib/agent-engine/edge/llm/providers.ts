@@ -42,6 +42,13 @@ const GOOGLE_ENDPOINT = 'https://generativelanguage.googleapis.com';
  * `familia/modelo`, o mesmo dos nossos, sem tradução no meio.
  */
 export const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1';
+/**
+ * Endpoint do OpenCode Zen — API OpenAI-compatible, só Chat Completions (não
+ * Responses API). Modelos com prefixo `opencode/` roteiam aqui pela factory do
+ * provider `openrouter`, com a chave vinda do Vault (OPENCODE_ZEN_API_KEY) —
+ * nunca a BYOK/chave de plataforma da org.
+ */
+export const OPENCODE_ZEN_ENDPOINT = 'https://opencode.ai/zen/v1';
 
 /**
  * Providers reais do lançamento. Sonnet (Anthropic) é o default RECOMENDADO —
@@ -78,6 +85,17 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
      * tela ofereceu, com erro de rede que ninguém liga ao painel.
      */
     openrouter: (apiKey, modelId, baseUrl) => {
+      // Modelo OpenCode Zen: roteia ao endpoint do Zen, remove o prefixo e usa
+      // Chat Completions EXPLÍCITO (.chat) — o callable do createOpenAI v4 fala
+      // a Responses API, que o Zen não implementa. A chave é a do Vault, não a
+      // desta factory (resolvida no seam antes de chegar aqui).
+      if (modelId.startsWith('opencode/')) {
+        return createOpenAI({
+          apiKey,
+          baseURL: OPENCODE_ZEN_ENDPOINT,
+          fetch: contain(OPENCODE_ZEN_ENDPOINT),
+        }).chat(modelId.slice('opencode/'.length));
+      }
       const endpoint = baseUrl ?? OPENROUTER_ENDPOINT;
       return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) })(modelId);
     },

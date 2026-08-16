@@ -141,6 +141,27 @@ async function assertBudget(db: pg.Pool, organizationId: string, budgetCents: nu
   throw new LlmBudgetExceededError();
 }
 
+/**
+ * Chave do OpenCode Zen lida do Supabase Vault — modelo com prefixo
+ * `opencode/` usa ESTA chave, nunca a BYOK/chave de plataforma do provider.
+ * O valor existe só em memória, no instante da chamada: não loga, não grava
+ * em llm_calls, não entra em mensagem de erro nem em metadata.
+ */
+async function lerChaveOpenCodeZenDoVault(db: pg.Pool): Promise<string> {
+  const { rows } = await db.query<{ decrypted_secret: string }>(
+    `select decrypted_secret
+     from vault.decrypted_secrets
+     where name = $1
+     limit 1`,
+    ['OPENCODE_ZEN_API_KEY'],
+  );
+  const segredo = rows[0]?.decrypted_secret;
+  if (typeof segredo !== 'string' || segredo === '') {
+    throw new Error('OPENCODE_ZEN_API_KEY ausente no Vault');
+  }
+  return segredo;
+}
+
 export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
   const registry = deps.registry ?? createDefaultRegistry();
   const purpose = input.purpose ?? 'agent_turn';
@@ -198,6 +219,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   if (factory === undefined) {
     throw new LlmProviderUnknownError(config.provider);
   }
+  // Modelo OpenCode Zen: a chave é a do Vault, resolvida aqui no seam (o
+  // registry só roteia pelo prefixo). Falha na leitura cai no MESMO caminho de
+  // erro das demais falhas — gravada em llm_calls SEM o valor, que nunca sai
+  // da memória do processo.
+  const ehModeloOpenCode = model.startsWith('opencode/');
   const parsedParams = paramsSchema.safeParse(config.params);
   if (!parsedParams.success) {
     throw new Error('params inválidos em organizations.settings.llm.params — corrija a config da org');
@@ -217,13 +243,15 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   const startedAt = Date.now();
   let result: Awaited<ReturnType<typeof generateText>>;
   try {
+    // A chave do Zen vive SÓ neste escopo: vira argumento da factory e some.
+    const apiKey = ehModeloOpenCode ? await lerChaveOpenCodeZenDoVault(db) : config.apiKey;
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
     // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
     result = await generateText({
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
       // ignoram o terceiro argumento e vão ao endpoint intrínseco.
-      model: factory(config.apiKey, model, decisao.baseUrl ?? undefined),
+      model: factory(apiKey, model, decisao.baseUrl ?? undefined),
       system: prefix.system,
       messages: input.messages,
       tools: prefix.tools,
