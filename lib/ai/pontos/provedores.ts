@@ -76,6 +76,14 @@ export const PROVEDORES = [
     aceitaEndpointProprio: true,
     catalogoSincronizavel: true,
     ondePegarAChave: "https://openrouter.ai/keys",
+      {
+    id: "alibaba",
+    rotulo: "Alibaba Cloud (Qwen)",
+    quandoUsar:
+      "Modelos Qwen do Alibaba Cloud Model Studio. Boa opção para atendimento com baixo custo e suporte a ferramentas.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://modelstudio.console.alibabacloud.com/",
   },
 ] as const satisfies readonly ProvedorSuportado[];
 // `as const satisfies` e não anotação de tipo: a anotação apagaria os literais
