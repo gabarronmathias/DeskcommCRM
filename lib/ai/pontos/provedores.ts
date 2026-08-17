@@ -69,6 +69,7 @@ export const PROVEDORES = [
     ondePegarAChave: "https://aistudio.google.com/apikey",
   },
   {
+  {
     id: "openrouter",
     rotulo: "OpenRouter",
     quandoUsar:
@@ -76,7 +77,8 @@ export const PROVEDORES = [
     aceitaEndpointProprio: true,
     catalogoSincronizavel: true,
     ondePegarAChave: "https://openrouter.ai/keys",
-      {
+  },
+  {
     id: "alibaba",
     rotulo: "Alibaba Cloud (Qwen)",
     quandoUsar:
