@@ -3,6 +3,11 @@
  * banco — a role vendaval_drain e o transporte cross-banco morreram) e enfileira
  * jobs `inbound_turn` na fila durável do harness.
  *
+ * No worker 24/7, o mesmo loop também drena os dois eventos de mídia
+ * (`media.persist_requested` e `media.derive_requested`) usando os handlers
+ * canônicos do app. Isso tira áudio/imagem da dependência do cron genérico sem
+ * ampliar o escopo do worker para os demais consumidores do event_log.
+ *
  * Garantias:
  *   - organization_id vem da LINHA do evento (fonte confiável), nunca do payload;
  *   - at-least-once + dedup: claim CAS (pending→processing) + unique
@@ -18,6 +23,11 @@ import type pg from 'pg';
 import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
+import { drainEventLog } from '@/lib/event-log/drain';
+import { registerHandler } from '@/lib/event-log/dispatcher';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { mediaPersistHandler } from '@/workers/media-persist-worker.handler';
+import { mediaDeriveHandler } from '@/workers/media-derive-worker.handler';
 
 const DRAIN_CONSUMER = 'agent-engine';
 
@@ -291,6 +301,13 @@ export async function runDrainLoop(
   log: Logger,
   signal: AbortSignal,
 ): Promise<void> {
+  // O worker do Render já é o processo 24/7. Registrar aqui SOMENTE os dois
+  // consumidores de mídia faz áudio/imagem começarem a ser tratados no mesmo
+  // ciclo do agente, em vez de esperar o cron genérico do Next/Vercel.
+  registerHandler(mediaPersistHandler);
+  registerHandler(mediaDeriveHandler);
+  const mediaAdmin = createAdminClient();
+
   while (!signal.aborted) {
     let drained = 0;
     try {
@@ -300,6 +317,25 @@ export async function runDrainLoop(
         error: (err instanceof Error ? err.message : String(err)).slice(0, 300),
       });
     }
+
+    try {
+      const media = await drainEventLog(mediaAdmin, { limit: knobs.batchSize });
+      drained += media.scanned;
+      if (media.scanned > 0) {
+        log.info('drain: mídia processada no worker 24/7', {
+          scanned: media.scanned,
+          done: media.done,
+          retried: media.retried,
+          failed: media.failed,
+          dead: media.dead,
+        });
+      }
+    } catch (err) {
+      log.error('drain: tick de mídia falhou', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      });
+    }
+
     const waitMs = drained > 0 ? knobs.intervalMs : knobs.idleIntervalMs;
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, waitMs);
