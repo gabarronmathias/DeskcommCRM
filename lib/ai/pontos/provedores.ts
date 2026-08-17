@@ -69,7 +69,6 @@ export const PROVEDORES = [
     ondePegarAChave: "https://aistudio.google.com/apikey",
   },
   {
-  {
     id: "openrouter",
     rotulo: "OpenRouter",
     quandoUsar:
