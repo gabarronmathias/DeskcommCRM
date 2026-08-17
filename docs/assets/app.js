@@ -2,62 +2,199 @@
 const API_BASE="https://ukenluaihqiuwtdssatc.supabase.co/functions/v1/food-api";
 const tenant=document.body.dataset.tenant;
 const app=document.getElementById("app");
-let catalog=null,active="all",search="",submitting=false;
-const cart=new Map();
+let catalog=null,activeCategory="all",query="",modal=null,lastAdded=null,submitting=false,success=null;
+let customerName="",phone="",fulfillment="retirada",paymentMethod="pix",addressNotes="",marketingConsent=false;
+const cart=[];
+
 const uuid=()=>globalThis.crypto?.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const money=(c=0,cur="BRL")=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:cur}).format(Number(c)/100);
-const count=()=>[...cart.values()].reduce((s,x)=>s+x.qty,0);
-const total=()=>[...cart.values()].reduce((s,x)=>s+x.product.price_cents*x.qty,0);
+const currency=()=>catalog?.tenant?.currency||"BRL";
+const productMap=()=>new Map((catalog?.products||[]).map(p=>[p.id,p]));
+const categoryMap=()=>new Map((catalog?.categories||[]).map(c=>[c.id,c]));
+const subtotal=()=>cart.reduce((s,l)=>s+l.product.price_cents*l.quantity,0);
+const itemCount=()=>cart.reduce((s,l)=>s+l.quantity,0);
+const recommendedRevenue=()=>cart.reduce((s,l)=>s+(l.ruleId?l.product.price_cents*l.quantity:0),0);
+const cartProductIds=()=>new Set(cart.map(l=>l.product.id));
+const logoLetter=()=>String(catalog?.tenant?.display_name||catalog?.tenant?.app_name||"C").charAt(0).toUpperCase();
 
-function productCard(p){
- return `<article class="product"><div class="media">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="emoji">${esc(p.emoji||"🍽️")}</div>`}</div><div class="copy"><h2>${esc(p.name)}</h2>${p.description?`<p>${esc(p.description)}</p>`:""}<div class="row"><strong>${money(p.price_cents,catalog.tenant.currency||"BRL")}</strong><button data-add="${p.id}">Adicionar</button></div></div></article>`;
+function addProduct(product,ruleId=null,showUpsell=false){
+ const key=`${product.id}:${ruleId||"direct"}`;
+ const line=cart.find(x=>x.key===key);
+ if(line) line.quantity=Math.min(99,line.quantity+1); else cart.push({key,product,quantity:1,ruleId});
+ if(showUpsell){lastAdded=product.id;modal="upsell"}
+ render();
+}
+function changeQty(key,delta){
+ const line=cart.find(x=>x.key===key); if(!line)return;
+ line.quantity=Math.max(0,Math.min(99,line.quantity+delta));
+ if(line.quantity===0)cart.splice(cart.indexOf(line),1);
+ render();
+}
+function suggestions(){
+ if(!lastAdded)return[];
+ const ids=cartProductIds(),pm=productMap();
+ return (catalog.recommendation_rules||[]).filter(r=>r.kind!=="cart_goal"&&r.trigger_product_id===lastAdded&&r.recommended_product_id&&!ids.has(r.recommended_product_id))
+  .sort((a,b)=>(a.priority||99)-(b.priority||99)).map(r=>({rule:r,product:pm.get(r.recommended_product_id)})).filter(x=>x.product).slice(0,2);
+}
+function checkoutSuggestion(){
+ if(!itemCount())return null;
+ const ids=cartProductIds(),pm=productMap();
+ const rules=(catalog.recommendation_rules||[]).filter(r=>r.kind!=="cart_goal"&&r.recommended_product_id&&!ids.has(r.recommended_product_id)&&(!r.trigger_product_id||ids.has(r.trigger_product_id))).sort((a,b)=>(a.priority||99)-(b.priority||99));
+ for(const r of rules){const p=pm.get(r.recommended_product_id);if(p)return{rule:r,product:p}}
+ return null;
+}
+function featured(){
+ const pm=productMap();
+ const combo=(catalog.recommendation_rules||[]).filter(r=>r.kind==="combo"&&r.recommended_product_id).sort((a,b)=>(a.priority||99)-(b.priority||99))[0];
+ if(combo){const p=pm.get(combo.recommended_product_id);if(p)return{rule:combo,product:p}}
+ const p=(catalog.products||[]).find(x=>x.image_url)||(catalog.products||[])[0];return p?{rule:null,product:p}:null;
+}
+function goal(){
+ const rule=(catalog.recommendation_rules||[]).filter(r=>r.kind==="cart_goal"&&r.threshold_cents).sort((a,b)=>(a.priority||99)-(b.priority||99))[0];
+ const threshold=rule?.threshold_cents||catalog.tenant.free_shipping_threshold_cents||null;
+ return threshold?{threshold,remaining:Math.max(0,threshold-subtotal()),progress:Math.min(100,subtotal()/threshold*100)}:null;
+}
+function photoHtml(p,cls="photo"){
+ const cat=categoryMap().get(p.category_id)?.name||catalog.tenant.display_name;
+ return `<div class="${cls} ${p.image_url?"":"photo-fallback"}" ${p.image_url?`style="background-image:url('${esc(p.image_url)}')"`:""}>
+   ${p.image_url?"":`<div class="fallback-art">${esc((p.emoji||p.name||"C").trim().charAt(0).toUpperCase())}</div>`}
+   ${cls==="photo"?`<span class="badge">${esc(cat)}</span>`:""}
+ </div>`;
 }
 function render(){
- const t=catalog.tenant;
- document.documentElement.style.setProperty("--accent",t.accent_hex||"#275d4d");
- document.documentElement.style.setProperty("--soft",t.accent_soft_hex||"#efe6d8");
+ if(!catalog)return;
+ const t=catalog.tenant,s=t.storefront||{};
+ document.documentElement.style.setProperty("--wine",t.accent_hex||"#6f2f35");
+ document.documentElement.style.setProperty("--wine-soft",t.accent_soft_hex||"#f1e7da");
  document.title=`${t.display_name||t.app_name} — Cardápio`;
- const q=search.trim().toLocaleLowerCase("pt-BR");
- const products=(catalog.products||[]).filter(p=>(active==="all"||p.category_id===active)&&(!q||`${p.name} ${p.description||""}`.toLocaleLowerCase("pt-BR").includes(q)));
- app.innerHTML=`<header class="hero"><div class="hero-inner"><div class="logo">${t.logo_url?`<img src="${esc(t.logo_url)}" alt="">`:"🍽️"}</div><div><div class="eyebrow">CARDÁPIO DIGITAL</div><h1>${esc(t.display_name||t.app_name)}</h1><p>${esc(t.tagline||t.description||"Escolha seus favoritos e monte seu pedido.")}</p></div></div></header><section class="toolbar"><div class="toolbar-in"><input id="search" class="search" value="${esc(search)}" placeholder="Buscar no cardápio…" autocomplete="off"><div class="cats"><button class="chip ${active==="all"?"active":""}" data-cat="all">Todos</button>${(catalog.categories||[]).map(c=>`<button class="chip ${active===c.id?"active":""}" data-cat="${c.id}">${esc(c.name)}</button>`).join("")}</div></div></section><main class="main"><div class="grid">${products.map(productCard).join("")}</div>${products.length?"":`<div class="empty">Nenhum item encontrado.</div>`}</main><button id="cartbar" class="cartbar" ${count()?"":"hidden"}><span><strong>${count()} ${count()===1?"item":"itens"}</strong><small>Ver pedido</small></span><strong>${money(total(),t.currency||"BRL")}</strong></button><div id="drawer" class="drawer"><div class="backdrop" data-close></div><section class="sheet"><button class="close" data-close>×</button><div id="cartContent"></div></section></div>`;
- document.getElementById("search").oninput=e=>{search=e.target.value;render()};
- document.querySelectorAll("[data-cat]").forEach(b=>b.onclick=()=>{active=b.dataset.cat;render()});
- document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>add(b.dataset.add));
- document.getElementById("cartbar")?.addEventListener("click",openCart);
- document.querySelectorAll("[data-close]").forEach(x=>x.onclick=closeCart);
+ const logoMode=s.logo_mode||"mark",subbrand=s.subbrand||"Padaria & confeitaria";
+ const heroImage=s.hero_image_url||"https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1800&q=88";
+ const heroEyebrow=s.hero_eyebrow||`${t.display_name||""} • feito para o seu momento`;
+ const quick=(s.quick_cards?.length===3?s.quick_cards:[
+  {title:"Feito com cuidado",text:"Escolhas para diferentes momentos do dia."},
+  {title:"Peça do seu jeito",text:"Retirada ou entrega em poucos passos."},
+  {title:"Boas combinações",text:"Sugestões relevantes para completar o pedido."}
+ ]);
+ const q=query.trim().toLocaleLowerCase("pt-BR");
+ const visible=(t&&catalog.products||[]).filter(p=>(activeCategory==="all"||p.category_id===activeCategory)&&(!q||`${p.name} ${p.description||""}`.toLocaleLowerCase("pt-BR").includes(q)));
+ const feat=featured();
+ const heroTitle=t.tagline||"Do forno para bons momentos.";
+ const heroText=t.description||"Escolha seus favoritos, monte seu pedido e descubra combinações pensadas para deixar sua experiência ainda melhor.";
+
+ app.innerHTML=`
+ <div class="store-wrap">
+  <header class="food-header">
+   <div class="logo-wrap">
+    ${t.logo_url?`<img class="logo-img ${logoMode==="wordmark"?"wordmark":""}" src="${esc(t.logo_url)}" alt="${esc(t.app_name)}">`:`<div class="logo-img" style="display:grid;place-items:center;font-family:'Playfair Display';font-weight:700;color:var(--wine)">${logoLetter()}</div>`}
+    ${logoMode!=="wordmark"?`<div><div class="brand">${esc(t.display_name||t.app_name)}</div><div class="subbrand">${esc(subbrand)}</div></div>`:""}
+   </div>
+   <button class="ghost" id="goMenu">Cardápio</button>
+  </header>
+  <section class="hero" style="background-image:url('${esc(heroImage)}')">
+   <div class="hero-content">
+    <div class="eyebrow">${esc(heroEyebrow)}</div>
+    <h1>${esc(heroTitle)}</h1>
+    <p>${esc(heroText)}</p>
+    <div class="hero-cta"><button class="primary" id="heroMenu">Ver cardápio</button><span class="light">Retirada ou entrega</span></div>
+   </div>
+  </section>
+  <div class="quick">${quick.map(c=>`<div class="quick-card"><strong>${esc(c.title)}</strong><small>${esc(c.text)}</small></div>`).join("")}</div>
+  <section id="menu">
+   <div class="section-head">
+    <div><div class="eyebrow wine-text">Cardápio</div><h2>Escolha o seu momento</h2><p>${esc(t.headline||"Escolha seus favoritos e monte seu pedido.")}</p></div>
+    <input id="search" class="search" value="${esc(query)}" placeholder="Buscar no cardápio" aria-label="Buscar no cardápio">
+   </div>
+   <div class="cats">
+    <button class="cat ${activeCategory==="all"?"active":""}" data-cat="all">Todos</button>
+    ${(catalog.categories||[]).map(c=>`<button class="cat ${activeCategory===c.id?"active":""}" data-cat="${c.id}">${esc(c.name)}</button>`).join("")}
+   </div>
+   ${feat?`<div class="combo-strip"><div><div class="eyebrow wine-text">Sugestão ${esc(t.display_name)}</div><strong>${esc(feat.product.name)}</strong><p>${esc(feat.rule?.benefit||feat.product.description||"Uma escolha que combina com diferentes momentos do dia.")} <b>${money(feat.product.price_cents,currency())}</b></p></div><button data-featured="${feat.product.id}" data-rule="${feat.rule?.id||""}">Adicionar</button></div>`:""}
+   <div class="products">${visible.map(p=>`<article class="product">${photoHtml(p)}<div class="pbody"><h3>${esc(p.name)}</h3><div class="desc">${esc(p.description||"Preparado com cuidado para o seu momento.")}</div><div class="prow"><span class="price">${money(p.price_cents,currency())}</span><button class="add" data-add="${p.id}" aria-label="Adicionar ${esc(p.name)}">+</button></div></div></article>`).join("")}</div>
+   ${visible.length?"":`<div class="empty-search">Nenhum item encontrado nesta seleção.</div>`}
+  </section>
+ </div>
+ <div class="cartbar ${itemCount()===0?"empty":""}"><div class="cartmeta"><strong>${itemCount()} ${itemCount()===1?"item":"itens"} no pedido</strong><small>Total ${money(subtotal(),currency())}${recommendedRevenue()>0?` • ${money(recommendedRevenue(),currency())} vieram de sugestões`:""}</small></div><button class="cartbtn" id="openCart">Ver pedido</button></div>
+ ${renderModal()}
+ `;
+ wire();
 }
-function recommendation(productId){
- const inCart=new Set(cart.keys());
- return (catalog.recommendation_rules||[]).filter(r=>r.trigger_product_id===productId&&r.recommended_product_id&&!inCart.has(r.recommended_product_id)).sort((a,b)=>(a.priority||99)-(b.priority||99)).map(r=>({rule:r,product:catalog.products.find(p=>p.id===r.recommended_product_id)})).find(x=>x.product)||null;
+function renderModal(){
+ if(!modal)return"";
+ if(modal==="upsell"){
+  const ss=suggestions();if(!ss.length){modal=null;return""}
+  return `<div class="overlay" data-backdrop><div class="sheet"><div class="sheet-top"><div><div class="eyebrow wine-text">Uma boa combinação</div><h2>Que tal completar o pedido?</h2><div class="lead">Algumas escolhas combinam especialmente bem com o item que você acabou de adicionar.</div></div><button class="close" data-close>×</button></div><div class="reco">${ss.map(({rule,product})=>`<div class="reco-card">${photoHtml(product,"reco-img")}<div class="reco-body"><strong>${esc(product.name)}</strong><small>+ ${money(product.price_cents,currency())}</small><button class="reco-add" data-reco="${product.id}" data-rule="${rule.id}">Adicionar ao pedido</button></div></div>`).join("")}</div><button class="secondary" data-close>Continuar sem adicionar</button></div></div>`;
+ }
+ if(modal==="cart"){
+  const g=goal(),cs=checkoutSuggestion();
+  return `<div class="overlay" data-backdrop><div class="sheet"><div class="sheet-top"><div><div class="eyebrow wine-text">Seu pedido</div><h2>${itemCount()?"Está quase pronto.":"Seu carrinho está vazio."}</h2></div><button class="close" data-close>×</button></div>
+  ${g&&itemCount()?`<div class="goal"><div class="goal-top"><span>Meta promocional</span><span>${Math.round(g.progress)}%</span></div><div class="progress"><span style="width:${g.progress}%"></span></div><small>${g.remaining>0?`Faltam ${money(g.remaining,currency())} para atingir a meta do pedido.`:"Você atingiu a meta promocional deste pedido."}</small></div>`:""}
+  <div class="cartlist">${cart.map(l=>`<div class="ci">${photoHtml(l.product,"ci-img")}<div><h4>${esc(l.product.name)}</h4><small>${money(l.product.price_cents,currency())} cada${l.ruleId?" • sugerido pelo sistema":""}</small></div><div class="qty"><button data-minus="${l.key}">−</button><b>${l.quantity}</b><button data-plus="${l.key}">+</button></div></div>`).join("")}</div>
+  ${cs&&itemCount()?`<div class="mini-offer">${photoHtml(cs.product,"thumb")}<div><strong>Que tal incluir ${esc(cs.product.name.toLowerCase())}?</strong><small>${esc(cs.rule.benefit||"Uma última boa combinação antes do checkout.")}</small></div><button data-bump="${cs.product.id}" data-rule="${cs.rule.id}">+ ${money(cs.product.price_cents,currency())}</button></div>`:""}
+  <div class="summary"><div class="sumrow"><span>Subtotal</span><b>${money(subtotal(),currency())}</b></div>${recommendedRevenue()>0?`<div class="sumrow"><span>Itens adicionados por sugestões</span><b class="green">+ ${money(recommendedRevenue(),currency())}</b></div>`:""}<div class="sumrow total"><span>Total</span><span>${money(subtotal(),currency())}</span></div></div>
+  <button class="full" id="toCheckout" ${itemCount()?"":"disabled"}>Continuar para checkout</button></div></div>`;
+ }
+ if(modal==="checkout"){
+  return `<div class="overlay"><form class="sheet" id="checkout"><div class="sheet-top"><div><div class="eyebrow wine-text">Checkout</div><h2>Como você quer receber?</h2><div class="lead">Preencha os dados para concluir seu pedido.</div></div><button class="close" type="button" id="backCart">×</button></div>
+  <div class="cols"><div class="field"><label>Seu nome</label><input name="customer_name" value="${esc(customerName)}" placeholder="Nome" required maxlength="160"></div><div class="field"><label>WhatsApp</label><input name="phone" value="${esc(phone)}" placeholder="(12) 99999-9999" required maxlength="30"></div></div>
+  <div class="cols"><div class="field"><label>Recebimento</label><select name="fulfillment"><option value="retirada" ${fulfillment==="retirada"?"selected":""}>Retirar no estabelecimento</option><option value="entrega" ${fulfillment==="entrega"?"selected":""}>Receber em casa</option></select></div><div class="field"><label>Pagamento</label><select name="payment_method"><option value="pix" ${paymentMethod==="pix"?"selected":""}>Pix</option><option value="cartao" ${paymentMethod==="cartao"?"selected":""}>Cartão</option><option value="dinheiro" ${paymentMethod==="dinheiro"?"selected":""}>Dinheiro</option></select></div></div>
+  <div class="field"><label>Endereço / observações</label><textarea name="address_notes" rows="3" placeholder="Rua, número, bairro, complemento ou observações">${esc(addressNotes)}</textarea></div>
+  <label class="consent"><input type="checkbox" name="marketing_consent" ${marketingConsent?"checked":""}><span>Quero receber promoções, ofertas e novidades da ${esc(catalog.tenant.display_name)} pelo WhatsApp. Posso cancelar quando quiser.</span></label>
+  <div class="summary"><div class="sumrow total"><span>Total do pedido</span><span>${money(subtotal(),currency())}</span></div></div><div id="checkoutError"></div><button class="full" id="submitOrder" type="submit">${submitting?"Enviando pedido...":"Confirmar pedido"}</button><button class="secondary" type="button" id="backCart2">Voltar ao pedido</button></form></div>`;
+ }
+ if(modal==="done"&&success){
+  return `<div class="overlay"><div class="sheet done-sheet"><div class="done-icon">✓</div><div class="eyebrow wine-text">Pedido recebido</div><h2>Perfeito. Agora é com a ${esc(catalog.tenant.display_name)}.</h2><div class="lead">Seu pedido foi registrado com sucesso.${success.order_id?` Número: <b>${esc(success.order_id.slice(0,8).toUpperCase())}</b>`:""}</div><div class="order-total">${money(success.total_cents||0,success.currency||currency())}</div><button class="full" id="done">Voltar ao cardápio</button></div></div>`;
+ }
+ return"";
 }
-function add(id){
- const p=catalog.products.find(x=>x.id===id); if(!p)return;
- const c=cart.get(id); cart.set(id,{product:p,qty:Math.min(99,(c?.qty||0)+1)}); render();
- const rec=recommendation(id);
- if(rec) setTimeout(()=>{if(confirm(`${rec.rule.benefit||"Que tal completar o pedido?"}\n\nAdicionar ${rec.product.name} por ${money(rec.product.price_cents,catalog.tenant.currency||"BRL")}?`)){const x=cart.get(rec.product.id);cart.set(rec.product.id,{product:rec.product,qty:Math.min(99,(x?.qty||0)+1)});render()}},80);
+function wire(){
+ document.getElementById("goMenu")?.addEventListener("click",()=>document.querySelector("#menu")?.scrollIntoView({behavior:"smooth"}));
+ document.getElementById("heroMenu")?.addEventListener("click",()=>document.querySelector("#menu")?.scrollIntoView({behavior:"smooth"}));
+ document.getElementById("search")?.addEventListener("input",e=>{query=e.target.value;render()});
+ document.querySelectorAll("[data-cat]").forEach(b=>b.onclick=()=>{activeCategory=b.dataset.cat;render()});
+ document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{const p=productMap().get(b.dataset.add);if(p)addProduct(p,null,true)});
+ document.querySelectorAll("[data-featured]").forEach(b=>b.onclick=()=>{const p=productMap().get(b.dataset.featured);if(p)addProduct(p,b.dataset.rule||null,false)});
+ document.getElementById("openCart")?.addEventListener("click",()=>{modal="cart";render()});
+ document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{modal=null;render()});
+ document.querySelectorAll("[data-backdrop]").forEach(x=>x.addEventListener("mousedown",e=>{if(e.target===x){modal=null;render()}}));
+ document.querySelectorAll("[data-reco]").forEach(b=>b.onclick=()=>{const p=productMap().get(b.dataset.reco);if(p){addProduct(p,b.dataset.rule,false);modal=null;render()}});
+ document.querySelectorAll("[data-minus]").forEach(b=>b.onclick=()=>changeQty(b.dataset.minus,-1));
+ document.querySelectorAll("[data-plus]").forEach(b=>b.onclick=()=>changeQty(b.dataset.plus,1));
+ document.querySelectorAll("[data-bump]").forEach(b=>b.onclick=()=>{const p=productMap().get(b.dataset.bump);if(p){addProduct(p,b.dataset.rule,false);modal="cart";render()}});
+ document.getElementById("toCheckout")?.addEventListener("click",()=>{modal="checkout";render()});
+ document.getElementById("backCart")?.addEventListener("click",()=>{modal="cart";render()});
+ document.getElementById("backCart2")?.addEventListener("click",()=>{modal="cart";render()});
+ document.getElementById("checkout")?.addEventListener("submit",submitOrder);
+ document.getElementById("done")?.addEventListener("click",()=>{success=null;modal=null;render()});
 }
-function qty(id,delta){const x=cart.get(id);if(!x)return;const n=x.qty+delta;if(n<=0)cart.delete(id);else cart.set(id,{...x,qty:Math.min(99,n)});render();openCart()}
-function openCart(){document.getElementById("drawer")?.classList.add("open");renderCart()}
-function closeCart(){document.getElementById("drawer")?.classList.remove("open")}
-function renderCart(){
- const el=document.getElementById("cartContent");if(!el)return;
- if(!count()){el.innerHTML=`<h2>Seu pedido</h2><div class="empty">Seu carrinho está vazio.</div>`;return}
- el.innerHTML=`<h2>Seu pedido</h2><div>${[...cart.entries()].map(([id,x])=>`<div class="line"><div><strong>${esc(x.product.name)}</strong><small>${money(x.product.price_cents,catalog.tenant.currency||"BRL")} cada</small></div><div class="qty"><button data-minus="${id}">−</button><span>${x.qty}</span><button data-plus="${id}">+</button></div></div>`).join("")}</div><div class="total"><span>Total</span><strong>${money(total(),catalog.tenant.currency||"BRL")}</strong></div><form id="checkout"><input name="customer_name" required maxlength="160" placeholder="Seu nome"><input name="phone" required maxlength="30" inputmode="tel" placeholder="WhatsApp com DDD"><div class="two"><select name="fulfillment"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select><select name="payment_method"><option value="pix">Pix</option><option value="cartao">Cartão</option><option value="dinheiro">Dinheiro</option></select></div><textarea name="address_notes" maxlength="500" placeholder="Endereço / observações"></textarea><label class="consent"><input type="checkbox" name="marketing_consent"> Aceito receber novidades e ofertas.</label><button id="submit" class="submit" type="submit">Finalizar pedido</button><div id="formMessage" class="form-message"></div></form>`;
- el.querySelectorAll("[data-minus]").forEach(b=>b.onclick=()=>qty(b.dataset.minus,-1));el.querySelectorAll("[data-plus]").forEach(b=>b.onclick=()=>qty(b.dataset.plus,1));document.getElementById("checkout").onsubmit=checkout;
-}
-async function checkout(e){
- e.preventDefault();if(submitting)return;submitting=true;
- const btn=document.getElementById("submit"),msg=document.getElementById("formMessage");btn.disabled=true;btn.textContent="Enviando…";msg.textContent="";
- const fd=new FormData(e.currentTarget);let session=localStorage.getItem("deskcomm-food-session");if(!session){session=uuid();localStorage.setItem("deskcomm-food-session",session)}
- const body={idempotency_key:uuid(),session_key:session,customer_name:String(fd.get("customer_name")||""),phone:String(fd.get("phone")||""),fulfillment:String(fd.get("fulfillment")||"retirada"),payment_method:String(fd.get("payment_method")||"pix"),address_notes:String(fd.get("address_notes")||""),marketing_consent:fd.get("marketing_consent")==="on",items:[...cart.values()].map(x=>({product_id:x.product.id,quantity:x.qty,modifier_ids:[]}))};
- try{const r=await fetch(`${API_BASE}/${encodeURIComponent(tenant)}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(data.error||"Não foi possível criar o pedido.");cart.clear();const el=document.getElementById("cartContent");el.innerHTML=`<div class="success"><div>✓</div><h2>Pedido criado!</h2><p>Recebemos seu pedido com sucesso.</p>${data.order_number?`<strong>Nº ${esc(data.order_number)}</strong>`:""}<br><br><button id="done">Continuar</button></div>`;document.getElementById("done").onclick=()=>{closeCart();render()}}
- catch(err){msg.textContent=err.message||"Falha ao finalizar pedido."}
- finally{submitting=false;btn.disabled=false;btn.textContent="Finalizar pedido"}
+async function submitOrder(e){
+ e.preventDefault();if(submitting||!itemCount())return;
+ const fd=new FormData(e.currentTarget);
+ customerName=String(fd.get("customer_name")||"");phone=String(fd.get("phone")||"");
+ fulfillment=String(fd.get("fulfillment")||"retirada");paymentMethod=String(fd.get("payment_method")||"pix");
+ addressNotes=String(fd.get("address_notes")||"");marketingConsent=fd.get("marketing_consent")==="on";
+ submitting=true;render();
+ let session=localStorage.getItem("deskcomm-food-session");if(!session){session=uuid();localStorage.setItem("deskcomm-food-session",session)}
+ try{
+  const r=await fetch(`${API_BASE}/${encodeURIComponent(tenant)}`,{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:JSON.stringify({
+   idempotency_key:uuid(),session_key:session,customer_name:customerName,phone,fulfillment,payment_method:paymentMethod,address_notes:fulfillment==="entrega"?addressNotes:"",marketing_consent:marketingConsent,
+   items:cart.map(l=>({product_id:l.product.id,quantity:l.quantity,modifier_ids:[],recommendation_rule_id:l.ruleId}))
+  })});
+  const data=await r.json();if(!r.ok)throw new Error(data.error||data.message||"Não foi possível concluir o pedido.");
+  success={...data,total_cents:data.total_cents??subtotal(),currency:data.currency??currency()};cart.splice(0,cart.length);modal="done";
+ }catch(err){
+  submitting=false;render();const box=document.getElementById("checkoutError");if(box)box.innerHTML=`<div class="checkout-error">${esc(err.message||"Não foi possível concluir o pedido.")}</div>`;return;
+ }
+ submitting=false;render();
 }
 async function init(){
  app.innerHTML=`<div class="loading"><div class="spinner"></div><p>Carregando cardápio…</p></div>`;
- try{const r=await fetch(`${API_BASE}/${encodeURIComponent(tenant)}`,{headers:{accept:"application/json"}});const data=await r.json();if(!r.ok||!data?.tenant)throw new Error(data?.error||"Cardápio indisponível.");catalog=data;render()}
- catch(err){app.innerHTML=`<div class="fatal"><h1>Cardápio indisponível</h1><p>${esc(err.message)}</p><button onclick="location.reload()">Tentar novamente</button></div>`}
+ try{
+  const r=await fetch(`${API_BASE}/${encodeURIComponent(tenant)}`,{headers:{accept:"application/json"}});
+  const data=await r.json();if(!r.ok||!data?.tenant)throw new Error(data?.error||"Cardápio indisponível.");
+  catalog=data;render();
+ }catch(err){
+  app.innerHTML=`<div class="fatal"><h1>Cardápio indisponível</h1><p>${esc(err.message)}</p><button onclick="location.reload()">Tentar novamente</button></div>`;
+ }
 }
 init();
