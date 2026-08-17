@@ -86,8 +86,10 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
     apiKey,
     baseURL: endpoint,
     fetch: contain(endpoint),
-  }).chat(modelId);
+    }).chat(modelId);
 },
+/**
+ * O `baseUrl` do painel é honrado aqui...
     
      * O `baseUrl` do painel é honrado aqui, e a allowlist do egress passa a ser
      * a DELE — não a da OpenRouter mais um furo. Apontar para um gateway
