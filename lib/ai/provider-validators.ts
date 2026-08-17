@@ -45,7 +45,44 @@ async function timedFetch(url: string, init: RequestInit): Promise<Response> {
     clearTimeout(t);
   }
 }
+export async function validateAlibabaKey(
+  apiKey: string,
+): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch(
+      "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "qwen-flash",
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 1,
+          temperature: 0,
+          stream: false,
+        }),
+      },
+    );
 
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+
+    return { ok: true, models: ["qwen-flash"] };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.name : "network_error",
+    };
+  }
+}
 export async function validateAnthropicKey(apiKey: string): Promise<ValidationResult> {
   try {
     const res = await timedFetch("https://api.anthropic.com/v1/models", {
@@ -151,6 +188,8 @@ export function validateProviderKey(
       return validateOpenAIKey(apiKey);
     case "google":
       return validateGoogleKey(apiKey);
+      case "alibaba":
+  return validateAlibabaKey(apiKey);
     case "openrouter":
       return validateOpenRouterKey(apiKey);
     default: {
