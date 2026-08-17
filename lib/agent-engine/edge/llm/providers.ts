@@ -42,6 +42,8 @@ const GOOGLE_ENDPOINT = 'https://generativelanguage.googleapis.com';
  * `familia/modelo`, o mesmo dos nossos, sem tradução no meio.
  */
 export const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1';
+export const ALIBABA_ENDPOINT =
+  'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
 /**
  * Endpoint do OpenCode Zen — API OpenAI-compatible, só Chat Completions (não
  * Responses API). Modelos com prefixo `opencode/` roteiam aqui pela factory do
@@ -77,7 +79,16 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
       createOpenAI({ apiKey, fetch: contain(OPENAI_ENDPOINT) })(modelId),
     google: (apiKey, modelId) =>
       createGoogleGenerativeAI({ apiKey, fetch: contain(GOOGLE_ENDPOINT) })(modelId),
-    /**
+    alibaba: (apiKey, modelId, baseUrl) => {
+  const endpoint = baseUrl ?? ALIBABA_ENDPOINT;
+
+  return createOpenAI({
+    apiKey,
+    baseURL: endpoint,
+    fetch: contain(endpoint),
+  }).chat(modelId);
+},
+    
      * O `baseUrl` do painel é honrado aqui, e a allowlist do egress passa a ser
      * a DELE — não a da OpenRouter mais um furo. Apontar para um gateway
      * próprio é escolha legítima do operador; deixar a allowlist fixa no
