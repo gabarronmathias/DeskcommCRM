@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { useAttendantMetrics, type AttendantMetric } from "@/hooks/metrics/useAttendantMetrics";
 import { AtritoPanel } from "./AtritoPanel";
+import { DeliveryReportPanel } from "./DeliveryReportPanel";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -45,7 +46,6 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   const [owner, setOwner] = useState<string>(ALL);
   const selectedOwner = owner === ALL ? null : owner;
   const { data, isLoading, isError } = useAttendantMetrics(selectedOwner);
-  // Opções do filtro: só manager+ (a rota /team é manager+). Agent nem vê o filtro.
   const team = useTeamMembers({ enabled: canCompare });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
@@ -57,6 +57,8 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+      <DeliveryReportPanel />
+
       {canCompare ? (
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">Atendente</span>
@@ -79,10 +81,6 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
         </div>
       ) : null}
 
-      {/* Acima do funil e da performance de propósito: é o número do sistema
-          inteiro, ao qual as métricas de área se subordinam (doutrina §3.6).
-          Não filtra por atendente — atrito é propriedade do sistema, e quebrá-lo
-          por pessoa convida a otimização local que degrada o todo. */}
       <AtritoPanel podeEditarRegua={canCompare} />
 
       <Card>

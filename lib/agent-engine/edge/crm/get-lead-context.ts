@@ -134,7 +134,7 @@ interface DecisionRow {
 function paraDecisao(row: DecisionRow): UltimaDecisaoHumana | null {
   const acao =
     typeof row.payload?.next_action === 'string' ? row.payload.next_action.trim() : '';
-  if (acao === '') return null; // sem O QUÊ, dizer "aprovado" não ajuda ninguém.
+  if (acao === '') return null;
   return {
     action: acao,
     decision: row.type === 'next_action_approved' ? 'approved' : 'dismissed',
@@ -144,6 +144,8 @@ function paraDecisao(row: DecisionRow): UltimaDecisaoHumana | null {
 
 interface HistoryRow {
   direction: 'inbound' | 'outbound';
+  /** Diferencia fala da Sarah de resposta manual do operador no aparelho. */
+  sent_via: string | null;
   type: string;
   body: string | null;
   media_url: string | null;
@@ -172,8 +174,6 @@ export async function getLeadContext(
     );
   }
 
-  // Conversa: a do job quando informada (fonte confiável); senão a 1:1 mais
-  // recente do contato. Grupos NUNCA (regra dura nº 12).
   let conversationId = input.conversationId ?? null;
   if (conversationId === null) {
     const { rows } = await db.query<{ id: string }>(
@@ -185,13 +185,6 @@ export async function getLeadContext(
     conversationId = rows[0]?.id ?? null;
   }
 
-  // A decisão vem do BARRAMENTO (crm_lead_activities), não de coluna nova: a
-  // timeline já é a memória compartilhada entre humano e agente, e foi para isso
-  // que a Wave 3 a construiu. Outra fonte seria o segundo funil que este épico
-  // existe para acabar.
-  //
-  // Filtra por `contact_id` porque deste lado da casa `leadId` é o CONTATO —
-  // e é assim que a decisão chega mesmo que o negócio tenha mudado de mãos.
   const { rows: decisaoRows } = await db.query<DecisionRow>(
     `select type, payload, reason, performed_at::text as performed_at
      from crm_lead_activities
@@ -207,7 +200,7 @@ export async function getLeadContext(
   const history: HistoryRow[] = conversationId
     ? (
         await db.query<HistoryRow>(
-          `select direction, type, body, media_url, media_storage_path, media_mime,
+          `select direction, sent_via, type, body, media_url, media_storage_path, media_mime,
                   media_derived_text, sent_at::text as sent_at
            from messages
            where organization_id = $1 and conversation_id = $2
@@ -219,9 +212,6 @@ export async function getLeadContext(
       ).rows.reverse()
     : [];
 
-  // LGPD: base legal derivada DIRETO do contato (fonte da verdade, mesmo banco).
-  // isProspecting=false: o MVP é inbound + follow-up — ambos respondem a lead que
-  // já engajou, nunca 1º toque frio (o veto de is_anonymized vale SEMPRE).
   const lgpd = deriveLgpdFromContact(
     {
       source: contact.source,
@@ -264,12 +254,13 @@ function fitToBudget(
   let messages: LeadContextMessage[] = history.map((m) => {
     const hasMedia = Boolean(m.media_storage_path || m.media_url);
     const derived = m.media_derived_text;
-    // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
-    // vem ENQUADRADO (frameMediaBody) — sem isso o agente caía no reflexo
-    // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
-    const body = derived
+    const rawBody = derived
       ? frameMediaBody(m.type, m.body, derived)
       : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
+    const body =
+      m.direction === 'outbound' && m.sent_via === 'external_device'
+        ? frameHumanOperatorBody(rawBody)
+        : rawBody;
     return {
       direction: m.direction,
       body,
@@ -290,6 +281,20 @@ function fitToBudget(
   return build(messages);
 }
 
+/**
+ * Mensagem outbound enviada manualmente pelo aparelho conectado.
+ * O modelo precisa vê-la para entender a conversa, mas não pode herdar a primeira
+ * pessoa do operador como identidade, agenda, relação ou compromisso da Sarah.
+ */
+export function frameHumanOperatorBody(body: string): string {
+  return [
+    '[Mensagem anterior enviada por um ATENDENTE HUMANO do estabelecimento, NÃO pela Sarah. ' +
+      'Use o conteúdo apenas como contexto da conversa. Nunca atribua à Sarah ações, agenda, ' +
+      'deslocamentos, relações pessoais ou compromissos escritos em primeira pessoa nesta mensagem.]',
+    body,
+  ].join('\n');
+}
+
 /** Substantivo pt-br por tipo de mídia (p/ o enquadramento do derivado). */
 const MEDIA_NOUN: Record<string, string> = {
   image: 'uma imagem',
@@ -299,13 +304,6 @@ const MEDIA_NOUN: Record<string, string> = {
   sticker: 'uma figurinha',
 };
 
-/**
- * Enquadra o derivado de mídia como PERCEPÇÃO do agente (Onda 3, ajuste pós-prova).
- * Sem isto, o modelo via a transcrição/descrição mas respondia "não consigo ver
- * mídia" por reflexo. O enquadramento diz explicitamente: o conteúdo já foi
- * processado; trate como se tivesse visto/ouvido; nunca negue a mídia. Legenda do
- * cliente (se houver) e conteúdo derivado coexistem. @internal exposto p/ teste.
- */
 export function frameMediaBody(type: string, caption: string | null, derived: string): string {
   const noun = MEDIA_NOUN[type] ?? 'uma mídia';
   const parts = [
