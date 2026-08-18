@@ -17,6 +17,7 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
+import { canonicalWahaWebhookUrl, ensureWahaSessionWebhook } from "@/lib/waha/session-webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -36,14 +37,6 @@ export async function GET(): Promise<Response> {
       .from("channel_sessions")
       .select(CHANNEL_COLUMNS)
       .eq("organization_id", activeOrg.orgId);
-  // Canais arquivados sobrevivem só como âncora das FKs RESTRICT
-  // (conversations/messages). Para o usuário eles foram excluídos.
-  //
-  // Tolerante à coluna ausente porque esta é a PRIMEIRA tela de quem já tem
-  // número ligado: num clone que subiu o código sem a migration 0106, o filtro
-  // devolveria 42703 → 500 → "Nenhum número conectado ainda", convidando o
-  // operador a parear de novo um número que já está no ar. Sem a coluna, nada
-  // está arquivado, e a lista sem o filtro é a lista certa (ver lib/channels/archived).
   const { data, error, schemaOutdated } = await queryTolerantToMissingArchived(
     () => base().is(ARCHIVED_AT, null).order("created_at", { ascending: true }),
     () => base().order("created_at", { ascending: true }),
@@ -91,8 +84,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
-  // Nome de sessão único por canal — o hardcode `org_<8>` era 1 número por org.
   const sessionName = `org_${activeOrg.orgId.slice(0, 8)}_${randomUUID().replace(/-/g, "").slice(0, 6)}`;
+  const webhookPathToken = randomUUID().replace(/-/g, "");
+  const webhookUrl = canonicalWahaWebhookUrl(req.url, webhookPathToken);
 
   const { data: created, error: insErr } = await supabase
     .from("channel_sessions")
@@ -101,7 +95,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       waha_session_name: sessionName,
       display_name: parsed.data.display_name ?? null,
       engine: "NOWEB",
-      webhook_path_token: randomUUID().replace(/-/g, ""),
+      webhook_path_token: webhookPathToken,
       webhook_secret_encrypted: Buffer.from([0]),
       status: "STARTING",
       last_status_change_at: new Date().toISOString(),
@@ -117,8 +111,10 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   try {
     await waha.startSession(sessionName);
+    // WORKING sem inbound é um falso positivo perigoso: toda sessão criada por
+    // este app precisa sair do onboarding já com o webhook canônico gravado no WAHA.
+    await ensureWahaSessionWebhook(sessionName, webhookUrl);
   } catch (err) {
-    // Rollback: sem WAHA no ar, não deixamos um canal fantasma preso em STARTING.
     await supabase
       .from("channel_sessions")
       .delete()
@@ -134,7 +130,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "channel_session",
     resourceId: created.id,
     requestId,
-    metadata: { waha_session_name: sessionName },
+    metadata: { waha_session_name: sessionName, webhook_configured: true },
   });
 
   return ok(created, { requestId, status: 201 });
