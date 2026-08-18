@@ -4,6 +4,7 @@
  * POST /api/v1/channel-sessions — conecta um NOVO número (cria a sessão com
  *   nome único e inicia no WAHA). Admin only.
  *
+ * Garantia de produção: toda nova sessão sai do onboarding com webhook inbound canônico no WAHA.
  * organization_id resolvido da sessão (cookie) — nunca do body.
  */
 import { randomUUID } from "node:crypto";
