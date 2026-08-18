@@ -1,34 +1,9 @@
 /**
  * POST /api/v1/channel-sessions/[id]/reconnect — reconecta um canal caído.
  *
- * Dois modos, porque "caiu" tem duas causas com custos bem diferentes:
- *
- *  - PADRÃO (stop + start): soluço de rede, container reiniciado, sessão que
- *    parou sozinha. As credenciais em `/app/.sessions` continuam válidas e o
- *    engine volta sozinho para WORKING — sem QR, sem incomodar o usuário.
- *  - `{ force: true }` (stop + LOGOUT + start): o aparelho foi desvinculado
- *    pelo celular e o WhatsApp revogou a credencial. Aí o start comum
- *    reaproveita uma credencial morta e a sessão vai direto para FAILED, sem
- *    NUNCA passar por SCAN_QR_CODE — era exatamente esse o buraco em que a tela
- *    ficava presa esperando um QR que nunca vinha. O logout descarta a
- *    credencial e o pareamento recomeça do zero.
- *
- * O padrão é o modo suave de propósito: forçar logout sempre custaria um
- * reescaneamento a cada queda passageira. A UI só oferece o `force` depois que
- * o modo suave falhou.
- *
- * Canal EXCLUÍDO (arquivado) é recusado, não reconectado: subir a sessão de novo
- * no transporte devolveria um canal que recebe e não entrega nada — o webhook, o
- * ingest e o envio filtram `archived_at` e descartariam tudo. Vivo e surdo é pior
- * que desligado. E não há o que "reconectar": a exclusão deslogou o aparelho e
- * apagou a sessão no transporte, então o caminho de volta é conectar um número
- * (que também é o que a mensagem de erro diz).
- *
- * Canal OFICIAL é recusado por outro motivo, e com outro desfecho (422): ele não
- * tem sessão no transporte para parar e subir — `waha_session_name` é NULL nele
- * por CHECK. Reiniciar não é a operação dele; trocar a credencial é.
- *
- * Admin only. organization_id vem da sessão — nunca do path/body.
+ * O webhook da sessão é reaplicado antes de cada start. Assim `WORKING` não pode
+ * significar "WhatsApp conectado, porém surdo para inbound" depois de uma
+ * reconexão ou troca de número.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -40,6 +15,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
+import { canonicalWahaWebhookUrl, ensureWahaSessionWebhook } from "@/lib/waha/session-webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -77,18 +53,17 @@ export async function POST(
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id)
       .maybeSingle();
-  // Tolerante à coluna ausente: num clone sem a migration 0106 nada está
-  // arquivado, e exigir a coluna aqui derrubaria a reconexão inteira — que é o
-  // socorro de quem está com o número fora do ar.
   const { data: sessionRaw } = await queryTolerantToMissingArchived(
-    () => buscar(`id, waha_session_name, ${ARCHIVED_AT}`),
-    () => buscar("id, waha_session_name"),
+    () => buscar(`id, waha_session_name, webhook_path_token, ${ARCHIVED_AT}`),
+    () => buscar("id, waha_session_name, webhook_path_token"),
   );
   const session = sessionRaw as {
     id: string;
     waha_session_name: string | null;
+    webhook_path_token: string | null;
     archived_at?: string | null;
   } | null;
+
   if (!session) return fail("not_found", "Canal não encontrado.", 404, { requestId });
   if (session.archived_at) {
     return fail(
@@ -98,17 +73,21 @@ export async function POST(
       { requestId },
     );
   }
-  // O nome da sessão é NULL no canal oficial, e o CHECK
-  // `channel_sessions_provider_ref_check` garante que só nele. Afirmar `string`
-  // aqui (era um cast) não fazia o valor existir: mandava `null` para o
-  // transporte, que pedia `/api/sessions/null/stop` e devolvia erro de serviço —
-  // culpando o WhatsApp por uma pergunta que nunca fez sentido.
+
   const nomeSessao = session.waha_session_name;
   if (!nomeSessao) {
     return fail(
       "channel_without_session",
       "Este canal é o oficial (API da plataforma): ele não tem sessão de WhatsApp para reiniciar. Se parou de entregar, atualize a credencial na tela do canal oficial.",
       422,
+      { requestId },
+    );
+  }
+  if (!session.webhook_path_token) {
+    return fail(
+      "channel_webhook_missing",
+      "Este canal não possui token de webhook. Reconecte o número como um novo canal.",
+      409,
       { requestId },
     );
   }
@@ -123,13 +102,18 @@ export async function POST(
     );
   }
 
+  const webhookUrl = canonicalWahaWebhookUrl(req.url, session.webhook_path_token);
+
   try {
     await waha.stopSession(nomeSessao);
-    // Só no modo forçado: descartar a credencial é irreversível — obriga a
-    // reescanear o QR mesmo que ela ainda estivesse boa.
     if (force) await waha.logoutSession(nomeSessao);
+
+    // O PUT de configuração acontece com a sessão parada, antes do start. Isso
+    // elimina a janela em que o QR poderia ser escaneado numa sessão sem inbound.
+    await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
     const remote = (await waha.startSession(nomeSessao)) as { status?: string };
     const nextStatus = remote.status ?? "STARTING";
+
     await supabase
       .from("channel_sessions")
       .update({
@@ -147,10 +131,10 @@ export async function POST(
       resourceType: "channel_session",
       resourceId: id,
       requestId,
-      metadata: { waha_session_name: nomeSessao, force },
+      metadata: { waha_session_name: nomeSessao, force, webhook_configured: true },
     });
 
-    return ok({ id, status: nextStatus, force }, { requestId });
+    return ok({ id, status: nextStatus, force, webhook_configured: true }, { requestId });
   } catch (err) {
     return fail("waha_error", wahaFriendlyError(err), 502, { requestId });
   }
