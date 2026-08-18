@@ -160,9 +160,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     sidebar: true,
   },
   {
-    // Renomeado de "Templates": estes são scripts do atendente, consumidos pelo
-    // Composer do inbox. O nome "Templates" fica livre para os da Meta (HSM),
-    // onde é o termo técnico correto.
     href: "/app/templates",
     label: "Respostas rápidas",
     description: "Scripts salvos para responder mais rápido, seus ou da equipe.",
@@ -173,16 +170,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
 
   // ---- CRM — o funil ----
   {
-    // ⚠️ ERA "Kanban", e a URL continua sendo. O nome saiu da interface porque o
-    // produto tinha CINCO vocabulários para a mesma coisa — "Kanban" no menu,
-    // "Pipelines" no título desta tela, "Funis" no menu ao lado, "funil" em todo
-    // o corpo dela e "quadro" no onboarding inteiro. Três deles no mesmo
-    // viewport: o <h1> dizia "Pipelines", o estado vazio dizia "Sem pipelines
-    // configurados" e o botão embaixo dizia "Criar meu primeiro funil".
-    //
-    // Ficou "Funis" porque é o que esta tela É: a lista dos funis, de onde se
-    // abre o quadro de cada um. "Pipeline" é palavra de quem construiu o
-    // sistema; "funil de vendas" é palavra de quem vende.
     href: "/app/kanban",
     label: "Funis",
     description: "Seus funis de venda — clique em um para abrir o quadro de clientes.",
@@ -199,14 +186,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     sidebar: true,
   },
   {
-    // Estava enterrado em Configurações e ninguém sabia que existia — o achado
-    // que originou esta reorganização. A URL não muda; só o lugar na navegação.
-    //
-    // ⚠️ ERA "Funis", nome que ele DISPUTAVA com o destino acima: os dois
-    // listavam as mesmas linhas de `crm_pipelines`, lado a lado no mesmo grupo,
-    // com nomes que não diziam qual servia para quê. A diferença real é o VERBO,
-    // e é ela que o nome carrega agora: lá se ABRE o funil, aqui se CONFIGURA o
-    // que ele significa.
     href: "/app/settings/tenant/pipelines",
     label: "Etapas do funil",
     description: "As colunas de cada funil, o vocabulário do negócio e os motivos de perda.",
@@ -257,9 +236,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     minRole: "manager",
   },
   {
-    // O sistema chama modelo em 23 lugares e, até esta tela, a escolha vivia
-    // espalhada por três pilhas de código e sete variáveis de ambiente — não
-    // havia onde responder "quem usa IA aqui, e com qual chave?".
     href: "/app/ai/providers",
     label: "Provedores",
     description: "Qual inteligência atende cada parte do sistema — e o que acontece se ela falhar.",
@@ -267,11 +243,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",
-    // SEM `sidebar: true`, como as outras nove telas deste grupo. Adicionar as
-    // duas telas novas à sidebar estourou a dobra em 900px — medido pelo e2e
-    // `navegacao.spec.ts`, que existe justamente porque agrupar o menu o faz
-    // crescer. Configurar provedor é tarefa de poucas vezes; o caminho é o hub
-    // "Ver tudo em IA", igual a Credenciais, Conhecimento, Memória e Skills.
   },
   {
     href: "/app/ai/knowledge/sources",
@@ -318,8 +289,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     section: "Acompanhar o agente",
   },
   {
-    // Órfã: nenhum lugar do app linkava para cá. O flywheel gerava propostas de
-    // melhoria do agente e a fila só era vista por quem soubesse a URL.
     href: "/app/ai/proposals",
     label: "Propostas",
     description: "Melhorias que a IA sugere para si mesma, esperando sua decisão.",
@@ -328,10 +297,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     section: "Acompanhar o agente",
   },
   {
-    // A tela de Uso responde "quanto gastei". Esta responde a pergunta que não
-    // tinha lugar nenhum: "o agente parou de responder, o que aconteceu?".
-    // Antes da migration 0128 ela seria impossível de construir com honestidade
-    // — llm_calls só registrava sucesso.
     href: "/app/ai/runs",
     label: "Execuções",
     description: "O que a IA fez — e, quando falhou, o que aconteceu e o que fazer.",
@@ -339,8 +304,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     group: "ia",
     section: "Acompanhar o agente",
     minRole: "manager",
-    // Idem: fora da sidebar para o menu não passar da dobra. Quem vem para cá
-    // está diagnosticando, e chega pelo hub ou pelo link do aviso na Central.
   },
   {
     href: "/app/ai/usage",
@@ -356,10 +319,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   {
     href: "/app/connections",
     label: "Conexões",
-    // Cobre os DOIS caminhos desde o PR #105: número por QR e canal oficial da
-    // Meta (com os templates dele), cada um numa aba. A descrição cita "oficial"
-    // e "Meta" de propósito — é por esses nomes que se procura no ⌘K, e a busca
-    // varre a descrição além do rótulo.
     description:
       "Seus números de WhatsApp: por QR ou canal oficial da Meta, com saúde, reconexão e templates.",
     icon: PlugsConnected,
@@ -369,14 +328,11 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     healthDot: true,
   },
   {
-    // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
     href: "/app/integrations/nuvemshop",
     label: "Nuvemshop",
     description: "Conecte a loja para trazer pedidos e clientes para dentro do CRM.",
     icon: Storefront,
     group: "canais",
-    // A página não filtra por papel, mas as Server Actions de conectar e
-    // desconectar exigem admin — mostrar a um viewer seria oferecer botão morto.
     minRole: "admin",
     sidebar: true,
   },
@@ -393,14 +349,13 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   // ---- Análise — olhar o sistema funcionando ----
   {
     href: "/app/metrics",
-    label: "Desempenho",
-    description: "Funil e performance por atendente nos últimos 30 dias.",
+    label: "Relatórios",
+    description: "Delivery, receita gerada pela Sarah, funil e desempenho da operação.",
     icon: ChartBar,
     group: "analise",
     sidebar: true,
   },
   {
-    // Observabilidade, não configuração: por isso não fica junto dos agentes.
     href: "/app/ai/evolution",
     label: "Evolução da IA",
     description: "Se o agente está melhorando, onde ele erra e o que falta ensinar.",
@@ -453,9 +408,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     section: "Sua empresa",
   },
   {
-    // A porta que faltava (issue #144): rodízio de atendimento e restrição de
-    // visibilidade existiam inteiros no backend e não tinham NENHUMA tela — só
-    // dava para ligar com UPDATE à mão no banco.
     href: "/app/settings/atendimento",
     label: "Distribuição de atendimento",
     description: "Quem recebe cada cliente novo, e o que cada atendente enxerga.",
@@ -480,13 +432,7 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     icon: Palette,
     group: "organizacao",
     section: "Sua empresa",
-    // `admin` pelo mesmo motivo da linha de cima: o que se edita ali é
-    // identidade da empresa, e dá-lo a `manager` o colocaria abaixo de billing e
-    // de API tokens na mesma prancheta.
     minRole: "admin",
-    // SEM `sidebar`: fica só no hub. Trocar a marca é tarefa de uma vez, e
-    // agrupar o menu já o fez crescer — duas telas a mais estouraram a dobra em
-    // 900px, medido pelo e2e `navegacao.spec.ts`.
   },
   {
     href: "/app/settings/billing",
@@ -517,20 +463,12 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   },
 ];
 
-/**
- * Único ponto de decisão de permissão da navegação.
- *
- * É o que dispensa os sete `usePermission()` que o Sidebar chamava em sequência
- * — hooks não rodam em laço condicional, então cada permissão exigia sua linha.
- * Como função pura, um `.filter()` resolve todas.
- */
 export function canSee(d: NavDestination, isPlatformAdmin: boolean, role: Role | null): boolean {
   if (isPlatformAdmin) return true;
   if (!role) return false;
   return ROLE_RANK[role] >= ROLE_RANK[d.minRole ?? "viewer"];
 }
 
-/** Projeção do sidebar: só o uso diário, agrupado, sem grupo vazio. */
 export function sidebarGroups(
   isPlatformAdmin: boolean,
   role: Role | null,
@@ -543,13 +481,6 @@ export function sidebarGroups(
   })).filter((g) => g.items.length > 0);
 }
 
-/**
- * Projeção do hub: TODAS as telas do grupo — inclusive as que já estão no
- * sidebar. O hub é inventário, não sobra; é onde se descobre o que existe.
- *
- * A ordem das seções é a de primeira aparição no registro, então reordenar a
- * jornada é reordenar o array — não há uma segunda lista para manter em sincronia.
- */
 export function hubSections(
   group: NavGroupId,
   isPlatformAdmin: boolean,
@@ -566,7 +497,6 @@ export function hubSections(
   return [...porSecao.entries()].map(([section, items]) => ({ section, items }));
 }
 
-/** Projeção do ⌘K: todo destino visível, do sidebar ou não. */
 export function searchable(isPlatformAdmin: boolean, role: Role | null): NavDestination[] {
   return NAV_DESTINATIONS.filter((d) => canSee(d, isPlatformAdmin, role));
 }
