@@ -1,13 +1,9 @@
 /**
- * POST /api/v1/webhooks/waha/[token]
+ * /api/v1/webhooks/waha/[token]
  *
- * Rota per-tenant canônica de produção: cada channel_session tem um
- * webhook_path_token único url-safe. Pipeline: lookup por token -> verifica
- * HMAC SHA512 -> loga em webhook_events_log -> dispatchWahaEvent (ingestão
- * compartilhada, ver lib/waha/ingest.ts).
- *
- * Idempotência e resolução atômica de contato/conversa vivem no módulo
- * compartilhado — este handler só faz auth + roteamento.
+ * POST = webhook per-session canônico de produção.
+ * GET ?repair=1 = auto-reparo idempotente e estreitamente escopado: o token só
+ * pode reparar a própria channel_session e a URL é sempre esta própria rota.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
@@ -17,6 +13,7 @@ import { audit } from "@/lib/audit";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dispatchWahaEvent, type WahaEnvelope } from "@/lib/waha/ingest";
+import { ensureWahaSessionWebhook } from "@/lib/waha/session-webhook";
 import { authenticateWahaWebhook } from "@/lib/waha/webhook-auth";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +21,58 @@ export const runtime = "nodejs";
 
 interface RouteCtx {
   params: Promise<{ token: string }>;
+}
+
+/**
+ * Diagnóstico + reparo operacional para a sessão já pareada.
+ * Não aceita session name nem URL do chamador: ambos vêm do banco/req atual.
+ */
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
+  const requestId = randomUUID();
+  const { token } = await ctx.params;
+  if (!token || token.length < 8) {
+    return fail("not_found", "unknown webhook token", 404, { requestId });
+  }
+  if (new URL(req.url).searchParams.get("repair") !== "1") {
+    return fail("not_found", "unknown webhook token", 404, { requestId });
+  }
+
+  const admin = createAdminClient();
+  const base = () =>
+    admin
+      .from("channel_sessions")
+      .select("id, organization_id, waha_session_name, status")
+      .eq("webhook_path_token", token);
+  const { data: session, error } = await queryTolerantToMissingArchived(
+    () => base().is(ARCHIVED_AT, null).maybeSingle(),
+    () => base().maybeSingle(),
+  );
+  if (error) return fail("internal_error", error.message, 500, { requestId });
+  if (!session?.waha_session_name) {
+    return fail("not_found", "unknown webhook token", 404, { requestId });
+  }
+
+  const webhookUrl = `${new URL(req.url).origin}/api/v1/webhooks/waha/${encodeURIComponent(token)}`;
+  try {
+    await ensureWahaSessionWebhook(session.waha_session_name, webhookUrl);
+  } catch (err) {
+    return fail(
+      "waha_webhook_repair_failed",
+      err instanceof Error ? err.message : "webhook repair failed",
+      502,
+      { requestId },
+    );
+  }
+
+  return ok(
+    {
+      repaired: true,
+      channel_session_id: session.id,
+      session_status: session.status,
+      webhook_url: webhookUrl,
+    },
+    { requestId },
+  );
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
@@ -44,10 +93,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
 
   const admin = createAdminClient();
 
-  // Canal ARQUIVADO não ingere: o usuário mandou excluí-lo e a sessão já foi
-  // removida do WAHA. O que ainda pode chegar é evento em voo (ou retentativa),
-  // e aceitá-lo ressuscitaria o canal no inbox — com o operador sem conseguir
-  // responder, porque o arquivamento deixa a sessão STOPPED.
   const base = () =>
     admin
       .from("channel_sessions")
@@ -67,7 +112,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     return fail("not_found", "unknown webhook token", 404, { requestId });
   }
 
-  // Autenticação fail-closed — regras e o porquê em lib/waha/webhook-auth.ts.
   const sigHeader = req.headers.get("x-webhook-hmac") ?? req.headers.get("X-Webhook-Hmac");
   let sessionSecret: string | null = null;
   try {
