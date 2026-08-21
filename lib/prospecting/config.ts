@@ -55,6 +55,7 @@ export interface ProspectingConfig {
   googlePlacesApiKey: string;
   overpassUrls: string[];
   overpassBbox: string;
+  overpassUserAgent: string;
   enabled: boolean;
   outboundEnabled: boolean;
   dryRun: boolean;
@@ -77,6 +78,7 @@ export function loadProspectingConfig(): ProspectingConfig {
       "https://overpass.kumi.systems/api/interpreter",
     ]),
     overpassBbox: (process.env.PROSPECTING_OVERPASS_BBOX ?? "-23.45,-46.20,-22.65,-45.30").trim(),
+    overpassUserAgent: (process.env.PROSPECTING_OVERPASS_USER_AGENT ?? "GMProspecting/1.0 (tenant: gabarron-mathias)").trim(),
     enabled: bool(process.env.PROSPECTING_ENABLED, false),
     outboundEnabled: bool(process.env.OUTBOUND_ENABLED, false),
     dryRun: bool(process.env.PROSPECTING_DRY_RUN, true),

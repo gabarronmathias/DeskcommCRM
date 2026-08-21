@@ -50,6 +50,7 @@ async function handle(request: NextRequest): Promise<Response> {
         limit: config.dailyLimit,
         bbox: config.overpassBbox,
         urls: config.overpassUrls,
+        userAgent: config.overpassUserAgent,
       });
       for (const place of places) {
         unique.set(`${place.source}:${place.sourceId}`, place);

@@ -8862,7 +8862,7 @@ comment on column public.automation_rules.last_change_actor_kind is
 
 notify pgrst, 'reload schema';
 
--- ---- fila de prospecção foodservice (migration 20260821120000) ----
+-- ---- 20260821120000_foodservice_prospecting_queue ----
 create table if not exists public.prospecting_outbound_queue (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,

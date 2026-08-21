@@ -110,7 +110,7 @@ export async function searchFoodserviceOpenStreetMap(input: {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-          "User-Agent": input.userAgent ?? "DeskcommCRM/1.0 (+https://deskcomm-crm-mu.vercel.app)",
+          "User-Agent": input.userAgent ?? "GMProspecting/1.0 (tenant: gabarron-mathias)",
         },
         body,
         signal: input.signal,
