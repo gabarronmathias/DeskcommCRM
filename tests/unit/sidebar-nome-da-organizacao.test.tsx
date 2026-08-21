@@ -87,4 +87,16 @@ describe("o nome da marca na barra lateral", () => {
     expect(screen.getByText("L")).toBeTruthy();
     expect(screen.queryByText("S")).toBeNull();
   });
+
+  it("usa o logo da organização e mantém o nome legível", () => {
+    contexto = {
+      user: usuario,
+      activeOrg: { ...org, marca: { nome: "Gabarron & Mathias", logoUrl: "/branding/gabarron-mathias-logo.jpg" } },
+    };
+    render(<Sidebar collapsed={false} />);
+    expect(screen.getByRole("img", { name: "Gabarron & Mathias" }).getAttribute("src")).toBe(
+      "/branding/gabarron-mathias-logo.jpg",
+    );
+    expect(screen.getByText("Gabarron & Mathias")).toBeTruthy();
+  });
 });

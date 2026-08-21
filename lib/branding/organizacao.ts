@@ -77,6 +77,7 @@ export function marcaDaOrganizacaoDeSettings(settings: unknown): MarcaDaOrganiza
   const envelope = bruto as Record<string, unknown>;
   return {
     app_name: texto(envelope.app_name),
+    logo_url: texto(envelope.logo_url),
     accent_hex: texto(envelope.accent_hex),
   };
 }

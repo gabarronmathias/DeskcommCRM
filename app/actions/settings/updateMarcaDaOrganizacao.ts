@@ -116,11 +116,15 @@ export async function updateMarcaDaOrganizacao(
   // Os dois campos vazios significam "volte ao que vem da instalação", e é `null`
   // que a função entende como apagar a chave `branding` — gravar `{}` deixaria um
   // envelope vazio que o resolvedor teria de aprender a ignorar.
-  const limpar = parsed.data.app_name === null && parsed.data.accent_hex === null;
+  const limpar =
+    parsed.data.app_name === null &&
+    parsed.data.logo_url === null &&
+    parsed.data.accent_hex === null;
   const marca = limpar
     ? null
     : {
         app_name: parsed.data.app_name,
+        logo_url: parsed.data.logo_url,
         // Normaliza porque a função valida com `^#[0-9a-f]{6}$`: `#FFF` e
         // `#FFFFFF` passam pelo Zod (o validador do domínio aceita as duas
         // formas) e só uma das duas passa pelo banco. Normalizar aqui é o que faz
@@ -181,6 +185,7 @@ export async function updateMarcaDaOrganizacao(
       fields_changed: Object.keys(parsed.data),
       accent_definido: parsed.data.accent_hex !== null,
       nome_definido: parsed.data.app_name !== null,
+      logo_definido: parsed.data.logo_url !== null,
     },
   });
 

@@ -17,6 +17,8 @@
 import type { VercelConfig } from "@vercel/config/v1";
 
 const config: VercelConfig = {
+  // O scheduler persistente (Render/self-host) chama as rotas internas. Manter
+  // Vercel Cron vazio evita dois schedulers disputando o mesmo claim.
   crons: [],
   functions: {
     // EPIC-13 S-13.08: ToolLoopAgent runtime can issue multiple tool calls per

@@ -75,6 +75,7 @@ export default async function MarcaDaOrganizacaoPage() {
       <FormularioDaMarcaDaOrganizacao
         gravada={{
           app_name: gravada?.app_name ?? null,
+          logo_url: gravada?.logo_url ?? null,
           accent_hex: gravada?.accent_hex ?? null,
         }}
         // As DUAS camadas de baixo descem para o formulário, e não uma resolução

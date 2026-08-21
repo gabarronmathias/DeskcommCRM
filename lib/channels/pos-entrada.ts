@@ -72,6 +72,26 @@ type Admin = ReturnType<typeof createAdminClient>;
  */
 export const STOP_RX = /(?<![\p{L}\p{N}])(STOP|PARAR|SAIR|UNSUBSCRIBE)(?![\p{L}\p{N}])/iu;
 
+const PEDIDOS_EXPLICITOS_DE_SAIDA: readonly RegExp[] = [
+  /\bnao\s+(?:tenho|temos)\s+interesse\b/,
+  /\bnao\s+me\s+cham(?:a|e|em)\s+mais\b/,
+  /\bnao\s+(?:me\s+)?envi(?:e|a|em)\s+(?:mais\s+)?mensage(?:m|ns)\b/,
+  /\bnao\s+quero\s+(?:mais\s+)?receber\b(?!\s+(?:ligacao|ligacoes|chamada|chamadas|telefonema|telefonemas|telefone)\b)/,
+  /\bremov(?:a|am|e)\s+(?:o\s+)?meu\s+numero\b/,
+  /\bpare(?:m)?\s+(?:de\s+)?(?:me\s+)?(?:chamar|enviar|mandar)\b/,
+];
+
+function semAcento(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/** Pedido inequívoco de não contato, compartilhado por todos os canais. */
+export function pediuOptOut(texto: string): boolean {
+  const normalizado = semAcento(texto).trim();
+  const palavraSozinha = /^(?:stop|parar|pare|sair|unsubscribe)[.!?\s]*$/.test(normalizado);
+  return palavraSozinha || PEDIDOS_EXPLICITOS_DE_SAIDA.some((rx) => rx.test(normalizado));
+}
+
 export interface EntradaDeMensagem {
   organizationId: string;
   contactId: string;
@@ -122,7 +142,7 @@ export async function aplicarEfeitosPosEntrada(
  * é justamente o que prova, depois, que o pedido chegou e foi respeitado.
  */
 async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
-  if (!entrada.texto || !STOP_RX.test(entrada.texto)) return;
+  if (!entrada.texto || !pediuOptOut(entrada.texto)) return;
 
   try {
     const agora = new Date().toISOString();

@@ -43,7 +43,11 @@ import { marcaDaOrganizacaoSchema } from "@/lib/schemas/settings";
 
 interface Props {
   /** O que está gravado em `settings.branding` desta organização. */
-  readonly gravada: { readonly app_name: string | null; readonly accent_hex: string | null };
+  readonly gravada: {
+    readonly app_name: string | null;
+    readonly logo_url: string | null;
+    readonly accent_hex: string | null;
+  };
   /** A linha da marca da INSTALAÇÃO — a camada logo abaixo desta. */
   readonly instalacao: LinhaDaInstalacao;
   /** O arquivo de instalação do servidor — o fundo da pilha. */
@@ -106,6 +110,7 @@ function LinhaDeOrigem({ campo, valor }: { campo: string; valor: string }) {
 export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }: Props) {
   const router = useRouter();
   const [nome, setNome] = useState(gravada.app_name ?? "");
+  const [logoUrl, setLogoUrl] = useState(gravada.logo_url ?? "");
   const [hex, setHex] = useState(gravada.accent_hex ?? "");
   const [erroTecnico, setErroTecnico] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -131,13 +136,14 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
         [
           camadaDaOrganizacao({
             app_name: nomeLimpo.length > 0 ? nomeLimpo : null,
+            logo_url: logoUrl.trim().length > 0 ? logoUrl.trim() : null,
             accent_hex: hexLimpo.length > 0 ? hexLimpo : null,
           }),
           ...abaixo,
         ],
         REGUA_DO_PRODUTO,
       ),
-    [nomeLimpo, hexLimpo, abaixo],
+    [nomeLimpo, logoUrl, hexLimpo, abaixo],
   );
 
   // A MESMA serialização, com o MESMO escopo, que o layout de `/app` roda no
@@ -201,6 +207,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
     // par de `null` em apagar a chave inteira, e não em gravar um envelope vazio.
     const lido = marcaDaOrganizacaoSchema.safeParse({
       app_name: nomeLimpo.length > 0 ? nomeLimpo : null,
+      logo_url: logoUrl.trim().length > 0 ? logoUrl.trim() : null,
       accent_hex: hexLimpo.length > 0 ? hexLimpo : null,
     });
     if (!lido.success) {
@@ -249,6 +256,21 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
           <p className="text-xs text-text-muted">
             Aparece no menu lateral, para quem trabalha aqui. Deixe em branco para usar{" "}
             {semAOrganizacao.name}.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="org_logo_url">Logo</Label>
+          <Input
+            id="org_logo_url"
+            value={logoUrl}
+            onChange={(e) => setLogoUrl(e.target.value)}
+            placeholder="/branding/sua-empresa-logo.jpg"
+            maxLength={2048}
+            autoComplete="off"
+          />
+          <p className="text-xs text-text-muted">
+            Use uma URL HTTPS ou um arquivo público iniciado por /. O menu mantém o logo em 40 px, sem deformar.
           </p>
         </div>
 

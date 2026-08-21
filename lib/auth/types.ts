@@ -86,13 +86,10 @@ export interface ActiveOrg {
    * organização. Ausente significa "vale o nome de cima" — o da instalação —,
    * que é exatamente o que o menu já mostrava.
    *
-   * Sem `logoUrl`: a camada da organização não fala de logo nesta fase, e um
-   * campo aqui prometeria à próxima pessoa um dado que ninguém grava.
-   *
    * A rota é a que já existe: layout → `AuthProvider` → `useAuth()`. É como o
    * nome atravessa a fronteira servidor/navegador sem plumbing nova — `branding()`
    * lê `window.__PUBLIC_ENV__`, não o banco, e por isso nem a marca da instalação
    * GRAVADA chega ao menu hoje.
    */
-  marca?: { readonly nome: string };
+  marca?: { readonly nome: string; readonly logoUrl?: string };
 }

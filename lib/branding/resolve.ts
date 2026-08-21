@@ -439,6 +439,7 @@ export function camadaDoAmbiente(fonte: {
  */
 export type MarcaDaOrganizacao = {
   readonly app_name?: string | null;
+  readonly logo_url?: string | null;
   readonly accent_hex?: string | null;
 };
 
@@ -466,6 +467,12 @@ export type MarcaDaOrganizacao = {
 export function camadaDaOrganizacao(marca: MarcaDaOrganizacao | null): CamadaDeMarca {
   if (!marca) return { origem: "organizacao" };
   const hex = (marca.accent_hex ?? "").trim();
-  if (hex.length === 0) return { origem: "organizacao", nome: marca.app_name };
-  return { origem: "organizacao", nome: marca.app_name, cor: envelopeDeSemente(hex) };
+  const logoUrl = (marca.logo_url ?? "").trim() || undefined;
+  const base: CamadaDeMarca = {
+    origem: "organizacao",
+    nome: marca.app_name,
+    ...(logoUrl ? { logoUrl } : {}),
+  };
+  if (hex.length === 0) return base;
+  return { ...base, cor: envelopeDeSemente(hex) };
 }

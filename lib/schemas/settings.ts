@@ -196,6 +196,15 @@ export type PlatformBrandingInput = z.infer<typeof platformBrandingSchema>;
  */
 export const marcaDaOrganizacaoSchema = z.object({
   app_name: z.string().trim().min(1).max(120).nullable(),
+  logo_url: z
+    .string()
+    .trim()
+    .max(2048)
+    .refine((v) => v.startsWith("/") || URL.canParse(v), {
+      message: "Use uma URL completa ou um caminho iniciado por /",
+    })
+    .nullable()
+    .default(null),
   accent_hex: z
     .string()
     .trim()

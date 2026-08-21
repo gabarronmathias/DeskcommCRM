@@ -1,0 +1,55 @@
+import { describe, expect, it } from "vitest";
+
+import { pediuOptOut } from "@/lib/channels/pos-entrada";
+import { isWithinBusinessHours, loadProspectingConfig, OPENING_MESSAGE } from "./config";
+import { domainOf, normalizeBrazilianCommercialPhone, segmentTag } from "./normalization";
+
+describe("prospecção foodservice", () => {
+  it("normaliza telefone comercial brasileiro e rejeita forma curta", () => {
+    expect(normalizeBrazilianCommercialPhone("(12) 99999-0000")).toBe("+5512999990000");
+    expect(normalizeBrazilianCommercialPhone("12345")).toBeNull();
+  });
+
+  it("normaliza domínio e segmento sem criar tags instáveis", () => {
+    expect(domainOf("https://www.exemplo.com.br/cardapio")).toBe("exemplo.com.br");
+    expect(segmentTag("Restaurante japonês / sushi")).toBe("japones");
+  });
+
+  it("personaliza a abertura sem inventar dono ou relacionamento anterior", () => {
+    const text = OPENING_MESSAGE("Padaria Teste");
+    expect(text).toContain("Vi a Padaria Teste");
+    expect(text).not.toContain("obrigado por entrar em contato");
+    expect(text).not.toContain("dono");
+  });
+
+  it.each([
+    "STOP",
+    "Não tenho interesse.",
+    "Não me chama mais",
+    "Remova meu número",
+    "Não envie mensagens",
+    "Não quero receber mais",
+  ])("reconhece opt-out explícito: %s", (text) => expect(pediuOptOut(text)).toBe(true));
+
+  it("não bloqueia conversa normal com palavra parecida", () => {
+    expect(pediuOptOut("Vou parar por aqui e amanhã continuamos")).toBe(false);
+    expect(pediuOptOut("Não quero receber ligação, prefiro WhatsApp")).toBe(false);
+  });
+
+  it("nasce desligada, em dry-run e limitada a 20", () => {
+    const old = { ...process.env };
+    delete process.env.PROSPECTING_ENABLED;
+    delete process.env.OUTBOUND_ENABLED;
+    delete process.env.PROSPECTING_DRY_RUN;
+    delete process.env.PROSPECTING_DAILY_LIMIT;
+    const config = loadProspectingConfig();
+    expect(config).toMatchObject({ enabled: false, outboundEnabled: false, dryRun: true, dailyLimit: 20 });
+    process.env = old;
+  });
+
+  it("respeita janela comercial e fim de semana", () => {
+    const cfg = { ...loadProspectingConfig(), timezone: "America/Sao_Paulo", businessHourStart: 9, businessHourEnd: 18 };
+    expect(isWithinBusinessHours(cfg, new Date("2026-08-21T15:00:00Z"))).toBe(true);
+    expect(isWithinBusinessHours(cfg, new Date("2026-08-22T15:00:00Z"))).toBe(false);
+  });
+});

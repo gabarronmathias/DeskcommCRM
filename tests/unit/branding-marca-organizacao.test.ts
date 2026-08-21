@@ -52,12 +52,9 @@ describe("camadaDaOrganizacao — o que a fábrica declara e o que ela cala", ()
     }
   });
 
-  it("NUNCA declara logo — upload é a fase seguinte", () => {
-    // Uma camada que declarasse `logoUrl: null` não apagaria nada, mas ensinaria
-    // a próxima pessoa a achar que o campo já existe. O logo da instalação
-    // continua valendo por precedência de campo.
+  it("só declara logo quando a organização configurou um", () => {
     expect("logoUrl" in camadaDaOrganizacao({ app_name: "Loja da Ana" })).toBe(false);
-    expect("logoUrl" in camadaDaOrganizacao({ accent_hex: "#b3261e" })).toBe(false);
+    expect(camadaDaOrganizacao({ logo_url: "/branding/loja.jpg" }).logoUrl).toBe("/branding/loja.jpg");
   });
 
   it("um hex vira envelope da versão de hoje, não a rampa derivada", () => {
@@ -93,6 +90,17 @@ describe("precedência entre os três andares", () => {
     expect(marca.origens.nome).toBe("organizacao");
     expect(marca.origens.cor).toBe("banco");
     expect(marca.cor?.semente).toBe("#2563eb");
+  });
+
+  it("o logo da ORGANIZAÇÃO vence sem arrastar nome ou cor", () => {
+    const marca = resolverMarcaDaOrganizacao(
+      { branding: { logo_url: "/branding/loja.jpg" } },
+      INSTALACAO,
+      AMBIENTE,
+    );
+    expect(marca.logoUrl).toBe("/branding/loja.jpg");
+    expect(marca.origens.logoUrl).toBe("organizacao");
+    expect(marca.name).toBe("Revenda XPTO");
   });
 
   it("organização SEM cor cai na instalação e NÃO emite motivo", () => {
@@ -177,6 +185,7 @@ describe("ler `settings.branding` sem confiar em nada", () => {
     // o campo errado no diagnóstico — o admin procuraria o defeito no lugar errado.
     expect(marcaDaOrganizacaoDeSettings({ branding: { app_name: 7, accent_hex: { a: 1 } } })).toEqual({
       app_name: null,
+      logo_url: null,
       accent_hex: null,
     });
   });
@@ -189,7 +198,7 @@ describe("ler `settings.branding` sem confiar em nada", () => {
         visibility_mode: "own",
         branding: { app_name: "Loja da Ana", accent_hex: "#b3261e", logo_url: "https://x/y.svg", updated_by: "u" },
       }),
-    ).toEqual({ app_name: "Loja da Ana", accent_hex: "#b3261e" });
+    ).toEqual({ app_name: "Loja da Ana", logo_url: "https://x/y.svg", accent_hex: "#b3261e" });
   });
 });
 

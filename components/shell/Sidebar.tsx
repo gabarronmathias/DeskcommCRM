@@ -47,6 +47,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
    * exatamente o que via antes.
    */
   const nome = activeOrg?.marca?.nome ?? brand.name;
+  const logoUrl = activeOrg?.marca?.logoUrl ?? brand.logoUrl;
 
   return (
     <aside
@@ -55,8 +56,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         collapsed ? "w-16" : "w-60",
       )}
     >
-      <div className={cn("flex items-center border-b px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
-        {brand.logoUrl && !collapsed ? (
+      <div className={cn("flex items-center gap-2 border-b px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
+        {logoUrl && !collapsed ? (
           // <img> em vez de next/image de propósito: a URL vem do .env de quem hospeda,
           // e next/image exige allowlist de domínios fechada em build — a imagem
           // pré-buildada rejeitaria o domínio do self-hoster. Altura fixa e largura
@@ -64,15 +65,16 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           // distorceria o logo de quem configurou.
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={brand.logoUrl}
-            alt={brand.name}
-            className="h-7 w-auto max-w-[10rem] object-contain"
+            src={logoUrl}
+            alt={nome}
+            className="h-10 w-10 shrink-0 rounded-md bg-white/80 object-contain p-0.5"
           />
-        ) : (
+        ) : null}
+        {!collapsed ? (
           <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
             {nome}
           </span>
-        )}
+        ) : null}
         {collapsed && (
           <span aria-hidden className="text-lg font-bold text-primary">
             {/* Spread e não `[0]`: nome começando com emoji ou acento composto

@@ -84,8 +84,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // produto) e o menu passaria a ler um caminho novo para exibir exatamente o
     // que já exibia — trocando a fonte sem trocar o valor, que é como se cria
     // uma regressão invisível.
-    if (marca.origens.nome === "organizacao") {
-      activeOrg = { ...activeOrg, marca: { nome: marca.name } };
+    if (marca.origens.nome === "organizacao" || marca.origens.logoUrl === "organizacao") {
+      activeOrg = {
+        ...activeOrg,
+        marca: {
+          nome: marca.name,
+          ...(marca.origens.logoUrl === "organizacao" && marca.logoUrl
+            ? { logoUrl: marca.logoUrl }
+            : {}),
+        },
+      };
     }
   }
 

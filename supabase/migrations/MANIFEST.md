@@ -196,6 +196,8 @@ aplica.
 
 ## Reproducibility
 
+| `20260821120000` | `foodservice_prospecting_queue` | Fila Postgres tenant-scoped para a cadência D0 + D+2, claim atômico, idempotência por chave, cancelamento imediato em inbound e STOP, RLS/revokes, e deduplicação forte por Google Place ID. |
+
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.
 
 To re-apply on a fresh Supabase project, replay the migrations in version order via `supabase db push` (Supabase CLI) or via the MCP.
