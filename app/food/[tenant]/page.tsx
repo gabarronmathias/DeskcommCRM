@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 
+import { randomId } from "@/lib/random-id";
+
 type StorefrontConfig = {
   identity?: string;
   subbrand?: string;
@@ -102,8 +104,7 @@ function money(cents: number, currency = "BRL") {
 }
 
 function randomKey() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  return randomId();
 }
 
 export default function FoodStorefrontPage() {
@@ -266,8 +267,8 @@ const quickCards =
       .slice(0, 2);
   }, [catalog, lastAddedProductId, cartProductIds, productMap]);
 
-  const checkoutSuggestion = useMemo(() => {
-    if (!catalog || cart.length === 0) return null;
+  const checkoutSuggestion = (() => {
+    if (!catalog || cartProductIds.size === 0) return null;
     const rules = catalog.recommendation_rules
       .filter(
         (rule) =>
@@ -283,7 +284,7 @@ const quickCards =
       if (product) return { rule, product };
     }
     return null;
-  }, [catalog, cart, cartProductIds, productMap]);
+  })();
 
   const featured = useMemo(() => {
     if (!catalog) return null;
@@ -946,10 +947,7 @@ const quickCards =
   );
 }
 
-function NoSuggestions({
-  onClose,
-  onOpenCart,
-}: {
+function NoSuggestions({ onClose }: {
   onClose: () => void;
   onOpenCart: () => void;
 }) {

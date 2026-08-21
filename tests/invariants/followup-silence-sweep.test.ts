@@ -386,22 +386,16 @@ describe("runSilenceSweep — boundary de threshold", () => {
 
 // ---- 3b. redução anti-spam (o ponto mais arriscado da lógica) -----------
 
-describe("runSilenceSweep — redução anti-spam (multi-conversa + never-inbound)", () => {
-  it("contato com 2 conversas — 1 antiga silenciosa + 1 RECENTE (dentro do threshold) → NÃO enrolla", async () => {
+describe("runSilenceSweep — redução anti-spam (conversa canônica + never-inbound)", () => {
+  it("o banco impede duas conversas 1:1 para o mesmo contato", async () => {
     const org = nextOrgId();
     await seedOrg(org);
-    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60 });
-    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
     const contactId = await seedContact(org);
-    // conversa OLD: 120min de silêncio (> threshold 60, sozinha enrollaria).
     await seedConversation(org, contactId, 120);
-    // conversa NEW: 5min — o contato respondeu recentemente por OUTRA conversa.
-    await seedConversation(org, contactId, 5);
-
-    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
-    expect(summary.pointers_gated_out).toBe(0); // não foi o gate que bloqueou
-    expect(summary.enrolled).toBe(0); // a redução MAX(last_inbound_at) pegou a conversa recente, não a velha
-    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+    await expect(seedConversation(org, contactId, 5)).rejects.toMatchObject({
+      code: "23505",
+      constraint: "uniq_conversations_1to1_per_contact",
+    });
   });
 
   it("contato cuja ÚNICA conversa nunca recebeu inbound (last_inbound_at NULL) → NÃO enrolla", async () => {

@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { branding } from "@/lib/branding";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+
 import OrderAlert from "./OrderAlert";
 
 type FoodStatus =
@@ -156,6 +160,7 @@ function nextAction(order: Order): {
 }
 
 export default function OrdersPage() {
+  const appName = branding().name;
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -189,10 +194,10 @@ export default function OrdersPage() {
         );
 
         if (hasNewOrder && typeof window !== "undefined") {
-          document.title = "🔔 Novo pedido | Deskcomm";
+          document.title = `🔔 Novo pedido | ${appName}`;
 
           setTimeout(() => {
-            document.title = "Pedidos | Deskcomm";
+            document.title = `Pedidos | ${appName}`;
           }, 10000);
         }
       }
@@ -211,7 +216,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [appName]);
 
   useEffect(() => {
     void loadOrders();
@@ -411,11 +416,7 @@ export default function OrdersPage() {
                 column.orders.map((order) => {
                   const status = order.food_status ?? "new";
                   const action = nextAction(order);
-                  const customer =
-                    order.contacts?.display_name ||
-                    order.contacts?.name ||
-                    order.contacts?.phone_number ||
-                    "Cliente";
+                  const customer = rotuloDoContato(order.contacts);
 
                   const fulfillment =
                     order.payload?.fulfillment ?? "retirada";

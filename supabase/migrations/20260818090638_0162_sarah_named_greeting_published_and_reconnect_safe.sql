@@ -209,6 +209,11 @@ begin
   limit 1;
 
   if not found then
+    -- Instalações novas não têm a organização de demonstração. A asserção só
+    -- deve bloquear quando a Capri existe e está com a publicação inconsistente.
+    if not exists (select 1 from public.organizations where slug='capri') then
+      return;
+    end if;
     raise exception 'capri_published_sarah_working_session_not_found';
   end if;
 

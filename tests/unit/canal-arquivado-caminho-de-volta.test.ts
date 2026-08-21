@@ -35,6 +35,7 @@ import { validateMetaCredentials } from "@/lib/channels/meta/validate-credential
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
+import { ensureWahaSessionWebhook } from "@/lib/waha/session-webhook";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -52,6 +53,11 @@ vi.mock("@/lib/channels/meta/validate-credentials", () => ({ validateMetaCredent
 vi.mock("@/lib/waha/client", () => ({
   getWahaClient: vi.fn(),
   wahaFriendlyError: (m: string) => m,
+}));
+vi.mock("@/lib/waha/session-webhook", () => ({
+  canonicalWahaWebhookUrl: (requestUrl: string, token: string) =>
+    `${new URL(requestUrl).origin}/api/v1/webhooks/waha/${encodeURIComponent(token)}`,
+  ensureWahaSessionWebhook: vi.fn(async () => false),
 }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
@@ -113,6 +119,7 @@ function canalQr(over: Linha = {}): Linha {
     display_name: "Vendas",
     phone_number: "+5531999998888",
     status: "WORKING",
+    webhook_path_token: "token-webhook-teste",
     archived_at: null,
     ...over,
   };
@@ -266,6 +273,7 @@ const patchDe = (r: Registro, i = 0): Linha => r.escritas[i]?.patch ?? {};
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(ensureWahaSessionWebhook).mockResolvedValue(false);
   vi.mocked(encryptWebhookSecret).mockResolvedValue("cifra-nova" as never);
   vi.mocked(validateMetaCredentials).mockResolvedValue({
     ok: true,
@@ -436,6 +444,10 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
     expect(res.status).toBe(200);
     expect(waha.stopSession).toHaveBeenCalledWith(NOME_SESSAO);
     expect(waha.startSession).toHaveBeenCalledWith(NOME_SESSAO);
+    expect(ensureWahaSessionWebhook).toHaveBeenCalledWith(
+      NOME_SESSAO,
+      expect.stringContaining("/api/v1/webhooks/waha/token-webhook-teste"),
+    );
     expect(db.linhas[0]?.status).toBe("STARTING");
   });
 
@@ -448,6 +460,10 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
 
     expect(res.status).toBe(200);
     expect(waha.startSession).toHaveBeenCalledWith(NOME_SESSAO);
+    expect(ensureWahaSessionWebhook).toHaveBeenCalledWith(
+      NOME_SESSAO,
+      expect.stringContaining("/api/v1/webhooks/waha/token-webhook-teste"),
+    );
   });
 
   /**
@@ -506,6 +522,10 @@ describe("POST /api/v1/onboarding/whatsapp/session — retomar o pareamento ress
     // o campo quando ele está vazio, então guardar o antigo o congelaria errado.
     expect(db.linhas[0]?.phone_number).toBeNull();
     expect(waha.startSession).toHaveBeenCalledWith(NOME_SESSAO);
+    expect(ensureWahaSessionWebhook).toHaveBeenCalledWith(
+      NOME_SESSAO,
+      expect.stringContaining("/api/v1/webhooks/waha/token-webhook-teste"),
+    );
   });
 
   it("linha ATIVA é reaproveitada sem escrita nenhuma", async () => {

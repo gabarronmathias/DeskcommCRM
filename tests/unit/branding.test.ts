@@ -196,6 +196,18 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "User-Agent exigido pela Nuvemshop, que identifica a aplicação registrada na plataforma deles. Trocar pelo nome do revendedor descreveria uma aplicação que não existe lá",
     marcas: ["deskcommcrm"],
   },
+  "app/api/v1/orders/route.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "valor persistido de external_provider que separa pedidos do checkout nativo dos pedidos de integrações; renomear quebraria consultas do histórico já gravado",
+    marcas: ["deskcomm_food"],
+  },
+  "app/api/v1/orders/[id]/status/route.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "o mesmo valor persistido de external_provider usado para impedir que a rota de status altere pedidos pertencentes a outro provedor",
+    marcas: ["deskcomm_food"],
+  },
 
   // ─── INFRA — cookie/storage/contêiner. Renomear desloga ou perde estado. ───
   "app/layout.tsx": {
@@ -230,6 +242,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     categoria: "INFRA",
     motivo: "o mesmo cookie de impersonação, na cópia que o middleware edge consegue importar",
     marcas: ["deskcomm-impersonate"],
+  },
+  "app/food/[tenant]/page.tsx": {
+    categoria: "INFRA",
+    motivo:
+      "chave de localStorage da sessão anônima do checkout; renomear perde a continuidade e a idempotência dos carrinhos já abertos no navegador",
+    marcas: ["deskcomm-food-session", "deskcomm-food-session", "deskcomm-food-session"],
   },
 
   "hooks/ai/useDebugToggle.ts": {

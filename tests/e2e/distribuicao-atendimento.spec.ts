@@ -34,7 +34,7 @@ function loadCreds(): Creds {
     const c = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
     return !c.users?.manager;
   };
-  if (precisa()) execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+  if (precisa()) execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
   return JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
 }
 

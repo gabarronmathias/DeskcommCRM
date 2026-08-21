@@ -28,11 +28,11 @@ function loadCreds(): Creds {
     return !c.users?.manager;
   };
   if (needsBase()) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
   }
   let c = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
   if (!c.kanban?.pipeline_id) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-kanban.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-kanban.ts"], { stdio: "inherit" });
     c = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
   }
   return c;

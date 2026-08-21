@@ -39,7 +39,7 @@ interface Creds {
 }
 
 function seed(script: string): void {
-  execFileSync("npx", ["tsx", `scripts/${script}`], { stdio: "inherit" });
+  execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", `scripts/${script}`], { stdio: "inherit" });
 }
 
 function loadCreds(): Creds {

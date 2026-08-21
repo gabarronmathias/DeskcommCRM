@@ -32,7 +32,7 @@ function loadCreds(): E2ECreds {
     return !c.users?.viewer || !c.admin_totp?.secret;
   };
   if (needsSeed()) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
   }
   return JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as E2ECreds;
 }

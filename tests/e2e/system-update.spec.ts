@@ -47,11 +47,11 @@ function loadCreds(): E2ECreds {
     return !c.users?.agent || !c.admin_totp?.secret;
   };
   if (needsSeed()) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
   }
   // Dono do servidor (platform_admins) + system_version/system_update_runs
   // limpos — idempotente, roda sempre pra deixar o teste repetível.
-  execFileSync("npx", ["tsx", "scripts/seed-e2e-system-update.ts"], { stdio: "inherit" });
+  execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-system-update.ts"], { stdio: "inherit" });
   return JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as E2ECreds;
 }
 
@@ -157,7 +157,7 @@ async function runProgress(
 
 /** Volta o estado da instalação ao zero (sem run nenhum), como um seed. */
 function resetEstado(): void {
-  execFileSync("npx", ["tsx", "scripts/seed-e2e-system-update.ts"], { stdio: "inherit" });
+  execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-system-update.ts"], { stdio: "inherit" });
 }
 
 test("o dono vê a versão nova na sidebar e atualiza pela tela", async ({ page, request }) => {

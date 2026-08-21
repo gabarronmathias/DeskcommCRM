@@ -19,12 +19,16 @@
 import type pg from 'pg';
 
 import { parseWahaMessageId } from '@/lib/waha/message-id';
+import { ensureWahaSessionWebhook } from '@/lib/waha/session-webhook';
 
 import type { Logger } from '../../obs/logger';
 
 export interface WatchdogConfig {
   wahaBaseUrl: string;
   wahaApiKey: string;
+  /** Base alcançável pelo WAHA para callbacks; sem ela o reparo é pulado. */
+  webhookBaseUrl?: string;
+  webhookHmacSecret?: string;
   /** intervalo do tick (knob WATCHDOG_INTERVAL_MS) */
   intervalMs: number;
   /** idade mínima de uma queued para redrive — evita corrida com o insert do handler */
@@ -65,6 +69,16 @@ export async function reconcileSessions(
     log.warn('watchdog: WAHA indisponível — tick de reconciliação pulado', {});
     return 0;
   }
+  const { rows: localSessions } = await pool.query<{
+    id: string;
+    waha_session_name: string;
+    webhook_path_token: string | null;
+  }>(
+    `select id, waha_session_name, webhook_path_token
+       from channel_sessions
+      where archived_at is null and waha_session_name is not null`,
+  );
+  const localByName = new Map(localSessions.map((session) => [session.waha_session_name, session]));
   let fixed = 0;
   for (const s of sessions) {
     const { rows } = await pool.query<{ id: string; status: string }>(
@@ -81,6 +95,36 @@ export async function reconcileSessions(
         waha_session: s.name,
         status: s.status,
       });
+    }
+    const local = localByName.get(s.name);
+    if (
+      s.status === 'WORKING' &&
+      local?.webhook_path_token &&
+      cfg.webhookBaseUrl
+    ) {
+      const webhookUrl =
+        `${cfg.webhookBaseUrl.replace(/\/+$/u, '')}/api/v1/webhooks/waha/` +
+        encodeURIComponent(local.webhook_path_token);
+      try {
+        const repaired = await ensureWahaSessionWebhook(s.name, webhookUrl, {
+          baseUrl: cfg.wahaBaseUrl,
+          apiKey: cfg.wahaApiKey,
+          ...(cfg.webhookHmacSecret ? { hmacKey: cfg.webhookHmacSecret } : {}),
+        });
+        if (repaired) {
+          fixed += 1;
+          log.warn('watchdog: webhook da sessão WORKING reparado', {
+            channel_session_id: local.id,
+            waha_session: s.name,
+          });
+        }
+      } catch (err) {
+        log.warn('watchdog: reparo do webhook falhou — novo tick tentará novamente', {
+          channel_session_id: local.id,
+          waha_session: s.name,
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        });
+      }
     }
   }
   return fixed;

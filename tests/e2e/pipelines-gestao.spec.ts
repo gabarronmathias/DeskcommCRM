@@ -33,15 +33,15 @@ interface Creds {
 
 function loadCreds(): Creds {
   if (!fs.existsSync(CREDS_PATH)) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
   }
   let c = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
   if (!c.users?.manager) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
     c = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
   }
   if (!c.funis?.segunda_org_id) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-funis.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-funis.ts"], { stdio: "inherit" });
     c = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
   }
   return c;

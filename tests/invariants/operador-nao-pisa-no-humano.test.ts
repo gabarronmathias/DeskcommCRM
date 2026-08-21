@@ -67,17 +67,14 @@ const VERSION = "0be7a70b-0000-4000-8000-000000000006";
 const PIPELINE = "0be7a70b-0000-4000-8000-000000000007";
 const STAGE = "0be7a70b-0000-4000-8000-000000000008";
 const LEAD = "0be7a70b-0000-4000-8000-000000000009";
-/**
- * Segunda conversa do MESMO contato: é o controle que prova que o dedup não é cego.
- *
- * Precisa de canal PRÓPRIO — o banco tem `uniq_conversations_1to1_per_contact_session`,
- * uma conversa 1:1 por (contato, sessão). Reusar a sessão daria 23505 na fixture, e o
- * teste morreria antes de medir.
- */
+/** Segundo cliente completo: é o controle que prova que o dedup não é cego. */
+const CONTACT_B = "0be7a70b-0000-4000-8000-00000000000c";
+const LEAD_B = "0be7a70b-0000-4000-8000-00000000000d";
 const CONV_B = "0be7a70b-0000-4000-8000-00000000000a";
 const SESSION_B = "0be7a70b-0000-4000-8000-00000000000b";
 /** O job do turno do Conversador — o MESMO valor que `job().payload.origin_job_id`. */
 const ORIGIN_JOB = "0be7a70b-0000-4000-8000-0000000000bb";
+const ORIGIN_JOB_B = "0be7a70b-0000-4000-8000-0000000000bc";
 
 /** A declaração que o Conversador deixou: uma promessa, com prazo. */
 const DECLARACAO = {
@@ -119,16 +116,16 @@ function fakeDeps(log: Logger): InboundTurnDeps {
   };
 }
 
-function job(): JobRow {
+function job(contactId = CONTACT, originJobId = ORIGIN_JOB): JobRow {
   return {
     id: "0be7a70b-0000-4000-8000-0000000000aa",
     organization_id: ORG,
-    contact_id: CONTACT,
+    contact_id: contactId,
     kind: "operator_turn",
     source_event_id: null,
     payload: {
       conversation_id: CONV,
-      origin_job_id: ORIGIN_JOB,
+      origin_job_id: originJobId,
       agent_id: AGENT,
     },
     status: "running",
@@ -152,9 +149,13 @@ async function avisosAbertos(): Promise<number> {
   return Number(rows[0]?.n ?? "0");
 }
 
-async function rodarOperador(conversa = CONV): Promise<ReturnType<typeof fakeLogger>> {
+async function rodarOperador(
+  conversa = CONV,
+  contactId = CONTACT,
+  originJobId = ORIGIN_JOB,
+): Promise<ReturnType<typeof fakeLogger>> {
   const log = fakeLogger();
-  const j = job();
+  const j = job(contactId, originJobId);
   j.payload = { ...(j.payload as Record<string, unknown>), conversation_id: conversa };
   await createOperatorTurnHandler(fakeDeps(log))(j, pool, { workerId: "test-worker" });
   return log;
@@ -177,6 +178,11 @@ beforeAll(async () => {
     `insert into contacts (id, organization_id, name, phone_number)
      values ($1, $2, 'Lead do Handoff', '+5511900000912') on conflict (id) do nothing`,
     [CONTACT, ORG],
+  );
+  await pool.query(
+    `insert into contacts (id, organization_id, name, phone_number)
+     values ($1, $2, 'Segundo Lead do Handoff', '+5511900000913') on conflict (id) do nothing`,
+    [CONTACT_B, ORG],
   );
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
@@ -217,6 +223,16 @@ beforeAll(async () => {
      values ($1, $2, $3, 'quer remarcar', $4::jsonb)`,
     [ORG, CONTACT, ORIGIN_JOB, JSON.stringify(DECLARACAO)],
   );
+  await pool.query(
+    `insert into job_queue (id, organization_id, contact_id, kind, payload)
+     values ($1, $2, $3, 'inbound_turn', '{}') on conflict (id) do nothing`,
+    [ORIGIN_JOB_B, ORG, CONTACT_B],
+  );
+  await pool.query(
+    `insert into lead_checkpoints (organization_id, contact_id, job_id, rolling_summary, declaracao)
+     values ($1, $2, $3, 'quer remarcar', $4::jsonb)`,
+    [ORG, CONTACT_B, ORIGIN_JOB_B, JSON.stringify(DECLARACAO)],
+  );
 
   // Funil + etapa + negócio ABERTO: sem um lead aberto para o contato, a linha de
   // timeline não tem onde pousar (`emitAgentActivityForContact` registra
@@ -238,6 +254,11 @@ beforeAll(async () => {
     [LEAD, ORG, PIPELINE, STAGE, CONTACT],
   );
   await pool.query(
+    `insert into crm_leads (id, organization_id, pipeline_id, stage_id, contact_id, title, status)
+     values ($1, $2, $3, $4, $5, 'Segundo negócio do handoff', 'open') on conflict (id) do nothing`,
+    [LEAD_B, ORG, PIPELINE, STAGE, CONTACT_B],
+  );
+  await pool.query(
     `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
      values ($1, $2, 'operador-handoff-session-b', 'WORKING', '\\x00'::bytea)
      on conflict (id) do nothing`,
@@ -246,7 +267,7 @@ beforeAll(async () => {
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1, $2, $3, $4, 'open', false) on conflict (id) do nothing`,
-    [CONV_B, ORG, CONTACT, SESSION_B],
+    [CONV_B, ORG, CONTACT_B, SESSION_B],
   );
 
   // Controle positivo do pool: no banco errado as contagens viriam zeradas e
@@ -255,7 +276,7 @@ beforeAll(async () => {
     `select count(*)::text as n from lead_checkpoints where organization_id = $1 and declaracao is not null`,
     [ORG],
   );
-  if (rows[0]?.n !== "1") throw new Error(`fixture não chegou ao banco da porta ${PORT}`);
+  if (rows[0]?.n !== "2") throw new Error(`fixture não chegou ao banco da porta ${PORT}`);
 });
 
 beforeEach(async () => {
@@ -263,7 +284,9 @@ beforeEach(async () => {
   await pool.query(`delete from event_log where organization_id = $1`, [ORG]);
   await pool.query(`delete from crm_lead_activities where organization_id = $1`, [ORG]);
   await pool.query(`update contacts set force_human = false where id = $1`, [CONTACT]);
+  await pool.query(`update contacts set force_human = false where id = $1`, [CONTACT_B]);
   await pool.query(`update conversations set bot_silenced_until = null where id = $1`, [CONV]);
+  await pool.query(`update conversations set bot_silenced_until = null where id = $1`, [CONV_B]);
 });
 
 afterAll(async () => {
@@ -381,7 +404,7 @@ describe("o desfecho do Operador vira registro", () => {
     // cliente seria engolida pela do primeiro: perder sinal, que é pior que
     // repetir ruído.
     await rodarOperador(CONV);
-    await rodarOperador(CONV_B);
+    await rodarOperador(CONV_B, CONTACT_B, ORIGIN_JOB_B);
     expect(await avisosAbertos()).toBe(2);
   });
 

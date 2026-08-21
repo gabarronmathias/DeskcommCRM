@@ -118,7 +118,10 @@ export default defineConfig({
   webServer: {
     // Produção (`next build` antes!): dev-server compila por rota (40-80s) e
     // Turbopack dev quebra cookies() fora do request scope — inviável p/ e2e.
-    command: `pnpm exec next start --port ${PORT}`,
+    // Chama o CLI instalado pelo Node diretamente: funciona igual no CI e no
+    // Windows, sem depender do shim `pnpm` tentar reinstalar node_modules em
+    // processo sem TTY antes de subir o servidor.
+    command: `node node_modules/next/dist/bin/next start --port ${PORT}`,
     // O ambiente do servidor sob teste vem do `.env.e2e`, INJETADO aqui — e não
     // do `.env.local`, que num checkout de trabalho aponta para PRODUÇÃO.
     // Variável de ambiente real tem precedência sobre os arquivos `.env*` que o

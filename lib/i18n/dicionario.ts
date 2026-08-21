@@ -46,6 +46,7 @@ export const DICIONARIO: Traducoes = {
   Radar: { es: "Radar" },
   "Respostas rápidas": { es: "Respuestas rápidas" },
   Contatos: { es: "Contactos" },
+  Pedidos: { es: "Pedidos" },
   // A CHAVE É O TEXTO PT-BR, então renomear um rótulo no registro de navegação
   // sem mexer aqui NÃO quebra teste nenhum — degrada em silêncio: `traduzir()`
   // devolve a chave ausente como português e o espanhol da barra lateral some.
@@ -60,6 +61,7 @@ export const DICIONARIO: Traducoes = {
   Conexões: { es: "Conexiones" },
   Webhooks: { es: "Webhooks" },
   Desempenho: { es: "Rendimiento" },
+  Relatórios: { es: "Informes" },
   "Evolução da IA": { es: "Evolución de la IA" },
   "Audit Log": { es: "Registro de auditoría" },
   Configurações: { es: "Configuración" },

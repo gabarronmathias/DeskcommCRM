@@ -156,7 +156,7 @@ test.describe("IA 360 W3 — o agente para, a pessoa continua, o agente retoma s
     // Só semeia quando falta: o seed cria uma conversa nova a cada execução
     // (`e2e-escalacao-${Date.now()}`), então rodá-lo sempre deixaria lixo por corrida.
     if (!creds.escalacao) {
-      execFileSync("npx", ["tsx", "scripts/seed-e2e-escalacao.ts"], { stdio: "inherit" });
+      execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-escalacao.ts"], { stdio: "inherit" });
       creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
     }
     if (!creds.escalacao) {

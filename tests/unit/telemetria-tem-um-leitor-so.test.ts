@@ -50,7 +50,7 @@ const CONSULTA = /\.from\(\s*["'`]ai_invocations["'`]\s*\)/;
 describe("telemetria de IA tem uma tabela só", () => {
   const arquivos = arquivosDeCodigo(["app", "lib", "workers", "components", "hooks", "scripts"]).map(
     (absoluto) => ({
-      caminho: relative(RAIZ_DO_REPO, absoluto),
+      caminho: relative(RAIZ_DO_REPO, absoluto).replaceAll("\\", "/"),
       conteudo: readFileSync(absoluto, "utf8"),
     }),
   );

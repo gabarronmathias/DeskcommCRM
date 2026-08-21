@@ -58,7 +58,7 @@ test.describe("G5-03 — fila com posição + atribuição", () => {
 
   test.beforeAll(() => {
     // Restaura o estado de fila (idempotente) antes do fluxo.
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-queue.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-queue.ts"], { stdio: "inherit" });
     creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
     if (!creds.queue) throw new Error("queue seed block ausente em .e2e-creds.json");
   });

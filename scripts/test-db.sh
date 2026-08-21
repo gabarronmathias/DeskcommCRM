@@ -223,6 +223,7 @@ docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -f - < "$BASELINE" >
 echo "    ✓ update ok (re-apply terminou; erros tolerados por contrato)"
 
 echo "==> invariantes: vitest (tests/invariants)"
-TEST_DB_CONTAINER="$CONTAINER" vitest run --config vitest.db.config.ts "$@"
+TEST_DB_CONTAINER="$CONTAINER" node "$ROOT/node_modules/vitest/vitest.mjs" run \
+  --config vitest.db.config.ts "$@"
 
 echo "==> test:db verde"
