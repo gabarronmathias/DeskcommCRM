@@ -65,6 +65,7 @@ describe("prospecção foodservice", () => {
       businessHourEnd: 18,
     };
     expect(isWithinBusinessHours(cfg, new Date("2026-08-21T15:00:00Z"))).toBe(true);
+    expect(isWithinBusinessHours(cfg, new Date("2026-08-21T21:30:00Z"))).toBe(true);
     expect(isWithinBusinessHours(cfg, new Date("2026-08-22T15:00:00Z"))).toBe(false);
   });
 
