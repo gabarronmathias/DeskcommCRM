@@ -7,8 +7,11 @@ export const FOLLOWUP_FLOW_NAME = "Follow-up prospecção 48h";
 export const OPENING_MESSAGE = (company: string) =>
   `Olá! Tudo bem? Sou a Sarah, da Gabarron & Mathias. Vi a ${company} e queria fazer uma pergunta rápida: vocês trabalham com delivery hoje?`;
 
+export const SARAH_POSITIONING =
+  "Nós ajudamos padarias, restaurantes, pizzarias, hamburguerias, esfiharias e deliveries a transformar o WhatsApp e a própria base de clientes em uma máquina de vendas recorrentes.";
+
 export const FOLLOWUP_MESSAGE =
-  "Oi! Passando só para não deixar minha mensagem perdida por aqui.\n\nA ideia não é simplesmente colocar um chatbot no WhatsApp, mas transformar o atendimento do delivery em uma operação comercial: aumentar ticket, recuperar pedidos que não foram concluídos e trazer clientes antigos de volta.\n\nSe fizer sentido para vocês, eu consigo te mostrar rapidamente como isso funcionaria na prática.";
+  `Oi! Passando só para não deixar minha mensagem perdida por aqui.\n\n${SARAH_POSITIONING}\n\nA Sarah é uma agente de relacionamento e vendas que atua em cinco frentes: aumenta o ticket durante o pedido, recupera vendas não concluídas, faz follow-up automaticamente, reativa clientes que pararam de comprar e cria campanhas para trazer a base de volta.\n\nNa prática, ela ajuda o delivery a vender mais, perder menos oportunidades e aumentar a frequência de compra, sem depender de o atendente lembrar de fazer tudo manualmente.\n\nSe fizer sentido para vocês, eu consigo te mostrar rapidamente como isso funcionaria na prática.`;
 
 const DEFAULT_CITIES = [
   "São José dos Campos,SP",

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { pediuOptOut } from "@/lib/channels/pos-entrada";
-import { isWithinBusinessHours, loadProspectingConfig, OPENING_MESSAGE } from "./config";
+import {
+  FOLLOWUP_MESSAGE,
+  isWithinBusinessHours,
+  loadProspectingConfig,
+  OPENING_MESSAGE,
+  SARAH_POSITIONING,
+} from "./config";
 import { domainOf, normalizeBrazilianCommercialPhone, segmentTag } from "./normalization";
 import {
   contactIdentityFromPhoneCheck,
@@ -25,6 +31,16 @@ describe("prospecção foodservice", () => {
     expect(text).toContain("vocês trabalham com delivery hoje?");
     expect(text).not.toContain("obrigado por entrar em contato");
     expect(text).not.toContain("dono");
+  });
+
+  it("mantém o posicionamento da Sarah como agente de relacionamento e vendas", () => {
+    expect(SARAH_POSITIONING).toContain("máquina de vendas recorrentes");
+    expect(FOLLOWUP_MESSAGE).toContain("agente de relacionamento e vendas");
+    expect(FOLLOWUP_MESSAGE).toContain("aumenta o ticket durante o pedido");
+    expect(FOLLOWUP_MESSAGE).toContain("recupera vendas não concluídas");
+    expect(FOLLOWUP_MESSAGE).toContain("faz follow-up automaticamente");
+    expect(FOLLOWUP_MESSAGE).toContain("reativa clientes que pararam de comprar");
+    expect(FOLLOWUP_MESSAGE).toContain("cria campanhas para trazer a base de volta");
   });
 
   it.each([
