@@ -33,7 +33,7 @@ interface ExistingLead {
   custom_fields: unknown;
   source_metadata: unknown;
   tags: unknown;
-  reason: "google_place_id" | "phone" | "website_domain" | "name_address";
+  reason: "source_id" | "google_place_id" | "phone" | "website_domain" | "name_address";
 }
 
 interface ExistingContact {
@@ -104,13 +104,22 @@ async function findExisting(
   phone: string,
   domain: string | null,
 ): Promise<ExistingLead | ExistingContact | null> {
-  const { data: byPlace } = await db
+  const { data: bySource } = await db
+    .from("crm_leads")
+    .select("id, contact_id, custom_fields, source_metadata, tags")
+    .eq("organization_id", ctx.organizationId)
+    .eq("source", prospect.source)
+    .contains("source_metadata", { source_id: prospect.sourceId })
+    .maybeSingle();
+  if (bySource) return { ...bySource, reason: "source_id" };
+
+  const { data: byPlace } = prospect.source === "google_places" ? await db
     .from("crm_leads")
     .select("id, contact_id, custom_fields, source_metadata, tags")
     .eq("organization_id", ctx.organizationId)
     .eq("source", "google_places")
     .contains("source_metadata", { google_place_id: prospect.placeId })
-    .maybeSingle();
+    .maybeSingle() : { data: null };
   if (byPlace) return { ...byPlace, reason: "google_place_id" };
 
   const { data: contact } = await db
@@ -173,11 +182,13 @@ function fields(prospect: PublicBusinessProspect, phone: string, domain: string 
     neighborhood: prospect.neighborhood,
     city: prospect.city,
     state: prospect.state,
-    google_place_id: prospect.placeId,
-    google_maps_url: prospect.mapsUrl,
+    ...(prospect.source === "google_places" ? { google_place_id: prospect.placeId } : {}),
+    source_id: prospect.sourceId,
+    source_url: prospect.sourceUrl,
+    google_maps_url: prospect.source === "google_places" ? prospect.mapsUrl : null,
     rating: prospect.rating,
     review_count: prospect.reviewCount,
-    source: "google_places",
+    source: prospect.source,
     prospecting_status: "queued",
     first_outbound_at: null,
     last_outbound_at: null,
@@ -196,8 +207,16 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
   const tags = ["prospeccao", "foodservice", segmentTag(prospect.category)];
   const customFields = fields(prospect, phone, domain);
   const sourceMetadata = {
-    google_place_id: prospect.placeId,
-    google_maps_url: prospect.mapsUrl,
+    source: prospect.source,
+    source_id: prospect.sourceId,
+    source_url: prospect.sourceUrl,
+    ...(prospect.source === "google_places" ? {
+      google_place_id: prospect.placeId,
+      google_maps_url: prospect.mapsUrl,
+    } : {
+      attribution: "© OpenStreetMap contributors",
+      source_license: "ODbL-1.0",
+    }),
     publicly_listed_business_phone: true,
     legal_basis: "legitimate_interest_b2b",
     business_status: prospect.businessStatus,
@@ -237,7 +256,7 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
       name: prospect.companyName,
       display_name: prospect.companyName,
       phone_number: phone,
-      source: "google_places",
+      source: prospect.source,
       source_metadata: sourceMetadata,
       tags,
     }).select("id").single();
@@ -251,7 +270,7 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
     stage_id: ctx.newStageId,
     contact_id: contact.id,
     title: prospect.companyName,
-    source: "google_places",
+    source: prospect.source,
     source_metadata: sourceMetadata,
     custom_fields: customFields,
     tags,
@@ -265,7 +284,12 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
     channel_session_id: ctx.channelSessionId,
     channel: "whatsapp",
     status: "ai_handling",
-    metadata: { source: "google_places", google_place_id: prospect.placeId, prospecting: true },
+    metadata: {
+      source: prospect.source,
+      source_id: prospect.sourceId,
+      ...(prospect.source === "google_places" ? { google_place_id: prospect.placeId } : {}),
+      prospecting: true,
+    },
   }).select("id").single();
   if (conversationError || !conversation) throw new Error(`prospecting_conversation_insert: ${conversationError?.message ?? "no_row"}`);
 
@@ -277,8 +301,8 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
     channel_session_id: ctx.channelSessionId,
     kind: "opening",
     message_body: OPENING_MESSAGE(prospect.companyName),
-    idempotency_key: `opening:${prospect.placeId}`,
-    metadata: { source: "google_places", company: prospect.companyName, category: prospect.category, city: prospect.city },
+    idempotency_key: `opening:${prospect.source}:${prospect.sourceId}`,
+    metadata: { source: prospect.source, source_id: prospect.sourceId, company: prospect.companyName, category: prospect.category, city: prospect.city },
   }).select("id").single();
   if (queueError || !queued) throw new Error(`prospecting_queue_insert: ${queueError?.message ?? "no_row"}`);
 

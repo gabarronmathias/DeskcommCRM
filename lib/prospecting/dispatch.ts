@@ -19,6 +19,7 @@ interface QueueRow {
   max_attempts: number;
   crm_message_id: string | null;
   created_at: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface DispatchResult {
@@ -136,7 +137,7 @@ export async function dispatchQueueRow(db: SupabaseClient, row: QueueRow): Promi
       body: row.message_body,
       metadata: {
         idempotency_key: row.idempotency_key,
-        source: "google_places",
+        source: typeof row.metadata?.source === "string" ? row.metadata.source : "prospecting",
         prospecting: true,
         cadence: row.kind === "opening" ? "D0" : "D+2",
       },

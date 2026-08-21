@@ -51,7 +51,10 @@ function list(value: string | undefined, fallback: string[]): string[] {
 }
 
 export interface ProspectingConfig {
+  source: "auto" | "google_places" | "openstreetmap";
   googlePlacesApiKey: string;
+  overpassUrls: string[];
+  overpassBbox: string;
   enabled: boolean;
   outboundEnabled: boolean;
   dryRun: boolean;
@@ -65,8 +68,15 @@ export interface ProspectingConfig {
 }
 
 export function loadProspectingConfig(): ProspectingConfig {
+  const sourceRaw = (process.env.PROSPECTING_SOURCE ?? "auto").trim().toLowerCase();
   return {
+    source: sourceRaw === "google_places" || sourceRaw === "openstreetmap" ? sourceRaw : "auto",
     googlePlacesApiKey: (process.env.GOOGLE_PLACES_API_KEY ?? "").trim(),
+    overpassUrls: list(process.env.PROSPECTING_OVERPASS_URLS, [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+    ]),
+    overpassBbox: (process.env.PROSPECTING_OVERPASS_BBOX ?? "-23.45,-46.20,-22.65,-45.30").trim(),
     enabled: bool(process.env.PROSPECTING_ENABLED, false),
     outboundEnabled: bool(process.env.OUTBOUND_ENABLED, false),
     dryRun: bool(process.env.PROSPECTING_DRY_RUN, true),

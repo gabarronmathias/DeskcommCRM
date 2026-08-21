@@ -38,6 +38,9 @@ interface GooglePlaceRaw {
 }
 
 export interface PublicBusinessProspect {
+  source: "google_places" | "openstreetmap";
+  sourceId: string;
+  sourceUrl: string | null;
   placeId: string;
   companyName: string;
   category: string;
@@ -89,6 +92,9 @@ export async function searchFoodservicePlaces(input: {
     const phoneRaw = (place.internationalPhoneNumber ?? place.nationalPhoneNumber)?.trim();
     if (!placeId || !companyName || !phoneRaw || place.businessStatus !== "OPERATIONAL") return [];
     return [{
+      source: "google_places",
+      sourceId: placeId,
+      sourceUrl: place.googleMapsUri?.trim() || null,
       placeId,
       companyName,
       category: input.category,
