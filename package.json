@@ -29,7 +29,8 @@
     "lint:channels": "tsx scripts/lint-channels.ts",
     "gov:verify": "pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm test:unit",
     "worker": "tsx --env-file=.env --env-file=.env.local workers/agent-worker/main.ts",
-    "flywheel:judge": "tsx --env-file=.env --env-file=.env.local scripts/flywheel-judge-live.ts"
+    "flywheel:judge": "tsx --env-file=.env --env-file=.env.local scripts/flywheel-judge-live.ts",
+    "prospecting:dry-run": "tsx scripts/prospecting-dry-run.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.16",
