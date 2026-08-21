@@ -9,11 +9,11 @@
  * A config é lida do DB A CADA chamada (resolveOrgLlmConfig) — trocar modelo/
  * provider/teto é UPDATE na config, sem restart nem deploy.
  */
-import type pg from 'pg';
-import { z } from 'zod';
+import type pg from "pg";
+import { z } from "zod";
 
-import { byteaToBuffer, decryptKey } from '@/lib/crypto/aes_gcm';
-import type { CacheTtl } from './stable-prefix';
+import { byteaToBuffer, decryptKey } from "@/lib/crypto/aes_gcm";
+import type { CacheTtl } from "./stable-prefix";
 
 /** Config da camada LLM montada do env validado (padrão crmEdgeConfigFromEnv). */
 export interface LlmEdgeConfig {
@@ -59,8 +59,8 @@ export function llmEdgeConfigFromEnv(env: {
   OPENROUTER_API_KEY?: string;
   LLM_CACHE_TTL?: string;
 }): LlmEdgeConfig {
-  const ttl = env.LLM_CACHE_TTL ?? '1h';
-  if (ttl !== '5m' && ttl !== '1h') {
+  const ttl = env.LLM_CACHE_TTL ?? "1h";
+  if (ttl !== "5m" && ttl !== "1h") {
     throw new Error("LLM_CACHE_TTL inválido — use '5m' ou '1h' (default 1h)");
   }
   return {
@@ -73,10 +73,10 @@ export function llmEdgeConfigFromEnv(env: {
 
 /** Org sem credencial LLM utilizável — erro tipado, mensagem sem valores (credencial fora). */
 export class LlmNotConfiguredError extends Error {
-  override readonly name = 'llm_not_configured';
+  override readonly name = "llm_not_configured";
   constructor() {
     super(
-      'org sem credencial LLM utilizável — cadastre uma chave BYOK ativa/validada em ai_provider_credentials ou defina ANTHROPIC_API_KEY / OPENAI_API_KEY (fallback de plataforma, conforme o provider do modelo)',
+      "org sem credencial LLM utilizável — cadastre uma chave BYOK ativa/validada em ai_provider_credentials ou defina ANTHROPIC_API_KEY / OPENAI_API_KEY (fallback de plataforma, conforme o provider do modelo)",
     );
   }
 }
@@ -89,25 +89,43 @@ export interface OrgLlmConfig {
   params: Record<string, unknown>;
   enabledModels: string[];
   monthlyBudgetCents: number | null;
+  /**
+   * Segunda rota explícita da organização. Ela só é usada quando a chamada ao
+   * provedor primário falha antes de produzir uma resposta; nunca substitui o
+   * provider silenciosamente em chamadas saudáveis.
+   */
+  fallback: {
+    provider: string;
+    model: string;
+    credentialId: string | null;
+  } | null;
 }
 
 // Leitura DEFENSIVA de organizations.settings->'llm' (jsonb livre): campo com
 // shape errado cai no default, nunca derruba o turno.
 const llmSettingsSchema = z
   .object({
-    provider: z.string().min(1).catch('anthropic'),
+    provider: z.string().min(1).catch("anthropic"),
     default_model: z.string().min(1).nullable().catch(null),
     params: z.record(z.string(), z.unknown()).catch({}),
     enabled_models: z.array(z.string()).catch([]),
     monthly_budget_cents: z.number().finite().nullable().catch(null),
+    fallback_enabled: z.boolean().catch(false),
+    fallback_provider: z.string().min(1).nullable().catch(null),
+    fallback_model: z.string().min(1).nullable().catch(null),
+    fallback_credential_id: z.string().uuid().nullable().catch(null),
   })
   .passthrough()
   .catch({
-    provider: 'anthropic',
+    provider: "anthropic",
     default_model: null,
     params: {},
     enabled_models: [],
     monthly_budget_cents: null,
+    fallback_enabled: false,
+    fallback_provider: null,
+    fallback_model: null,
+    fallback_credential_id: null,
   });
 
 /**
@@ -137,7 +155,7 @@ export async function resolveOrgLlmConfig(
     [organizationId],
   );
   if (rows.length === 0) {
-    throw new Error('organização inexistente ao resolver config LLM');
+    throw new Error("organização inexistente ao resolver config LLM");
   }
   const settings = llmSettingsSchema.parse(rows[0]?.llm ?? {});
   const provider = override?.provider ?? settings.provider;
@@ -180,11 +198,11 @@ export async function resolveOrgLlmConfig(
       iv: byteaToBuffer(cred.api_key_iv),
       tag: byteaToBuffer(cred.api_key_tag),
     });
-  } else if (provider === 'anthropic' && cfg.anthropicApiKey) {
+  } else if (provider === "anthropic" && cfg.anthropicApiKey) {
     apiKey = cfg.anthropicApiKey;
-  } else if (provider === 'openai' && cfg.openaiApiKey) {
+  } else if (provider === "openai" && cfg.openaiApiKey) {
     apiKey = cfg.openaiApiKey;
-  } else if (provider === 'openrouter' && cfg.openrouterApiKey) {
+  } else if (provider === "openrouter" && cfg.openrouterApiKey) {
     apiKey = cfg.openrouterApiKey;
   } else {
     throw new LlmNotConfiguredError();
@@ -197,5 +215,13 @@ export async function resolveOrgLlmConfig(
     params: settings.params,
     enabledModels: settings.enabled_models,
     monthlyBudgetCents: settings.monthly_budget_cents ?? null,
+    fallback:
+      settings.fallback_enabled && settings.fallback_provider && settings.fallback_model
+        ? {
+            provider: settings.fallback_provider,
+            model: settings.fallback_model,
+            credentialId: settings.fallback_credential_id,
+          }
+        : null,
   };
 }

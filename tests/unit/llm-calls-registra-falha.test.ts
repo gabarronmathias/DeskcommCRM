@@ -251,3 +251,79 @@ describe("a origem da escolha viaja com o log", () => {
     expect(linhaDeErro!.params).toContain("padrao_da_organizacao");
   });
 });
+
+describe("fallback explícito da organização", () => {
+  it("tenta OpenAI após falha de provedor e registra as duas tentativas", async () => {
+    const inserts: Array<{ sql: string; params: unknown[] }> = [];
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("settings->'llm'")) {
+        return {
+          rows: [
+            {
+              llm: {
+                provider: "anthropic",
+                default_model: "claude-padrao",
+                fallback_enabled: true,
+                fallback_provider: "openai",
+                fallback_model: "gpt-4.1-mini",
+                fallback_credential_id: null,
+                params: {},
+                enabled_models: [],
+                monthly_budget_cents: null,
+              },
+            },
+          ],
+        };
+      }
+      if (sql.includes("from ai_purpose_bindings")) return { rows: [] };
+      if (sql.includes("from ai_provider_credentials")) return { rows: [] };
+      if (sql.includes("insert into llm_calls")) {
+        inserts.push({ sql, params });
+        return { rows: [{ id: `call-${inserts.length}` }] };
+      }
+      return { rows: [] };
+    });
+    const ok = () =>
+      ({
+        specificationVersion: "v3",
+        provider: "openai",
+        modelId: "gpt-4.1-mini",
+        doGenerate: async () => ({
+          content: [{ type: "text", text: "ok" }],
+          finishReason: { unified: "stop", raw: undefined },
+          usage: {
+            inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 1, text: 1, reasoning: 0 },
+          },
+          warnings: [],
+        }),
+      }) as never;
+    const falha = () =>
+      ({
+        specificationVersion: "v3",
+        provider: "anthropic",
+        modelId: "claude-padrao",
+        doGenerate: async () => {
+          throw Object.assign(new Error("provider unavailable"), { statusCode: 503 });
+        },
+      }) as never;
+
+    const out = await runModelCall(
+      { query } as never,
+      {
+        anthropicApiKey: "sk-ant-primaria",
+        openaiApiKey: "sk-openai-fallback",
+        cacheTtl: "1h",
+      },
+      { tenantId: ORG, purpose: "agent_turn", messages: [{ role: "user", content: "oi" }] },
+      { registry: { anthropic: falha, openai: ok } },
+    );
+
+    expect(out.provider).toBe("openai");
+    expect(out.model).toBe("gpt-4.1-mini");
+    expect(out.origem).toBe("fallback_da_organizacao");
+    expect(inserts.filter((i) => i.sql.includes("'erro'"))).toHaveLength(1);
+    expect(inserts.filter((i) => i.sql.includes("'ok'"))).toHaveLength(1);
+    expect(inserts[1]!.params).toContain("fallback_da_organizacao");
+  });
+});

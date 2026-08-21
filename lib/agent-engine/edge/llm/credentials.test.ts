@@ -26,13 +26,39 @@ function poolFake(settingsLlm: unknown, credenciais: unknown[]) {
 const SEM_BYOK: unknown[] = [];
 
 describe("resolveOrgLlmConfig — chave de plataforma por provider", () => {
+  it("expõe o fallback explícito configurado pela organização", async () => {
+    const out = await resolveOrgLlmConfig(
+      poolFake(
+        {
+          provider: "anthropic",
+          default_model: "claude-sonnet-4-6",
+          fallback_enabled: true,
+          fallback_provider: "openai",
+          fallback_model: "gpt-4.1-mini",
+          fallback_credential_id: "11111111-1111-4111-8111-111111111111",
+        },
+        SEM_BYOK,
+      ),
+      { anthropicApiKey: "sk-ant-plataforma" },
+      "org-1",
+    );
+    expect(out.fallback).toEqual({
+      provider: "openai",
+      model: "gpt-4.1-mini",
+      credentialId: "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
   it("usa a chave OpenAI do ambiente quando a org não tem BYOK", async () => {
     // O defeito de origem: existia fallback de env só para a Anthropic. A
     // transcrição de áudio chama o Whisper (OpenAI), e numa org que usa
     // Anthropic no chat isso lançava LlmNotConfiguredError — ou, pior, o
     // chamador mandava a chave da Anthropic para a OpenAI e levava 401. A
     // OPENAI_API_KEY que o instalador coleta não chegava a lugar nenhum.
-    const cfg: LlmEdgeConfig = { anthropicApiKey: "sk-ant-plataforma", openaiApiKey: "sk-proj-plataforma" };
+    const cfg: LlmEdgeConfig = {
+      anthropicApiKey: "sk-ant-plataforma",
+      openaiApiKey: "sk-proj-plataforma",
+    };
     const out = await resolveOrgLlmConfig(
       poolFake({ provider: "anthropic", default_model: "claude-sonnet-4-6" }, SEM_BYOK),
       cfg,

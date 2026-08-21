@@ -5,7 +5,7 @@ export const SARAH_STAGE_NAME = "Sarah Atendendo";
 export const FOLLOWUP_FLOW_NAME = "Follow-up prospecção 48h";
 
 export const OPENING_MESSAGE = (company: string) =>
-  `Olá! Tudo bem? Sou a Sarah, da Gabarron & Mathias. Vi a ${company} e entrei em contato porque ajudamos operações de delivery a vender mais pelo WhatsApp.\n\nNa prática, transformamos o atendimento em uma operação comercial que recupera vendas e aumenta o valor de cada cliente.\n\nPosso te fazer uma pergunta rápida sobre como vocês trabalham o delivery hoje?`;
+  `Olá! Tudo bem? Sou a Sarah, da Gabarron & Mathias. Vi a ${company} e queria fazer uma pergunta rápida: vocês trabalham com delivery hoje?`;
 
 export const FOLLOWUP_MESSAGE =
   "Oi! Passando só para não deixar minha mensagem perdida por aqui.\n\nA ideia não é simplesmente colocar um chatbot no WhatsApp, mas transformar o atendimento do delivery em uma operação comercial: aumentar ticket, recuperar pedidos que não foram concluídos e trazer clientes antigos de volta.\n\nSe fizer sentido para vocês, eu consigo te mostrar rapidamente como isso funcionaria na prática.";
@@ -46,7 +46,10 @@ function integer(value: string | undefined, fallback: number, min: number, max: 
 }
 
 function list(value: string | undefined, fallback: string[]): string[] {
-  const parsed = (value ?? "").split(";").map((x) => x.trim()).filter(Boolean);
+  const parsed = (value ?? "")
+    .split(";")
+    .map((x) => x.trim())
+    .filter(Boolean);
   return parsed.length > 0 ? [...new Set(parsed)] : fallback;
 }
 
@@ -78,7 +81,9 @@ export function loadProspectingConfig(): ProspectingConfig {
       "https://overpass.kumi.systems/api/interpreter",
     ]),
     overpassBbox: (process.env.PROSPECTING_OVERPASS_BBOX ?? "-23.45,-46.20,-22.65,-45.30").trim(),
-    overpassUserAgent: (process.env.PROSPECTING_OVERPASS_USER_AGENT ?? "GMProspecting/1.0 (tenant: gabarron-mathias)").trim(),
+    overpassUserAgent: (
+      process.env.PROSPECTING_OVERPASS_USER_AGENT ?? "GMProspecting/1.0 (tenant: gabarron-mathias)"
+    ).trim(),
     enabled: bool(process.env.PROSPECTING_ENABLED, false),
     outboundEnabled: bool(process.env.OUTBOUND_ENABLED, false),
     dryRun: bool(process.env.PROSPECTING_DRY_RUN, true),
@@ -101,5 +106,9 @@ export function isWithinBusinessHours(config: ProspectingConfig, now = new Date(
   }).formatToParts(now);
   const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "-1");
   const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
-  return !["Sat", "Sun"].includes(weekday) && hour >= config.businessHourStart && hour < config.businessHourEnd;
+  return (
+    !["Sat", "Sun"].includes(weekday) &&
+    hour >= config.businessHourStart &&
+    hour < config.businessHourEnd
+  );
 }

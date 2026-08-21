@@ -35,14 +35,11 @@ export class WahaClient {
     }
 
     // 2) Start session
-    const startRes = await fetch(
-      `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/start`,
-      {
-        method: "POST",
-        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      },
-    );
+    const startRes = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/start`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
     if (!startRes.ok && startRes.status !== 422 && startRes.status !== 409) {
       const body = await startRes.text().catch(() => "");
       throw new Error(`waha_start_${startRes.status}: ${body.slice(0, 200)}`);
@@ -59,14 +56,11 @@ export class WahaClient {
    * are treated as success so callers can compose reconnect = stop + start.
    */
   async stopSession(name: string): Promise<void> {
-    const res = await fetch(
-      `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/stop`,
-      {
-        method: "POST",
-        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      },
-    );
+    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/stop`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
     if (!res.ok && ![404, 422, 409].includes(res.status)) {
       const body = await res.text().catch(() => "");
       throw new Error(`waha_stop_${res.status}: ${body.slice(0, 200)}`);
@@ -87,14 +81,11 @@ export class WahaClient {
    * como sucesso — quem chama quer o efeito, não a transição.
    */
   async logoutSession(name: string): Promise<void> {
-    const res = await fetch(
-      `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/logout`,
-      {
-        method: "POST",
-        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      },
-    );
+    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/logout`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
     if (!res.ok && ![404, 422, 409].includes(res.status)) {
       const body = await res.text().catch(() => "");
       throw new Error(`waha_logout_${res.status}: ${body.slice(0, 200)}`);
@@ -106,13 +97,10 @@ export class WahaClient {
    * Idempotente pelo mesmo motivo do logout: 404 = já não existe = sucesso.
    */
   async deleteSession(name: string): Promise<void> {
-    const res = await fetch(
-      `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`,
-      {
-        method: "DELETE",
-        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
-      },
-    );
+    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+    });
     if (!res.ok && ![404, 422, 409].includes(res.status)) {
       const body = await res.text().catch(() => "");
       throw new Error(`waha_delete_${res.status}: ${body.slice(0, 200)}`);
@@ -152,6 +140,41 @@ export class WahaClient {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Confirma o endereço real de um telefone antes do primeiro outbound.
+   *
+   * Isto é obrigatório para números brasileiros: contas antigas podem estar
+   * registradas com ou sem o nono dígito, e o WAHA pode devolver um `@lid` em
+   * vez de `@c.us`. Enviar para o telefone digitado sem esta consulta produz
+   * falsos positivos (mensagem "enviada" para um endereço que não existe).
+   */
+  async checkPhoneExists(
+    session: string,
+    phone: string,
+  ): Promise<{ numberExists: boolean; chatId: string | null; pn: string | null }> {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) throw new Error("waha_check_exists_invalid_phone");
+
+    const url = new URL(`${this.baseUrl}/api/contacts/check-exists`);
+    url.searchParams.set("phone", digits);
+    url.searchParams.set("session", session);
+    const res = await fetch(url, { headers: { "X-Api-Key": this.apiKey } });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_check_exists_${res.status}: ${body.slice(0, 200)}`);
+    }
+    const body = (await res.json()) as {
+      numberExists?: boolean;
+      chatId?: string | null;
+      pn?: string | null;
+    };
+    return {
+      numberExists: body.numberExists === true,
+      chatId: typeof body.chatId === "string" && body.chatId.trim() ? body.chatId.trim() : null,
+      pn: typeof body.pn === "string" && body.pn.trim() ? body.pn.trim() : null,
+    };
   }
 
   /**

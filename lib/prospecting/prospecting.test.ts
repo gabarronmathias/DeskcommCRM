@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { pediuOptOut } from "@/lib/channels/pos-entrada";
 import { isWithinBusinessHours, loadProspectingConfig, OPENING_MESSAGE } from "./config";
 import { domainOf, normalizeBrazilianCommercialPhone, segmentTag } from "./normalization";
+import { contactIdentityFromPhoneCheck } from "./dispatch";
 
 describe("prospecção foodservice", () => {
   it("normaliza telefone comercial brasileiro e rejeita forma curta", () => {
@@ -18,6 +19,7 @@ describe("prospecção foodservice", () => {
   it("personaliza a abertura sem inventar dono ou relacionamento anterior", () => {
     const text = OPENING_MESSAGE("Padaria Teste");
     expect(text).toContain("Vi a Padaria Teste");
+    expect(text).toContain("vocês trabalham com delivery hoje?");
     expect(text).not.toContain("obrigado por entrar em contato");
     expect(text).not.toContain("dono");
   });
@@ -43,13 +45,62 @@ describe("prospecção foodservice", () => {
     delete process.env.PROSPECTING_DRY_RUN;
     delete process.env.PROSPECTING_DAILY_LIMIT;
     const config = loadProspectingConfig();
-    expect(config).toMatchObject({ enabled: false, outboundEnabled: false, dryRun: true, dailyLimit: 20 });
+    expect(config).toMatchObject({
+      enabled: false,
+      outboundEnabled: false,
+      dryRun: true,
+      dailyLimit: 20,
+    });
     process.env = old;
   });
 
   it("respeita janela comercial e fim de semana", () => {
-    const cfg = { ...loadProspectingConfig(), timezone: "America/Sao_Paulo", businessHourStart: 9, businessHourEnd: 18 };
+    const cfg = {
+      ...loadProspectingConfig(),
+      timezone: "America/Sao_Paulo",
+      businessHourStart: 9,
+      businessHourEnd: 18,
+    };
     expect(isWithinBusinessHours(cfg, new Date("2026-08-21T15:00:00Z"))).toBe(true);
     expect(isWithinBusinessHours(cfg, new Date("2026-08-22T15:00:00Z"))).toBe(false);
+  });
+
+  it("usa a identidade real devolvida pelo WhatsApp para número brasileiro", () => {
+    expect(
+      contactIdentityFromPhoneCheck(
+        {
+          numberExists: true,
+          chatId: "987654321@lid",
+          pn: "5512999990000@c.us",
+        },
+        "+5512999990000",
+      ),
+    ).toEqual({
+      phoneNumber: "+5512999990000",
+      waLid: "987654321",
+    });
+    expect(
+      contactIdentityFromPhoneCheck(
+        {
+          numberExists: true,
+          chatId: "5512888880000@c.us",
+          pn: null,
+        },
+        "+5512999990000",
+      ),
+    ).toEqual({
+      phoneNumber: "+5512888880000",
+      waLid: null,
+    });
+    expect(
+      contactIdentityFromPhoneCheck(
+        {
+          numberExists: false,
+          chatId: null,
+          pn: null,
+        },
+        "+5512999990000",
+      ),
+    ).toBeNull();
   });
 });

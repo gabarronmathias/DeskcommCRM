@@ -15,38 +15,40 @@
  * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
  * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
-import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
-import type pg from 'pg';
-import { z } from 'zod';
+import { generateText, stepCountIs, type ModelMessage, type ToolSet } from "ai";
+import type pg from "pg";
+import { z } from "zod";
 
-import { scrubMessage } from '@/lib/sentry/scrub';
+import { scrubMessage } from "@/lib/sentry/scrub";
 
-import type { Logger } from '../../obs/logger';
-import { decidirParaOSeam } from './binding-do-ponto';
-import { resolveOrgLlmConfig, type LlmEdgeConfig } from './credentials';
-import { costCents } from './pricing';
-import { createDefaultRegistry, type ProviderRegistry } from './providers';
-import { buildStablePrefix } from './stable-prefix';
+import type { Logger } from "../../obs/logger";
+import { decidirParaOSeam } from "./binding-do-ponto";
+import { resolveOrgLlmConfig, type LlmEdgeConfig, type LlmResolveOverride } from "./credentials";
+import { costCents } from "./pricing";
+import { createDefaultRegistry, type ProviderRegistry } from "./providers";
+import { buildStablePrefix } from "./stable-prefix";
 
 // Call sites FORA da camada importam os tipos daqui — nunca de 'ai' direto
 // (o seam é a única porta). `tool` idem: é como o agente define ToolSet sem
 // tocar no SDK.
-export { tool } from 'ai';
-export type { ModelMessage, ToolSet } from 'ai';
-export type { LlmEdgeConfig } from './credentials';
-export { llmEdgeConfigFromEnv, LlmNotConfiguredError } from './credentials';
+export { tool } from "ai";
+export type { ModelMessage, ToolSet } from "ai";
+export type { LlmEdgeConfig } from "./credentials";
+export { llmEdgeConfigFromEnv, LlmNotConfiguredError } from "./credentials";
 
 /** Teto mensal da org esgotado — runs recusados ANTES do provider (zero tokens). */
 export class LlmBudgetExceededError extends Error {
-  override readonly name = 'llm_budget_exceeded';
+  override readonly name = "llm_budget_exceeded";
   constructor() {
-    super('orçamento mensal de LLM da org esgotado — chamada recusada; ajuste o teto ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded)');
+    super(
+      "orçamento mensal de LLM da org esgotado — chamada recusada; ajuste o teto ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded)",
+    );
   }
 }
 
 /** Provider da config sem entrada no registry — erro de config, nunca fallback. */
 export class LlmProviderUnknownError extends Error {
-  override readonly name = 'llm_provider_unknown';
+  override readonly name = "llm_provider_unknown";
   constructor(provider: string) {
     super(`provider LLM desconhecido na config da org: ${provider}`);
   }
@@ -54,7 +56,7 @@ export class LlmProviderUnknownError extends Error {
 
 /** Modelo pedido fora de enabled_models da org. */
 export class LlmModelNotEnabledError extends Error {
-  override readonly name = 'llm_model_not_enabled';
+  override readonly name = "llm_model_not_enabled";
   constructor(model: string) {
     super(`modelo não habilitado para a org (enabled_models): ${model}`);
   }
@@ -97,7 +99,7 @@ export interface RunModelCallInput {
    * Override de provider/credencial vindo da versão PUBLICADA do agente (Fase
    * 2B) — resolvido no seam, nunca no call site. Sem ele, config da org.
    */
-  llmOverride?: import('./credentials').LlmResolveOverride;
+  llmOverride?: LlmResolveOverride;
 }
 
 export interface RunModelCallDeps {
@@ -113,7 +115,11 @@ export interface RunModelCallDeps {
  * tipado. ponytail: o insert-if-not-exists é um único statement; duas recusas
  * exatamente simultâneas podem duplicar o alerta — inócuo.
  */
-async function assertBudget(db: pg.Pool, organizationId: string, budgetCents: number | null): Promise<void> {
+async function assertBudget(
+  db: pg.Pool,
+  organizationId: string,
+  budgetCents: number | null,
+): Promise<void> {
   if (budgetCents === null) {
     return;
   }
@@ -153,18 +159,23 @@ async function lerChaveOpenCodeZenDoVault(db: pg.Pool): Promise<string> {
      from vault.decrypted_secrets
      where name = $1
      limit 1`,
-    ['OPENCODE_ZEN_API_KEY'],
+    ["OPENCODE_ZEN_API_KEY"],
   );
   const segredo = rows[0]?.decrypted_secret;
-  if (typeof segredo !== 'string' || segredo === '') {
-    throw new Error('OPENCODE_ZEN_API_KEY ausente no Vault');
+  if (typeof segredo !== "string" || segredo === "") {
+    throw new Error("OPENCODE_ZEN_API_KEY ausente no Vault");
   }
   return segredo;
 }
 
-export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunModelCallInput, deps: RunModelCallDeps = {}) {
+export async function runModelCall(
+  db: pg.Pool,
+  cfg: LlmEdgeConfig,
+  input: RunModelCallInput,
+  deps: RunModelCallDeps = {},
+) {
   const registry = deps.registry ?? createDefaultRegistry();
-  const purpose = input.purpose ?? 'agent_turn';
+  const purpose = input.purpose ?? "agent_turn";
 
   // A config da org é lida ANTES da decisão porque o resolvedor precisa dela
   // como último degrau da precedência (o padrão, quando ninguém mais opinou).
@@ -174,26 +185,30 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // só um rótulo de custo e virar decisão. Sem binding configurado, `decisao`
   // reproduz exatamente o comportamento anterior — a origem volta como
   // 'variavel_de_ambiente' ou 'padrao_da_organizacao'.
-  const decisao = await decidirParaOSeam(db, {
-    organizationId: input.tenantId,
-    purpose,
-    modeloDoCallSite: input.model,
-    overrideDoAgente:
-      input.llmOverride === undefined
-        ? null
-        : {
-            provider: input.llmOverride.provider ?? padrao.provider,
-            credentialId: input.llmOverride.credentialId ?? null,
-            model: input.model,
-          },
-    padraoDaOrganizacao: { provider: padrao.provider, defaultModel: padrao.defaultModel },
-  }, deps.log ? { log: deps.log } : {});
+  const decisao = await decidirParaOSeam(
+    db,
+    {
+      organizationId: input.tenantId,
+      purpose,
+      modeloDoCallSite: input.model,
+      overrideDoAgente:
+        input.llmOverride === undefined
+          ? null
+          : {
+              provider: input.llmOverride.provider ?? padrao.provider,
+              credentialId: input.llmOverride.credentialId ?? null,
+              model: input.model,
+            },
+      padraoDaOrganizacao: { provider: padrao.provider, defaultModel: padrao.defaultModel },
+    },
+    deps.log ? { log: deps.log } : {},
+  );
 
   // Só re-resolve a credencial quando o painel apontou para OUTRA que não a já
   // carregada — decifrar duas vezes a mesma chave é custo puro no caminho
   // quente, e cada decifragem é mais um instante com plaintext em memória.
   const precisaOutraCredencial =
-    decisao.origem === 'binding' &&
+    decisao.origem === "binding" &&
     (decisao.provider !== padrao.provider || decisao.credentialId !== null);
 
   const config = precisaOutraCredencial
@@ -208,8 +223,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   const model = decisao.modelId;
   if (model === null || model === undefined) {
     throw new Error(
-      'modelo LLM não definido — configure o ponto no painel de provedores, ' +
-        'organizations.settings.llm.default_model, ou passe input.model',
+      "modelo LLM não definido — configure o ponto no painel de provedores, " +
+        "organizations.settings.llm.default_model, ou passe input.model",
     );
   }
   if (config.enabledModels.length > 0 && !config.enabledModels.includes(model)) {
@@ -219,14 +234,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   if (factory === undefined) {
     throw new LlmProviderUnknownError(config.provider);
   }
-  // Modelo OpenCode Zen: a chave é a do Vault, resolvida aqui no seam (o
-  // registry só roteia pelo prefixo). Falha na leitura cai no MESMO caminho de
-  // erro das demais falhas — gravada em llm_calls SEM o valor, que nunca sai
-  // da memória do processo.
-  const ehModeloOpenCode = model.startsWith('opencode/');
   const parsedParams = paramsSchema.safeParse(config.params);
   if (!parsedParams.success) {
-    throw new Error('params inválidos em organizations.settings.llm.params — corrija a config da org');
+    throw new Error(
+      "params inválidos em organizations.settings.llm.params — corrija a config da org",
+    );
   }
   const { temperature, topP, topK, maxOutputTokens } = parsedParams.data;
 
@@ -237,21 +249,28 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   const prefix = buildStablePrefix({
     system: input.system,
     tools: input.tools,
-    cacheTtl: cfg.cacheTtl ?? '1h',
+    cacheTtl: cfg.cacheTtl ?? "1h",
   });
 
   const startedAt = Date.now();
   let result: Awaited<ReturnType<typeof generateText>>;
-  try {
-    // A chave do Zen vive SÓ neste escopo: vira argumento da factory e some.
-    const apiKey = ehModeloOpenCode ? await lerChaveOpenCodeZenDoVault(db) : config.apiKey;
-    // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
-    // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
-    result = await generateText({
-      // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
-      // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
-      // ignoram o terceiro argumento e vão ao endpoint intrínseco.
-      model: factory(apiKey, model, decisao.baseUrl ?? undefined),
+  let effectiveConfig = config;
+  let effectiveModel = model;
+  let effectiveOrigin: string = decisao.origem;
+
+  const executar = async (
+    callConfig: typeof config,
+    callModel: string,
+    callFactory: NonNullable<(typeof registry)[string]>,
+    baseUrl?: string,
+  ) => {
+    // Modelo OpenCode Zen: a chave é a do Vault, resolvida aqui no seam (o
+    // registry só roteia pelo prefixo). A chave nunca sai deste escopo.
+    const apiKey = callModel.startsWith("opencode/")
+      ? await lerChaveOpenCodeZenDoVault(db)
+      : callConfig.apiKey;
+    return generateText({
+      model: callFactory(apiKey, callModel, baseUrl),
       system: prefix.system,
       messages: input.messages,
       tools: prefix.tools,
@@ -261,6 +280,12 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       topK,
       maxOutputTokens,
     });
+  };
+
+  try {
+    // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
+    // OpenAI-compatível. Providers canônicos ignoram o terceiro argumento.
+    result = await executar(config, model, factory, decisao.baseUrl ?? undefined);
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
     //
@@ -286,7 +311,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       // O log da falha não pode causar uma segunda falha. Se o próprio INSERT
       // de erro falhar, o erro ORIGINAL é o que interessa a quem chamou.
     });
-    deps.log?.error('llm: chamada falhou', {
+    deps.log?.error("llm: chamada falhou", {
       organization_id: input.tenantId,
       purpose,
       provider: config.provider,
@@ -294,7 +319,71 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       origem_da_escolha: decisao.origem,
       ...normalizarErro(err),
     });
-    throw err;
+
+    const falhaPrimaria = normalizarErro(err);
+    const fallback = config.fallback;
+    const falhaElegivel = new Set([
+      "credencial_recusada",
+      "modelo_inexistente",
+      "limite_ou_saldo",
+      "provedor_indisponivel",
+    ]).has(falhaPrimaria.error_code);
+    const fallbackDiferente =
+      fallback !== null && (fallback.provider !== config.provider || fallback.model !== model);
+
+    // Nunca repete uma chamada por erro de tool/negócio: ela pode ter produzido
+    // efeito externo antes de falhar. O fallback é reservado a falhas do
+    // provedor/modelo, quando ainda é seguro tentar a segunda rota.
+    if (!fallback || !fallbackDiferente || !falhaElegivel) throw err;
+
+    const fallbackStartedAt = Date.now();
+    try {
+      const fallbackConfig = await resolveOrgLlmConfig(db, cfg, input.tenantId, {
+        provider: fallback.provider,
+        credentialId: fallback.credentialId,
+      });
+      if (
+        fallbackConfig.enabledModels.length > 0 &&
+        !fallbackConfig.enabledModels.includes(fallback.model)
+      ) {
+        throw new LlmModelNotEnabledError(fallback.model);
+      }
+      const fallbackFactory = registry[fallbackConfig.provider];
+      if (fallbackFactory === undefined) {
+        throw new LlmProviderUnknownError(fallbackConfig.provider);
+      }
+      result = await executar(fallbackConfig, fallback.model, fallbackFactory);
+      effectiveConfig = fallbackConfig;
+      effectiveModel = fallback.model;
+      effectiveOrigin = "fallback_da_organizacao";
+      deps.log?.warn("llm: fallback da organização assumiu a chamada", {
+        organization_id: input.tenantId,
+        purpose,
+        primary_provider: config.provider,
+        primary_model: model,
+        fallback_provider: fallbackConfig.provider,
+        fallback_model: fallback.model,
+        primary_error_code: falhaPrimaria.error_code,
+      });
+    } catch (fallbackErr) {
+      await registrarFalha(db, {
+        input,
+        purpose,
+        provider: fallback.provider,
+        model: fallback.model,
+        origem: "fallback_da_organizacao",
+        latencyMs: Date.now() - fallbackStartedAt,
+        erro: fallbackErr,
+      }).catch(() => {});
+      deps.log?.error("llm: fallback da organização também falhou", {
+        organization_id: input.tenantId,
+        purpose,
+        provider: fallback.provider,
+        model: fallback.model,
+        ...normalizarErro(fallbackErr),
+      });
+      throw fallbackErr;
+    }
   }
   const latencyMs = Date.now() - startedAt;
 
@@ -304,7 +393,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? 0,
     cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens ?? 0,
   };
-  const cost = costCents(model, usage);
+  const cost = costCents(effectiveModel, usage);
 
   const { rows } = await db.query<{ id: string }>(
     `insert into llm_calls
@@ -319,34 +408,34 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       input.jobId ?? null,
       input.variantId ?? null,
       purpose,
-      config.provider,
-      model,
+      effectiveConfig.provider,
+      effectiveModel,
       usage.inputTokens,
       usage.outputTokens,
       usage.cacheReadTokens,
       usage.cacheWriteTokens,
       cost,
       latencyMs,
-      decisao.origem,
+      effectiveOrigin,
     ],
   );
 
   // Só métricas — nunca conteúdo de mensagem (PII) nem chave.
-  deps.log?.info('llm: chamada concluída', {
+  deps.log?.info("llm: chamada concluída", {
     organization_id: input.tenantId,
-    provider: config.provider,
-    model,
+    provider: effectiveConfig.provider,
+    model: effectiveModel,
     purpose,
     // POR QUE este modelo, e não só QUAL: é a diferença entre um log que
     // confirma o que aconteceu e um que explica uma configuração que não
     // pegou. Vira coluna em llm_calls na frente de logs.
-    origem_da_escolha: decisao.origem,
+    origem_da_escolha: effectiveOrigin,
     ...usage,
     cost_cents: cost,
     latency_ms: latencyMs,
   });
   for (const aviso of decisao.avisos) {
-    deps.log?.warn('llm: configuração do ponto tem incoerência', {
+    deps.log?.warn("llm: configuração do ponto tem incoerência", {
       organization_id: input.tenantId,
       purpose,
       aviso,
@@ -356,13 +445,13 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   return {
     result,
     callId: rows[0]?.id ?? null,
-    provider: config.provider,
-    model,
+    provider: effectiveConfig.provider,
+    model: effectiveModel,
     usage,
     costCents: cost,
     latencyMs,
     /** De onde veio a escolha — o painel lê isto para explicar cada ponto. */
-    origem: decisao.origem,
+    origem: effectiveOrigin,
     avisos: decisao.avisos,
   };
 }
@@ -395,17 +484,24 @@ export function normalizarErro(err: unknown): {
     (err as { statusCode?: number; status?: number })?.status ??
     null;
 
-  let codigo = 'erro_desconhecido';
-  if (status === 401 || status === 403 || /unauthor|invalid.*api.?key|authentication|incorrect api key/i.test(bruto)) {
-    codigo = 'credencial_recusada';
+  let codigo = "erro_desconhecido";
+  if (
+    status === 401 ||
+    status === 403 ||
+    /unauthor|invalid.*api.?key|authentication|incorrect api key/i.test(bruto)
+  ) {
+    codigo = "credencial_recusada";
   } else if (status === 404 || /model.*not.*found|does not exist/i.test(bruto)) {
-    codigo = 'modelo_inexistente';
+    codigo = "modelo_inexistente";
   } else if (status === 429 || /rate.?limit|quota|insufficient.*credit/i.test(bruto)) {
-    codigo = 'limite_ou_saldo';
-  } else if ((status !== null && status >= 500) || /timeout|ECONNREFUSED|fetch failed|network/i.test(bruto)) {
-    codigo = 'provedor_indisponivel';
+    codigo = "limite_ou_saldo";
+  } else if (
+    (status !== null && status >= 500) ||
+    /timeout|ECONNREFUSED|fetch failed|network/i.test(bruto)
+  ) {
+    codigo = "provedor_indisponivel";
   } else if (/tool|function.?call/i.test(bruto)) {
-    codigo = 'modelo_sem_ferramentas';
+    codigo = "modelo_sem_ferramentas";
   }
 
   return {
@@ -421,7 +517,7 @@ export function normalizarErro(err: unknown): {
     // apontado por `base_url` — caminho que o painel de provedores abre — pode
     // ecoar no corpo de erro o header de autorização ou o prompt recebido.
     error_message: redigirMensagemDoProvedor(bruto),
-    http_status: typeof status === 'number' ? status : null,
+    http_status: typeof status === "number" ? status : null,
   };
 }
 
@@ -437,12 +533,12 @@ export function redigirMensagemDoProvedor(bruto: string): string {
   const semSegredo = bruto
     // Chaves de API dos provedores que este produto fala: `sk-ant-…`,
     // `sk-or-v1-…`, `sk-proj-…`, `sk-…`, e as do Google (`AIza…`).
-    .replace(/sk-[A-Za-z0-9_-]{8,}/g, '[CHAVE]')
-    .replace(/AIza[A-Za-z0-9_-]{10,}/g, '[CHAVE]')
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, "[CHAVE]")
+    .replace(/AIza[A-Za-z0-9_-]{10,}/g, "[CHAVE]")
     // O header inteiro, em qualquer caixa, com ou sem `Authorization:` na
     // frente — é assim que ele costuma aparecer ecoado num corpo de erro.
-    .replace(/[Bb]earer\s+[A-Za-z0-9._-]{8,}/g, 'Bearer [CHAVE]')
-    .replace(/(x-api-key|api[-_]?key|authorization)\s*[:=]\s*\S+/gi, '$1: [CHAVE]');
+    .replace(/[Bb]earer\s+[A-Za-z0-9._-]{8,}/g, "Bearer [CHAVE]")
+    .replace(/(x-api-key|api[-_]?key|authorization)\s*[:=]\s*\S+/gi, "$1: [CHAVE]");
   return scrubMessage(semSegredo).slice(0, 500);
 }
 
