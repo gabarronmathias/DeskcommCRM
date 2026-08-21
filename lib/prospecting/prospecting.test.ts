@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { pediuOptOut } from "@/lib/channels/pos-entrada";
 import { isWithinBusinessHours, loadProspectingConfig, OPENING_MESSAGE } from "./config";
 import { domainOf, normalizeBrazilianCommercialPhone, segmentTag } from "./normalization";
-import { contactIdentityFromPhoneCheck } from "./dispatch";
+import {
+  contactIdentityFromPhoneCheck,
+  contactSourceMetadataWithWaLid,
+} from "./dispatch";
 
 describe("prospecção foodservice", () => {
   it("normaliza telefone comercial brasileiro e rejeita forma curta", () => {
@@ -102,5 +105,18 @@ describe("prospecção foodservice", () => {
         "+5512999990000",
       ),
     ).toBeNull();
+  });
+
+  it("grava o LID na origem da coluna calculada do contato", () => {
+    expect(contactSourceMetadataWithWaLid({ source: "spreadsheet" }, "987654321")).toEqual({
+      source: "spreadsheet",
+      waha_lid: "987654321@lid",
+    });
+    expect(
+      contactSourceMetadataWithWaLid(
+        { source: "spreadsheet", waha_lid: "stale@lid" },
+        null,
+      ),
+    ).toEqual({ source: "spreadsheet" });
   });
 });

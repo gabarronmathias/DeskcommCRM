@@ -53,6 +53,16 @@ export function contactIdentityFromPhoneCheck(
   return { phoneNumber: `+${phoneDigits}`, waLid };
 }
 
+export function contactSourceMetadataWithWaLid(
+  current: unknown,
+  waLid: string | null,
+): Record<string, unknown> {
+  const next = { ...((current ?? {}) as Record<string, unknown>) };
+  if (waLid) next.waha_lid = `${waLid}@lid`;
+  else delete next.waha_lid;
+  return next;
+}
+
 async function recordPhoneVerification(
   db: SupabaseClient,
   row: QueueRow,
@@ -201,7 +211,7 @@ export async function dispatchQueueRow(db: SupabaseClient, row: QueueRow): Promi
   const [{ data: contact }, { data: conversation }, { data: session }] = await Promise.all([
     db
       .from("contacts")
-      .select("phone_number, is_blocked, force_human, tags")
+      .select("phone_number, is_blocked, force_human, tags, source_metadata")
       .eq("organization_id", row.organization_id)
       .eq("id", row.contact_id)
       .maybeSingle(),
@@ -254,7 +264,10 @@ export async function dispatchQueueRow(db: SupabaseClient, row: QueueRow): Promi
         .from("contacts")
         .update({
           phone_number: identity.phoneNumber,
-          wa_lid: identity.waLid,
+          source_metadata: contactSourceMetadataWithWaLid(
+            contact.source_metadata,
+            identity.waLid,
+          ),
           phone_lookup_at: new Date().toISOString(),
         })
         .eq("organization_id", row.organization_id)
