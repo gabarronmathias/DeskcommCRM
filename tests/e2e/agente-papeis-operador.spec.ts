@@ -44,7 +44,7 @@ test.describe.configure({ timeout: 240_000 });
  * `agente-novo-e-uso` vir antes de `followup-builder`).
  */
 test.beforeAll(() => {
-  execFileSync("npx", ["tsx", "scripts/seed-e2e-capacidades.ts"], { stdio: "inherit" });
+  execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-capacidades.ts"], { stdio: "inherit" });
   creds = lerCreds();
 });
 

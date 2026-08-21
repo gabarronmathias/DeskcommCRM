@@ -208,6 +208,8 @@ export async function startWorker(
           {
             wahaBaseUrl: env.WAHA_API_BASE_URL,
             wahaApiKey: env.WAHA_API_KEY,
+            ...(env.WAHA_WEBHOOK_BASE_URL ? { webhookBaseUrl: env.WAHA_WEBHOOK_BASE_URL } : {}),
+            ...(env.WAHA_HMAC_SECRET ? { webhookHmacSecret: env.WAHA_HMAC_SECRET } : {}),
             intervalMs: env.WATCHDOG_INTERVAL_MS,
             redriveMinAgeMs: env.WATCHDOG_REDRIVE_MIN_AGE_MS,
             redriveBatchSize: env.WATCHDOG_REDRIVE_BATCH_SIZE,

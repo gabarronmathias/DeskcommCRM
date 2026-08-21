@@ -41,7 +41,7 @@ interface Creds {
 }
 
 function tsx(script: string): string {
-  return execFileSync("npx", ["tsx", script], { encoding: "utf8" });
+  return execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", script], { encoding: "utf8" });
 }
 
 function loadCreds(): Creds {

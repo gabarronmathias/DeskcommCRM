@@ -45,7 +45,7 @@ const INVITE_PATH = path.join(process.cwd(), ".e2e-invite.json");
 
 function load(): { base: BaseCreds; inv: InviteCreds } {
   if (!fs.existsSync(INVITE_PATH) || !fs.existsSync(CREDS_PATH)) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-invite.ts"], { stdio: "inherit" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-invite.ts"], { stdio: "inherit" });
   }
   return {
     base: JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as BaseCreds,

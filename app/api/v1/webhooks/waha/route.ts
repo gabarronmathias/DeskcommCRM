@@ -16,6 +16,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dispatchWahaEvent, type WahaEnvelope } from "@/lib/waha/ingest";
 import { authenticateWahaWebhook } from "@/lib/waha/webhook-auth";
@@ -104,11 +105,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const headersJson: Record<string, string> = {};
   req.headers.forEach((value, key) => {
-    if (key.toLowerCase().startsWith("authorization")) return;
-    if (key.toLowerCase() === "cookie") return;
+    const normalized = key.toLowerCase();
+    if (normalized.startsWith("authorization")) return;
+    if (normalized === "cookie" || normalized === "x-webhook-hmac" || normalized === "x-api-key") {
+      return;
+    }
     headersJson[key] = value;
   });
-  await admin.from("webhook_events_log").insert({
+  const { data: eventLog, error: eventLogError } = await admin
+    .from("webhook_events_log")
+    .insert({
     organization_id: session.organization_id,
     channel_session_id: session.id,
     provider: "waha",
@@ -117,18 +123,54 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     headers: headersJson,
     raw_body: rawBody,
     payload_parsed: envelope as unknown as Record<string, unknown>,
-    signature_header: sigHeader ?? null,
+    signature_header: sigHeader ? "[redacted]" : null,
     valid_signature: validSignature,
     event_type: eventType,
     external_id: externalId,
     status: "received",
     attempts: 0,
-  });
+    })
+    .select("id")
+    .single();
+
+  if (eventLogError || !eventLog) {
+    logger.error("waha.webhook: failed to persist event before dispatch", {
+      request_id: requestId,
+      channel_session_id: session.id,
+      event_type: eventType,
+      error_code: eventLogError?.code,
+    });
+    return fail("internal_error", "webhook event could not be persisted", 500, { requestId });
+  }
 
   try {
     await dispatchWahaEvent(admin, session, envelope, requestId);
+    const { error: processedError } = await admin
+      .from("webhook_events_log")
+      .update({ status: "processed", processed_at: new Date().toISOString(), attempts: 1 })
+      .eq("id", eventLog.id);
+    if (processedError) {
+      logger.warn("waha.webhook: event processed but audit status update failed", {
+        request_id: requestId,
+        webhook_event_id: eventLog.id,
+        error_code: processedError.code,
+      });
+    }
   } catch (err) {
-    console.error("[waha.webhook] handler failed", err);
+    const errorMessage = err instanceof Error ? err.message.slice(0, 1_000) : "unknown dispatch error";
+    await admin
+      .from("webhook_events_log")
+      .update({ status: "error", error_message: errorMessage, attempts: 1 })
+      .eq("id", eventLog.id);
+    logger.error("waha.webhook: dispatch failed", {
+      request_id: requestId,
+      webhook_event_id: eventLog.id,
+      channel_session_id: session.id,
+      event_type: eventType,
+    });
+    return fail("webhook_dispatch_failed", "temporary webhook processing failure", 500, {
+      requestId,
+    });
   }
 
   return ok({ accepted: true }, { requestId });

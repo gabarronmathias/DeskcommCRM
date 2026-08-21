@@ -50,6 +50,7 @@ const pool = new pg.Pool({
 
 const ORG = "cccccccc-0000-4000-8000-000000000001";
 const CONTACT = "cccccccc-0000-4000-8000-000000000002";
+const CONTACT_WAHA = "cccccccc-0000-4000-8000-000000000012";
 /** Sessão Cloud API — o canal que EXIGE template fora da janela. */
 const SESSION_META = "cccccccc-0000-4000-8000-000000000003";
 /** Sessão WAHA — o contraste: fala livre, e a tool nem deve existir. */
@@ -177,16 +178,16 @@ function montaHandler(doGenerate: unknown) {
 
 async function rodaTurno(
   handler: ReturnType<typeof montaHandler>,
-  alvo: { conv: string; sessao: string; msg: string; evento: string },
+  alvo: { conv: string; sessao: string; msg: string; evento: string; contact: string },
 ): Promise<Error | null> {
   // O PG efêmero é compartilhado: neutraliza jobs alheios para o claim FIFO pegar o deste.
   await pool.query("update job_queue set status = 'done' where status = 'pending'");
   const { job } = await m.queue.enqueueJob(pool, ORG, {
     kind: "inbound_turn",
-    leadId: CONTACT,
+    leadId: alvo.contact,
     payload: {
       conversation_id: alvo.conv,
-      contact_id: CONTACT,
+      contact_id: alvo.contact,
       channel_session_id: alvo.sessao,
       inbound_message_id: alvo.msg,
       crm_event_id: alvo.evento,
@@ -230,6 +231,11 @@ beforeAll(async () => {
     [CONTACT, ORG],
   );
   await pool.query(
+    `insert into contacts (id, organization_id, name, phone_number)
+     values ($1,$2,'Lead Template WAHA','+5511900000778') on conflict (id) do nothing`,
+    [CONTACT_WAHA, ORG],
+  );
+  await pool.query(
     `insert into channel_sessions (id, organization_id, provider, meta_phone_number_id,
                                    meta_waba_id, status, webhook_secret_encrypted)
      values ($1,$2,'meta_cloud','111','222','WORKING','\\x00'::bytea)
@@ -243,21 +249,21 @@ beforeAll(async () => {
      on conflict (id) do nothing`,
     [SESSION_WAHA, ORG],
   );
-  for (const [conv, sessao] of [
-    [CONV, SESSION_META],
-    [CONV_WAHA, SESSION_WAHA],
+  for (const [conv, sessao, contact] of [
+    [CONV, SESSION_META, CONTACT],
+    [CONV_WAHA, SESSION_WAHA, CONTACT_WAHA],
   ] as const) {
     await pool.query(
       `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
        values ($1,$2,$3,$4,'open',false) on conflict (id) do nothing`,
-      [conv, ORG, CONTACT, sessao],
+      [conv, ORG, contact, sessao],
     );
   }
   // 30 HORAS: a janela de 24h está FECHADA. É o que dá sentido ao template — e o que
   // faria o gate `messaging_window` vetar um envio de texto livre.
-  for (const [msg, conv, sessao] of [
-    [MSG, CONV, SESSION_META],
-    [MSG_WAHA, CONV_WAHA, SESSION_WAHA],
+  for (const [msg, conv, sessao, contact] of [
+    [MSG, CONV, SESSION_META, CONTACT],
+    [MSG_WAHA, CONV_WAHA, SESSION_WAHA, CONTACT_WAHA],
   ] as const) {
     await pool.query(
       `insert into messages (id, organization_id, conversation_id, channel_session_id, contact_id,
@@ -265,7 +271,7 @@ beforeAll(async () => {
        values ($1,$2,$3,$4,$5,'text','inbound','delivered','oi','external_device',
                now() - interval '30 hours')
        on conflict (id) do nothing`,
-      [msg, ORG, conv, sessao, CONTACT],
+      [msg, ORG, conv, sessao, contact],
     );
   }
   await pool.query(
@@ -301,8 +307,8 @@ beforeEach(() => {
   ultimoResultadoDeTool = null;
 });
 
-const ALVO_META = { conv: CONV, sessao: SESSION_META, msg: MSG, evento: "cccccccc-0000-4000-8000-000000000006" };
-const ALVO_WAHA = { conv: CONV_WAHA, sessao: SESSION_WAHA, msg: MSG_WAHA, evento: "cccccccc-0000-4000-8000-000000000016" };
+const ALVO_META = { conv: CONV, sessao: SESSION_META, msg: MSG, evento: "cccccccc-0000-4000-8000-000000000006", contact: CONTACT };
+const ALVO_WAHA = { conv: CONV_WAHA, sessao: SESSION_WAHA, msg: MSG_WAHA, evento: "cccccccc-0000-4000-8000-000000000016", contact: CONTACT_WAHA };
 
 describe("turno completo — send_template com a janela de 24h FECHADA", () => {
   it("o template sai, com corpo renderizado e identidade preservada", async () => {
@@ -378,8 +384,8 @@ describe("turno completo — send_template com a janela de 24h FECHADA", () => {
 
 describe("turno completo — canal WAHA não ganha a ferramenta", () => {
   it("o modelo TENTA usar a ferramenta e ela não está lá — nenhum template é montado", async () => {
-    // O contraste que fecha o seam: mesma org, mesmo contato, mesma janela fechada —
-    // só o provider muda.
+    // O contraste que fecha o seam: mesma org, mesma janela fechada — só o
+    // provider muda. Contatos distintos respeitam a conversa canônica 1:1.
     //
     // O modelo aqui TENTA chamar `send_template` de propósito. A primeira versão deste
     // caso usava um modelo que só falava texto — e passaria idêntica se a tool

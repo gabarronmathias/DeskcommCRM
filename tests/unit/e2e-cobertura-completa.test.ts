@@ -57,7 +57,10 @@ const DIR_SPECS = path.join(RAIZ, "tests", "e2e");
  * em vez de devolver lista vazia.
  */
 function listaDoWorkflow(yml: string, chave: string): string[] {
-  const re = new RegExp(`^\\s*${chave}:\\s*>-\\s*\\n((?:\\s{8,}\\S.*\\n)+)`, "m");
+  const re = new RegExp(
+    `^[ \\t]*${chave}:[ \\t]*>-[ \\t]*\\r?\\n((?:[ \\t]{8,}\\S[^\\r\\n]*\\r?\\n)+)`,
+    "m",
+  );
   const m = re.exec(yml);
   if (m === null) return [];
   return m[1]!

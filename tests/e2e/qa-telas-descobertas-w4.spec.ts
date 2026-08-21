@@ -113,7 +113,7 @@ test.describe("QA — as telas da W4 que ninguém abria", () => {
     await login(page);
 
     // Primeiro faz o assistente mexer em algo, para haver o que procurar.
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-agente-mcp.ts"], { stdio: "pipe" });
+    execFileSync(process.execPath, [process.cwd() + "/node_modules/tsx/dist/cli.mjs", "scripts/seed-e2e-agente-mcp.ts"], { stdio: "pipe" });
     const { bearer } = JSON.parse(fs.readFileSync(AGENTE_PATH, "utf8")) as { bearer: string };
     const funis = await page.request.get(`${APP_URL}/api/v1/pipelines`);
     const funilId = ((await funis.json()) as { data?: Array<{ id: string }> }).data?.[0]?.id;

@@ -43,16 +43,19 @@ const MODULOS_PUROS = ["@/lib/leads/timeline-query"] as const;
 /** Importa o módulo num processo filho SEM as variáveis do app. */
 function importaComAmbienteLimpo(modulo: string): { ok: boolean; erro: string } {
   const script = `import(${JSON.stringify(modulo)}).then(()=>{console.log("OK")},(e)=>{console.log("ERRO:"+String(e && e.message).split("\\n")[0]);});`;
-  // Só PATH e HOME: PATH para achar o `npx`, HOME para o cache dele. Nenhuma
-  // variável do app — é justamente a ausência delas que o teste mede.
+  // Só variáveis do sistema. Nenhuma variável do app — é justamente a ausência
+  // delas que o teste mede. O CLI local evita rede e o `npx`/`npx.cmd`, cujo
+  // nome executável muda entre POSIX e Windows.
   // `NODE_ENV` fica de fora de propósito; o cast existe porque o tipo do Node o
   // exige e aqui a omissão é o ponto.
   const limpo = {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? "",
+    SYSTEMROOT: process.env.SYSTEMROOT ?? "",
   } as unknown as NodeJS.ProcessEnv;
   try {
-    const saida = execFileSync("npx", ["tsx", "--eval", script], {
+    const tsxCli = join(RAIZ, "node_modules", "tsx", "dist", "cli.mjs");
+    const saida = execFileSync(process.execPath, [tsxCli, "--eval", script], {
       cwd: RAIZ,
       env: limpo,
       encoding: "utf8",

@@ -11913,7 +11913,7 @@ grant  execute on function public.fn_definir_marca_da_organizacao(uuid, uuid, js
 notify pgrst, 'reload schema';
 
 
--- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
+-- ---- varredura anon antecipada (legado da migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
 -- dele — quem o empurrar para o meio desarma a cura para tudo que vier depois.
@@ -12130,3 +12130,3745 @@ create trigger trg_platform_branding_touch
   for each row execute function public.fn_touch_updated_at();
 
 notify pgrst, 'reload schema';
+
+-- ---- 20260813120000_0156_quadro_do_onboarding ----
+-- 0156: o quadro de clientes montado no onboarding, numa transação só
+--
+-- ═══ O PROBLEMA ═══
+--
+-- `trg_seed_default_pipeline_for_org` semeia o MESMO funil de e-commerce em toda
+-- organização criada: "Carrinho abandonado", "Aguardando pagamento", "Em
+-- separação", "Enviado". Num produto que se declara multi-nicho, a clínica
+-- termina a instalação e abre o quadro dela com uma coluna chamada "Carrinho
+-- abandonado". O gatilho continua: uma organização precisa nascer com ALGUM
+-- funil, senão o primeiro lead não tem onde entrar. O que faltava era o passo do
+-- wizard que troca esse quadro por um que sirva.
+--
+-- E tem a metade que não se vê. Medido neste banco em 2026-08-13:
+--
+--   select count(*), count(*) filter (where agent_stage_hint is not null)
+--     from crm_stages;   ->   312 |  4
+--
+-- Quatro. E as quatro são de organizações de teste. Ou seja, toda instalação
+-- real nasce com o assistente incapaz de mover UM card: `coberturaDoFunil()`
+-- devolve `mudo: true`. Por isso a gravação aqui insere `agent_stage_hint` junto
+-- com o nome — trocar as colunas sem ensinar o caminho seria trocar um quadro
+-- errado por um quadro certo e igualmente parado.
+--
+-- ═══ POR QUE UMA FUNÇÃO, E NÃO QUATRO CHAMADAS DO CLIENTE ═══
+--
+-- A troca é DELETE das etapas seguido de INSERT das novas, e a ordem é
+-- obrigatória: `uniq_crm_stages_pipeline_won`, `uniq_crm_stages_pipeline_hint` e
+-- `uniq_crm_stages_pipeline_slug` são imediatos, então qualquer estado
+-- intermediário com as duas gerações no mesmo funil é recusado pelo banco.
+--
+-- Só que o cliente JS não tem transação. Pelo cliente, um DELETE que passa
+-- seguido de um INSERT que falha deixa o funil SEM NENHUMA COLUNA — um quadro
+-- vazio, que é pior que o quadro errado com que a pessoa começou, e num passo
+-- de onboarding onde ela não tem como saber o que aconteceu. Aqui os dois vivem
+-- na mesma transação implícita da função: ou o quadro inteiro troca, ou nada
+-- muda.
+--
+-- ═══ AS DUAS RECUSAS ═══
+--
+-- (1) FUNIL COM NEGÓCIO. `crm_leads_stage_id_fkey` é ON DELETE RESTRICT, então o
+--     DELETE falharia — mas falharia como erro do Postgres numa tela de
+--     onboarding. Recusar antes devolve um motivo que a tela sabe explicar.
+--
+-- (2) ETAPA USADA POR UMA FONTE DE WEBHOOK. Esta é a silenciosa:
+--     `webhook_sources.default_stage_id` referencia `crm_stages` com ON DELETE
+--     **CASCADE**. O DELETE não falha — ele APAGA A FONTE DE WEBHOOK INTEIRA, em
+--     silêncio, e as integrações que mandavam lead para ela param sem nada ficar
+--     vermelho. É o "cascade fantasma" que a doutrina deste repositório lista
+--     como anti-pattern. Uma organização em onboarding normalmente não tem
+--     nenhuma; "normalmente" não é um lugar de onde se apaga dado.
+--
+-- A função devolve o motivo em jsonb em vez de `raise exception` porque as duas
+-- recusas são estados NORMAIS do produto, não erros: a tela precisa explicá-las
+-- em português, e exception vira string opaca do lado do cliente.
+
+-- ---- o quadro do onboarding, atômico (migration 0156) ----
+
+create or replace function public.fn_aplicar_quadro_do_onboarding(
+  p_organization_id uuid,
+  p_pipeline_id uuid,
+  p_nome text,
+  p_slug text,
+  p_etapas jsonb
+) returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_negocios bigint;
+  v_fontes bigint;
+  v_criadas bigint;
+begin
+  -- O funil é DESTA organização? A função roda como `postgres` e passa por cima
+  -- da RLS; o filtro de tenant é responsabilidade dela.
+  perform 1 from public.crm_pipelines
+   where id = p_pipeline_id and organization_id = p_organization_id;
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'funil_nao_encontrado');
+  end if;
+
+  select count(*) into v_negocios
+    from public.crm_leads
+   where pipeline_id = p_pipeline_id
+     and organization_id = p_organization_id;
+
+  if v_negocios > 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'funil_com_negocios', 'quantos', v_negocios);
+  end if;
+
+  -- ON DELETE CASCADE: sem esta recusa, trocar as colunas apaga a fonte inteira.
+  select count(*) into v_fontes
+    from public.webhook_sources w
+    join public.crm_stages s on s.id = w.default_stage_id
+   where s.pipeline_id = p_pipeline_id;
+
+  if v_fontes > 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'etapa_em_uso_por_webhook', 'quantos', v_fontes);
+  end if;
+
+  delete from public.crm_stages
+   where pipeline_id = p_pipeline_id
+     and organization_id = p_organization_id;
+
+  insert into public.crm_stages
+    (organization_id, pipeline_id, name, slug, position, is_won, is_lost, agent_stage_hint)
+  select p_organization_id,
+         p_pipeline_id,
+         e->>'nome',
+         e->>'slug',
+         (e->>'position')::numeric,
+         coalesce((e->>'is_won')::boolean, false),
+         coalesce((e->>'is_lost')::boolean, false),
+         nullif(e->>'agent_stage_hint', '')
+    from jsonb_array_elements(p_etapas) as e;
+  get diagnostics v_criadas = row_count;
+
+  update public.crm_pipelines
+     set name = p_nome,
+         slug = p_slug,
+         updated_at = now()
+   where id = p_pipeline_id
+     and organization_id = p_organization_id;
+
+  return jsonb_build_object('ok', true, 'etapas', v_criadas);
+end$$;
+
+-- TRÊS origens de EXECUTE, e medi as três antes de escrever esta lista — com o
+-- revoke de `public, anon` apenas, `has_function_privilege` ainda respondia
+-- `authenticated, service_role`:
+--
+--   (A) o grant que o Postgres dá a PUBLIC ao criar qualquer função;
+--   (B) `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON FUNCTIONS TO anon` (baseline);
+--   (C) a irmã dela, `... TO authenticated` (baseline, linha seguinte).
+--
+-- Nenhum dos revokes remove os outros dois. E aqui (C) é a perigosa, não (B):
+-- esta função é SECURITY DEFINER, roda como `postgres` por cima da RLS e recebe
+-- `p_organization_id` como ARGUMENTO. Executável por `authenticated`, qualquer
+-- usuário logado de qualquer tenant poderia reescrever o funil de OUTRA
+-- organização passando o id dela — exatamente a classe de furo que a 0149
+-- fechou. O invariante `hardening-definer-varredura` reprova definer volátil
+-- alcançável por `authenticated` fora da allowlist, e esta não entra nela.
+revoke execute on function public.fn_aplicar_quadro_do_onboarding(uuid, uuid, text, text, jsonb)
+  from public, anon, authenticated;
+-- Só o service role: o único chamador é a Server Action do onboarding, que já
+-- resolveu a organização do cookie de sessão. Quem não precisa não recebe.
+grant execute on function public.fn_aplicar_quadro_do_onboarding(uuid, uuid, text, text, jsonb)
+  to service_role;
+
+-- ---- 20260814090000_0157_marca_por_organizacao ----
+-- ============================================================================
+-- 0157 — A MARCA POR ORGANIZAÇÃO, E O FIM DO READ-MODIFY-WRITE EM `settings`.
+--
+-- ─── Por que uma função, e não mais um `.update({settings: {...}})` ──────────
+--
+-- `organizations.settings` tem três donos com gates diferentes: a aba
+-- Organização (admin, app/actions/settings/updateTenant.ts:56-83), o PATCH de
+-- atendimento (manager, app/api/v1/settings/routing/route.ts:109-128) e a régua
+-- de atrito (manager, app/api/v1/metrics/atrito/route.ts:210-228). Os três leem
+-- o jsonb INTEIRO, espalham em memória e regravam o objeto inteiro, em
+-- round-trips separados — sem transação, sem lock, sem versão.
+--
+-- A perda foi MEDIDA, não deduzida: o manager restringe `visibility_mode` de
+-- 'all' para 'own'; o admin salva a aba de identidade com o snapshot velho; o
+-- valor volta para 'all'. Nenhum dos dois recebe erro. E `visibility_mode` é
+-- lido DIRETO pela RLS, dentro de `fn_can_view_conversation` e
+-- `fn_can_view_lead`: com 'own' a função devolve f para a conversa de outro
+-- dono, com 'all' devolve t. Ou seja, um write de COR reverteria, em silêncio,
+-- uma decisão de exposição de dado de cliente.
+--
+-- `jsonb_set` numa instrução só fecha a janela: o objeto nunca sai do banco.
+--
+-- ─── Por que ela devolve `integer`, e não `void` ────────────────────────────
+--
+-- A única policy de escrita de `organizations` é `orgs_write_platform_admin`
+-- (baseline.sql:3415), sem cláusula FOR — FOR ALL, USING e WITH CHECK =
+-- fn_is_platform_admin(). Pelo client de sessão o UPDATE de um admin de TENANT
+-- casa 0 linhas e o PostgREST responde 204 No Content: `error` chega null no
+-- supabase-js, a tela diz "salvo" e nada foi gravado (issue #144). Devolver o
+-- `row_count` é o que permite ao chamador distinguir "gravou" de "não gravou" —
+-- informação que existe no protocolo e que a query com `.update()` sem
+-- `.select()` descarta por escolha.
+--
+-- ─── Por que a autorização também mora AQUI ─────────────────────────────────
+--
+-- O gate do chamador (Server Action) usa o papel do SNAPSHOT de membership
+-- carregado por `loadAuthUser()`, não re-resolvido do banco — diferente do
+-- caminho de rota, que passa por `fn_user_role_in_org`. Repetir a checagem no
+-- banco é o que faz a regra valer para qualquer chamador futuro, e é o que
+-- impede escalação caso o EXECUTE desta função escape um dia para
+-- `authenticated` (o ator vem por argumento porque o admin client não tem
+-- `auth.uid()`). Essa fuga é vigiada por
+-- `tests/invariants/hardening-definer-varredura.test.ts`.
+--
+-- ─── O CHECK que o jsonb não pode ter ───────────────────────────────────────
+--
+-- `accent_hex` dentro de jsonb não aceita CHECK de coluna, então a validação de
+-- forma vive na função, com a MESMA regex de `platform_branding_accent_hex`:
+-- `^#[0-9a-f]{6}$`, que é o que `normalizarHex` (lib/branding/rampa.ts) emite.
+-- Aceitar `#FFF` criaria duas grafias da mesma cor e a pergunta "mudou?"
+-- passaria a mentir.
+--
+-- ⚠️ Isto NÃO entra em `tests/invariants/vocabulario-banco-x-typescript.test.ts`:
+-- aquele extrator só reconhece CHECK de CONJUNTO (`= ANY (ARRAY[...])`), e aqui
+-- não há sequer CHECK de coluna — a regra é da função.
+--
+-- ─── Sem `event_log` ────────────────────────────────────────────────────────
+--
+-- `lib/event-log/drain.ts:4-6` só seleciona tipos COM handler registrado, e os
+-- 12 de `lib/event-log/register-handlers.ts` não cobrem nada de `org.*`. Um
+-- `branding.updated` nasceria `pending` para sempre em todo clone — anti-pattern
+-- nº 3 do CLAUDE.md, o mesmo que `updateBranding.ts:45-51` recusou por escrito.
+-- O registro desta mutação é `audit()`, que tem consumidor real (/admin/audit).
+--
+-- Idempotente: `create or replace function`. Nenhuma constraint nova sobre dado
+-- existente, então não há o que deduplicar antes.
+-- ============================================================================
+
+create or replace function public.fn_definir_marca_da_organizacao(
+  p_org   uuid,
+  p_actor uuid,
+  p_marca jsonb
+) returns integer
+    language plpgsql
+    volatile
+    security definer
+    set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_linhas integer;
+  v_hex    text;
+  v_limpar boolean;
+begin
+  if p_org is null or p_actor is null then
+    raise exception 'marca_da_organizacao_argumento_nulo'
+      using errcode = '22023';
+  end if;
+
+  -- "Apague a marca (volte ao padrão de cima)" chega por DUAS formas, e as duas
+  -- significam a mesma coisa: SQL NULL (chamada direta, psql, plpgsql) e o
+  -- jsonb `'null'` — NÃO MEDIDO qual das duas o PostgREST produz para um
+  -- argumento jsonb recebido como `{"p_marca": null}`, e a diferença não pode
+  -- decidir se o admin consegue limpar a marca. Tratar só uma delas deixaria o
+  -- caminho de limpeza levantando 22023 num dos dois transportes.
+  v_limpar := p_marca is null or jsonb_typeof(p_marca) = 'null';
+
+  -- Qualquer outra coisa que não seja objeto é chamada errada: gravar um escalar
+  -- em `settings.branding` faria o resolvedor ler um envelope que não existe.
+  if not v_limpar and jsonb_typeof(p_marca) <> 'object' then
+    raise exception 'marca_da_organizacao_forma_invalida: %', jsonb_typeof(p_marca)
+      using errcode = '22023';
+  end if;
+
+  v_hex := nullif(p_marca ->> 'accent_hex', '');
+  if v_hex is not null and v_hex !~ '^#[0-9a-f]{6}$' then
+    raise exception 'marca_da_organizacao_accent_hex_invalido'
+      using errcode = '22023';
+  end if;
+
+  -- Autorização: `admin` da PRÓPRIA organização, ou super-admin de plataforma.
+  -- Falha ALTO (exceção), não devolvendo 0: 0 tem outro significado abaixo
+  -- ("a organização não existe"), e colapsar os dois deixaria o chamador sem
+  -- saber se o problema é papel ou id.
+  if not exists (
+       select 1 from public.user_organizations uo
+        where uo.user_id = p_actor
+          and uo.organization_id = p_org
+          and uo.role = 'admin'
+          and uo.revoked_at is null
+     )
+     and not exists (
+       select 1 from public.platform_admins pa
+        where pa.user_id = p_actor
+          and pa.revoked_at is null
+     )
+  then
+    raise exception 'marca_da_organizacao_sem_permissao'
+      using errcode = '42501';
+  end if;
+
+  update public.organizations o
+     set settings = case
+           when v_limpar
+             then coalesce(o.settings, '{}'::jsonb) - 'branding'
+           else jsonb_set(coalesce(o.settings, '{}'::jsonb), '{branding}', p_marca, true)
+         end
+   where o.id = p_org;
+
+  get diagnostics v_linhas = row_count;
+  return v_linhas;
+end;
+$$;
+
+comment on function public.fn_definir_marca_da_organizacao(uuid, uuid, jsonb) is
+  'Grava organizations.settings.branding com merge ATÔMICO (jsonb_set), sem tocar nas demais chaves do jsonb (llm, routing, visibility_mode, atrito, ai_dispatch_mode, canonical_conversation_tags, lost_reasons_extra, plan). Devolve linhas afetadas: 0 = a organização não existe. Papel insuficiente levanta 42501. Chamador: app/actions/settings/updateMarcaDaOrganizacao.ts.';
+
+-- ── OS DOIS REVOKES (CLAUDE.md, item 9) — são origens distintas de EXECUTE ──
+--
+-- (A) `from public`: o grant que o Postgres dá a PUBLIC ao criar QUALQUER
+--     função. `revoke ... from anon` NÃO o remove.
+-- (B) `from anon`: o grant DIRETO do `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON
+--     FUNCTIONS TO anon` que o baseline traz (linha ~3972) e que todo projeto
+--     Supabase já tem em `pg_default_acl` antes de qualquer SQL nosso — vale
+--     para toda função criada depois dele, isto é, para todo apêndice novo.
+--     `revoke ... from public` NÃO o remove.
+--
+-- `from authenticated` pelo mesmo motivo de (B) e mais um: esta função é
+-- VOLÁTIL (escreve). Definer volátil alcançável por qualquer usuário logado é
+-- escrita cross-tenant, e é a segunda regra de
+-- tests/invariants/hardening-definer-varredura.test.ts. O único chamador é o
+-- admin client (service_role).
+revoke execute on function public.fn_definir_marca_da_organizacao(uuid, uuid, jsonb)
+  from public, anon, authenticated;
+grant  execute on function public.fn_definir_marca_da_organizacao(uuid, uuid, jsonb)
+  to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- 20260815160000_0158_food_commerce ----
+-- 0158_food_commerce
+-- Food Commerce multi-tenant para DeskcommCRM.
+-- Genérico: não contém marca, produto ou tenant específico.
+-- Requer as migrations anteriores do DeskcommCRM (organizations, contacts,
+-- orders, idempotency_keys, emit_event, fn_touch_updated_at, fn_role_at_least).
+
+alter table public.orders
+  drop constraint if exists orders_external_provider_check;
+
+alter table public.orders
+  add constraint orders_external_provider_check
+  check (external_provider = any (array[
+    'nuvemshop'::text,
+    'vtex'::text,
+    'shopify'::text,
+    'deskcomm_food'::text
+  ]));
+
+create unique index if not exists orders_id_org_uq
+  on public.orders (id, organization_id);
+
+create table if not exists public.food_commerce_settings (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  app_name text not null,
+  logo_url text,
+  accent_hex text not null default '#6B5F33'
+    check (accent_hex ~ '^#[0-9A-Fa-f]{6}$'),
+  accent_soft_hex text not null default '#EFE7D5'
+    check (accent_soft_hex ~ '^#[0-9A-Fa-f]{6}$'),
+  tagline text,
+  headline text,
+  description text,
+  whatsapp_number text,
+  free_shipping_threshold_cents bigint
+    check (free_shipping_threshold_cents is null or free_shipping_threshold_cents >= 0),
+  currency char(3) not null default 'BRL',
+  is_enabled boolean not null default false,
+  settings jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.food_categories (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  slug text not null,
+  description text,
+  sort_order integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, slug),
+  unique (id, organization_id)
+);
+
+create table if not exists public.food_products (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  category_id uuid,
+  name text not null,
+  slug text not null,
+  description text,
+  image_url text,
+  emoji text,
+  price_cents bigint not null check (price_cents >= 0),
+  compare_at_price_cents bigint
+    check (compare_at_price_cents is null or compare_at_price_cents >= price_cents),
+  is_available boolean not null default true,
+  sort_order integer not null default 0,
+  sku text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, slug),
+  unique (id, organization_id)
+);
+
+create table if not exists public.food_modifier_groups (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  product_id uuid not null,
+  name text not null,
+  min_select integer not null default 0 check (min_select >= 0),
+  max_select integer not null default 1 check (max_select >= 1 and max_select >= min_select),
+  is_required boolean not null default false,
+  sort_order integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (id, organization_id)
+);
+
+create table if not exists public.food_modifiers (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  group_id uuid not null,
+  name text not null,
+  price_delta_cents bigint not null default 0,
+  sort_order integer not null default 0,
+  is_available boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (id, organization_id)
+);
+
+create table if not exists public.food_recommendation_rules (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  kind text not null
+    check (kind in ('upsell','cross_sell','upgrade','combo','order_bump','cart_goal')),
+  name text not null,
+  trigger_product_id uuid,
+  recommended_product_id uuid,
+  threshold_cents bigint check (threshold_cents is null or threshold_cents >= 0),
+  priority integer not null default 100,
+  is_active boolean not null default true,
+  config jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint food_recommendation_target_check
+    check (
+      (kind = 'cart_goal' and recommended_product_id is null)
+      or (kind <> 'cart_goal' and recommended_product_id is not null)
+    )
+);
+
+create table if not exists public.food_order_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  order_id uuid not null,
+  product_id uuid,
+  product_name_snapshot text not null,
+  unit_price_cents bigint not null check (unit_price_cents >= 0),
+  quantity integer not null check (quantity > 0),
+  line_total_cents bigint not null check (line_total_cents >= 0),
+  selected_modifiers jsonb not null default '[]'::jsonb,
+  added_via_recommendation boolean not null default false,
+  recommendation_rule_id uuid references public.food_recommendation_rules(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.food_recommendation_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  session_key text not null,
+  event_key text,
+  rule_id uuid references public.food_recommendation_rules(id) on delete set null,
+  trigger_product_id uuid references public.food_products(id) on delete set null,
+  recommended_product_id uuid references public.food_products(id) on delete set null,
+  order_id uuid references public.orders(id) on delete set null,
+  event_type text not null check (event_type in ('shown','clicked','added','removed','purchased')),
+  attributed_revenue_cents bigint not null default 0 check (attributed_revenue_cents >= 0),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.food_recommendation_events
+  add column if not exists event_key text;
+
+-- FKs compostas impedem cruzamento acidental de tenant.
+alter table public.food_products drop constraint if exists food_products_category_org_fk;
+alter table public.food_products
+  add constraint food_products_category_org_fk
+  foreign key (category_id, organization_id)
+  references public.food_categories(id, organization_id)
+  on delete restrict;
+
+alter table public.food_modifier_groups drop constraint if exists food_modifier_groups_product_org_fk;
+alter table public.food_modifier_groups
+  add constraint food_modifier_groups_product_org_fk
+  foreign key (product_id, organization_id)
+  references public.food_products(id, organization_id)
+  on delete cascade;
+
+alter table public.food_modifiers drop constraint if exists food_modifiers_group_org_fk;
+alter table public.food_modifiers
+  add constraint food_modifiers_group_org_fk
+  foreign key (group_id, organization_id)
+  references public.food_modifier_groups(id, organization_id)
+  on delete cascade;
+
+alter table public.food_recommendation_rules drop constraint if exists food_recommendation_trigger_org_fk;
+alter table public.food_recommendation_rules
+  add constraint food_recommendation_trigger_org_fk
+  foreign key (trigger_product_id, organization_id)
+  references public.food_products(id, organization_id)
+  on delete cascade;
+
+alter table public.food_recommendation_rules drop constraint if exists food_recommendation_product_org_fk;
+alter table public.food_recommendation_rules
+  add constraint food_recommendation_product_org_fk
+  foreign key (recommended_product_id, organization_id)
+  references public.food_products(id, organization_id)
+  on delete cascade;
+
+alter table public.food_order_items drop constraint if exists food_order_items_order_org_fk;
+alter table public.food_order_items
+  add constraint food_order_items_order_org_fk
+  foreign key (order_id, organization_id)
+  references public.orders(id, organization_id)
+  on delete cascade;
+
+alter table public.food_order_items drop constraint if exists food_order_items_product_org_fk;
+alter table public.food_order_items
+  add constraint food_order_items_product_org_fk
+  foreign key (product_id, organization_id)
+  references public.food_products(id, organization_id)
+  on delete restrict;
+
+create index if not exists food_categories_org_active_idx
+  on public.food_categories (organization_id, is_active, sort_order);
+create index if not exists food_products_org_available_idx
+  on public.food_products (organization_id, is_available, sort_order);
+create index if not exists food_products_category_idx
+  on public.food_products (organization_id, category_id, sort_order);
+create index if not exists food_modifier_groups_product_idx
+  on public.food_modifier_groups (organization_id, product_id, sort_order);
+create index if not exists food_modifiers_group_idx
+  on public.food_modifiers (organization_id, group_id, sort_order);
+create index if not exists food_recommendation_rules_org_idx
+  on public.food_recommendation_rules (organization_id, is_active, priority);
+create index if not exists food_order_items_order_idx
+  on public.food_order_items (organization_id, order_id);
+create index if not exists food_recommendation_events_session_idx
+  on public.food_recommendation_events (organization_id, session_key, created_at);
+create index if not exists food_recommendation_events_order_idx
+  on public.food_recommendation_events (organization_id, order_id)
+  where order_id is not null;
+create index if not exists food_order_items_recommendation_rule_idx
+  on public.food_order_items(recommendation_rule_id);
+create index if not exists food_recommendation_events_rule_idx
+  on public.food_recommendation_events(rule_id);
+create index if not exists food_recommendation_events_trigger_product_idx
+  on public.food_recommendation_events(trigger_product_id);
+create index if not exists food_recommendation_events_recommended_product_idx
+  on public.food_recommendation_events(recommended_product_id);
+create index if not exists food_recommendation_events_order_id_idx
+  on public.food_recommendation_events(order_id);
+create unique index if not exists food_recommendation_events_event_key_uq
+  on public.food_recommendation_events(organization_id, event_key)
+  where event_key is not null;
+
+-- updated_at
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS food_commerce_settings_touch_updated_at ON public.food_commerce_settings;
+  CREATE TRIGGER food_commerce_settings_touch_updated_at
+    BEFORE UPDATE ON public.food_commerce_settings
+    FOR EACH ROW EXECUTE FUNCTION public.fn_touch_updated_at();
+
+  DROP TRIGGER IF EXISTS food_categories_touch_updated_at ON public.food_categories;
+  CREATE TRIGGER food_categories_touch_updated_at
+    BEFORE UPDATE ON public.food_categories
+    FOR EACH ROW EXECUTE FUNCTION public.fn_touch_updated_at();
+
+  DROP TRIGGER IF EXISTS food_products_touch_updated_at ON public.food_products;
+  CREATE TRIGGER food_products_touch_updated_at
+    BEFORE UPDATE ON public.food_products
+    FOR EACH ROW EXECUTE FUNCTION public.fn_touch_updated_at();
+
+  DROP TRIGGER IF EXISTS food_modifier_groups_touch_updated_at ON public.food_modifier_groups;
+  CREATE TRIGGER food_modifier_groups_touch_updated_at
+    BEFORE UPDATE ON public.food_modifier_groups
+    FOR EACH ROW EXECUTE FUNCTION public.fn_touch_updated_at();
+
+  DROP TRIGGER IF EXISTS food_modifiers_touch_updated_at ON public.food_modifiers;
+  CREATE TRIGGER food_modifiers_touch_updated_at
+    BEFORE UPDATE ON public.food_modifiers
+    FOR EACH ROW EXECUTE FUNCTION public.fn_touch_updated_at();
+
+  DROP TRIGGER IF EXISTS food_recommendation_rules_touch_updated_at ON public.food_recommendation_rules;
+  CREATE TRIGGER food_recommendation_rules_touch_updated_at
+    BEFORE UPDATE ON public.food_recommendation_rules
+    FOR EACH ROW EXECUTE FUNCTION public.fn_touch_updated_at();
+END $$;
+
+-- RLS: leitura a viewer; configuração exige manager; pedido/evento só backend.
+alter table public.food_commerce_settings enable row level security;
+alter table public.food_categories enable row level security;
+alter table public.food_products enable row level security;
+alter table public.food_modifier_groups enable row level security;
+alter table public.food_modifiers enable row level security;
+alter table public.food_recommendation_rules enable row level security;
+alter table public.food_order_items enable row level security;
+alter table public.food_recommendation_events enable row level security;
+
+-- remove policies da primeira versão experimental, se existirem
+DROP POLICY IF EXISTS food_commerce_settings_tenant_all ON public.food_commerce_settings;
+DROP POLICY IF EXISTS food_categories_tenant_all ON public.food_categories;
+DROP POLICY IF EXISTS food_products_tenant_all ON public.food_products;
+DROP POLICY IF EXISTS food_modifier_groups_tenant_all ON public.food_modifier_groups;
+DROP POLICY IF EXISTS food_modifiers_tenant_all ON public.food_modifiers;
+DROP POLICY IF EXISTS food_recommendation_rules_tenant_all ON public.food_recommendation_rules;
+DROP POLICY IF EXISTS food_order_items_tenant_all ON public.food_order_items;
+DROP POLICY IF EXISTS food_recommendation_events_tenant_all ON public.food_recommendation_events;
+
+DROP POLICY IF EXISTS food_commerce_settings_select ON public.food_commerce_settings;
+CREATE POLICY food_commerce_settings_select ON public.food_commerce_settings
+FOR SELECT TO authenticated
+USING (public.fn_role_at_least(organization_id, 'viewer') OR public.fn_is_platform_admin());
+DROP POLICY IF EXISTS food_commerce_settings_write ON public.food_commerce_settings;
+CREATE POLICY food_commerce_settings_write ON public.food_commerce_settings
+FOR ALL TO authenticated
+USING (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin())
+WITH CHECK (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin());
+
+DROP POLICY IF EXISTS food_categories_select ON public.food_categories;
+CREATE POLICY food_categories_select ON public.food_categories
+FOR SELECT TO authenticated
+USING (public.fn_role_at_least(organization_id, 'viewer') OR public.fn_is_platform_admin());
+DROP POLICY IF EXISTS food_categories_write ON public.food_categories;
+CREATE POLICY food_categories_write ON public.food_categories
+FOR ALL TO authenticated
+USING (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin())
+WITH CHECK (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin());
+
+DROP POLICY IF EXISTS food_products_select ON public.food_products;
+CREATE POLICY food_products_select ON public.food_products
+FOR SELECT TO authenticated
+USING (public.fn_role_at_least(organization_id, 'viewer') OR public.fn_is_platform_admin());
+DROP POLICY IF EXISTS food_products_write ON public.food_products;
+CREATE POLICY food_products_write ON public.food_products
+FOR ALL TO authenticated
+USING (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin())
+WITH CHECK (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin());
+
+DROP POLICY IF EXISTS food_modifier_groups_select ON public.food_modifier_groups;
+CREATE POLICY food_modifier_groups_select ON public.food_modifier_groups
+FOR SELECT TO authenticated
+USING (public.fn_role_at_least(organization_id, 'viewer') OR public.fn_is_platform_admin());
+DROP POLICY IF EXISTS food_modifier_groups_write ON public.food_modifier_groups;
+CREATE POLICY food_modifier_groups_write ON public.food_modifier_groups
+FOR ALL TO authenticated
+USING (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin())
+WITH CHECK (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin());
+
+DROP POLICY IF EXISTS food_modifiers_select ON public.food_modifiers;
+CREATE POLICY food_modifiers_select ON public.food_modifiers
+FOR SELECT TO authenticated
+USING (public.fn_role_at_least(organization_id, 'viewer') OR public.fn_is_platform_admin());
+DROP POLICY IF EXISTS food_modifiers_write ON public.food_modifiers;
+CREATE POLICY food_modifiers_write ON public.food_modifiers
+FOR ALL TO authenticated
+USING (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin())
+WITH CHECK (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin());
+
+DROP POLICY IF EXISTS food_recommendation_rules_select ON public.food_recommendation_rules;
+CREATE POLICY food_recommendation_rules_select ON public.food_recommendation_rules
+FOR SELECT TO authenticated
+USING (public.fn_role_at_least(organization_id, 'viewer') OR public.fn_is_platform_admin());
+DROP POLICY IF EXISTS food_recommendation_rules_write ON public.food_recommendation_rules;
+CREATE POLICY food_recommendation_rules_write ON public.food_recommendation_rules
+FOR ALL TO authenticated
+USING (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin())
+WITH CHECK (public.fn_role_at_least(organization_id, 'manager') OR public.fn_is_platform_admin());
+
+DROP POLICY IF EXISTS food_order_items_select ON public.food_order_items;
+CREATE POLICY food_order_items_select ON public.food_order_items
+FOR SELECT TO authenticated
+USING (public.fn_role_at_least(organization_id, 'viewer') OR public.fn_is_platform_admin());
+
+DROP POLICY IF EXISTS food_recommendation_events_select ON public.food_recommendation_events;
+CREATE POLICY food_recommendation_events_select ON public.food_recommendation_events
+FOR SELECT TO authenticated
+USING (public.fn_role_at_least(organization_id, 'viewer') OR public.fn_is_platform_admin());
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.food_commerce_settings TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.food_categories TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.food_products TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.food_modifier_groups TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.food_modifiers TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.food_recommendation_rules TO authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.food_order_items FROM authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.food_recommendation_events FROM authenticated;
+GRANT SELECT ON public.food_order_items TO authenticated;
+GRANT SELECT ON public.food_recommendation_events TO authenticated;
+
+create or replace function public.fn_food_normalize_phone(p_phone text)
+returns text
+language plpgsql
+immutable
+set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_digits text;
+begin
+  v_digits := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
+  if v_digits = '' then
+    raise exception 'phone_required' using errcode = '22023';
+  end if;
+  if length(v_digits) in (10, 11) then
+    v_digits := '55' || v_digits;
+  end if;
+  if length(v_digits) < 8 or length(v_digits) > 15 then
+    raise exception 'phone_invalid' using errcode = '22023';
+  end if;
+  return '+' || v_digits;
+end;
+$$;
+REVOKE EXECUTE ON FUNCTION public.fn_food_normalize_phone(text) FROM PUBLIC, anon, authenticated;
+
+create or replace function public.fn_food_public_catalog(p_tenant_slug text)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_org record;
+  v_result jsonb;
+begin
+  select o.id, o.slug::text as slug, o.display_name,
+         s.app_name, s.logo_url, s.accent_hex, s.accent_soft_hex,
+         s.tagline, s.headline, s.description, s.whatsapp_number,
+         s.free_shipping_threshold_cents, s.currency
+    into v_org
+  from public.organizations o
+  join public.food_commerce_settings s on s.organization_id = o.id
+  where o.slug::text = lower(trim(p_tenant_slug))
+    and o.status = 'active'
+    and s.is_enabled = true;
+
+  if not found then
+    raise exception 'food_tenant_not_found' using errcode = 'P0002';
+  end if;
+
+  select jsonb_build_object(
+    'tenant', jsonb_build_object(
+      'slug', v_org.slug,
+      'display_name', v_org.display_name,
+      'app_name', v_org.app_name,
+      'logo_url', v_org.logo_url,
+      'accent_hex', v_org.accent_hex,
+      'accent_soft_hex', v_org.accent_soft_hex,
+      'tagline', v_org.tagline,
+      'headline', v_org.headline,
+      'description', v_org.description,
+      'whatsapp_number', v_org.whatsapp_number,
+      'free_shipping_threshold_cents', v_org.free_shipping_threshold_cents,
+      'currency', v_org.currency
+    ),
+    'categories', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id',c.id,'name',c.name,'slug',c.slug,
+        'description',c.description,'sort_order',c.sort_order
+      ) order by c.sort_order,c.name)
+      from public.food_categories c
+      where c.organization_id=v_org.id and c.is_active=true
+    ), '[]'::jsonb),
+    'products', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id',p.id,
+        'category_id',p.category_id,
+        'name',p.name,
+        'slug',p.slug,
+        'description',p.description,
+        'image_url',p.image_url,
+        'emoji',p.emoji,
+        'price_cents',p.price_cents,
+        'compare_at_price_cents',p.compare_at_price_cents,
+        'sort_order',p.sort_order,
+        'sku',p.sku,
+        'modifier_groups',coalesce((
+          select jsonb_agg(jsonb_build_object(
+            'id',g.id,
+            'name',g.name,
+            'min_select',g.min_select,
+            'max_select',g.max_select,
+            'is_required',g.is_required,
+            'sort_order',g.sort_order,
+            'modifiers',coalesce((
+              select jsonb_agg(jsonb_build_object(
+                'id',m.id,
+                'name',m.name,
+                'price_delta_cents',m.price_delta_cents,
+                'sort_order',m.sort_order
+              ) order by m.sort_order,m.name)
+              from public.food_modifiers m
+              where m.organization_id=v_org.id
+                and m.group_id=g.id
+                and m.is_available=true
+            ), '[]'::jsonb)
+          ) order by g.sort_order,g.name)
+          from public.food_modifier_groups g
+          where g.organization_id=v_org.id
+            and g.product_id=p.id
+            and g.is_active=true
+        ), '[]'::jsonb)
+      ) order by p.sort_order,p.name)
+      from public.food_products p
+      where p.organization_id=v_org.id and p.is_available=true
+    ), '[]'::jsonb),
+    'recommendation_rules', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id',r.id,
+        'kind',r.kind,
+        'name',r.name,
+        'trigger_product_id',r.trigger_product_id,
+        'recommended_product_id',r.recommended_product_id,
+        'threshold_cents',r.threshold_cents,
+        'priority',r.priority,
+        'benefit',r.config->>'benefit'
+      ) order by r.priority,r.name)
+      from public.food_recommendation_rules r
+      where r.organization_id=v_org.id and r.is_active=true
+    ), '[]'::jsonb)
+  ) into v_result;
+
+  return v_result;
+end;
+$$;
+REVOKE EXECUTE ON FUNCTION public.fn_food_public_catalog(text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_food_public_catalog(text) TO anon, authenticated;
+
+create or replace function public.fn_food_checkout(
+  p_tenant_slug text,
+  p_idempotency_key text,
+  p_session_key text,
+  p_customer_name text,
+  p_phone text,
+  p_fulfillment text,
+  p_payment_method text,
+  p_address_notes text,
+  p_marketing_consent boolean,
+  p_items jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public', 'extensions', 'pg_temp'
+as $$
+declare
+  v_org_id uuid;
+  v_phone text;
+  v_contact_id uuid;
+  v_order_id uuid;
+  v_external_id text;
+  v_total bigint := 0;
+  v_item jsonb;
+  v_product record;
+  v_qty integer;
+  v_modifier_ids uuid[];
+  v_modifier_count integer;
+  v_matched_modifier_count integer;
+  v_modifier_delta bigint;
+  v_modifier_snapshot jsonb;
+  v_group record;
+  v_group_selected integer;
+  v_rule_id uuid;
+  v_trigger_product_id uuid;
+  v_line_total bigint;
+  v_request_hash bytea;
+  v_request_payload jsonb;
+  v_existing record;
+  v_result jsonb;
+  v_item_seq integer := 0;
+begin
+  if p_idempotency_key is null or length(trim(p_idempotency_key)) < 8 or length(trim(p_idempotency_key)) > 128 then
+    raise exception 'idempotency_key_invalid' using errcode = '22023';
+  end if;
+  if p_session_key is null or length(trim(p_session_key)) < 6 or length(trim(p_session_key)) > 160 then
+    raise exception 'session_key_invalid' using errcode = '22023';
+  end if;
+  if nullif(trim(p_customer_name), '') is null or length(trim(p_customer_name)) > 160 then
+    raise exception 'customer_name_invalid' using errcode = '22023';
+  end if;
+  if lower(trim(p_fulfillment)) not in ('retirada','entrega') then
+    raise exception 'fulfillment_invalid' using errcode = '22023';
+  end if;
+  if lower(trim(p_payment_method)) not in ('pix','cartao','cartão','dinheiro') then
+    raise exception 'payment_method_invalid' using errcode = '22023';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 or jsonb_array_length(p_items) > 50 then
+    raise exception 'items_invalid' using errcode = '22023';
+  end if;
+
+  select o.id into v_org_id
+  from public.organizations o
+  join public.food_commerce_settings s on s.organization_id = o.id
+  where o.slug::text = lower(trim(p_tenant_slug))
+    and o.status = 'active'
+    and s.is_enabled = true;
+  if v_org_id is null then
+    raise exception 'food_tenant_not_found' using errcode = 'P0002';
+  end if;
+
+  v_phone := public.fn_food_normalize_phone(p_phone);
+  v_request_payload := jsonb_build_object(
+    'tenant_slug', lower(trim(p_tenant_slug)),
+    'session_key', trim(p_session_key),
+    'customer_name', trim(p_customer_name),
+    'phone', v_phone,
+    'fulfillment', lower(trim(p_fulfillment)),
+    'payment_method', lower(trim(p_payment_method)),
+    'address_notes', coalesce(p_address_notes, ''),
+    'marketing_consent', coalesce(p_marketing_consent, false),
+    'items', p_items
+  );
+  v_request_hash := digest(convert_to(v_request_payload::text, 'UTF8'), 'sha256');
+
+  perform pg_advisory_xact_lock(hashtextextended(v_org_id::text || ':' || trim(p_idempotency_key), 0));
+  select request_hash, response_body, expires_at into v_existing
+  from public.idempotency_keys
+  where organization_id=v_org_id
+    and key=trim(p_idempotency_key)
+    and endpoint='food_checkout';
+
+  if found and v_existing.expires_at > now() then
+    if v_existing.request_hash <> v_request_hash then
+      raise exception 'idempotency_key_conflict' using errcode='23505';
+    end if;
+    return v_existing.response_body;
+  elsif found then
+    delete from public.idempotency_keys
+    where organization_id=v_org_id
+      and key=trim(p_idempotency_key)
+      and endpoint='food_checkout';
+  end if;
+
+  select c.id into v_contact_id
+  from public.contacts c
+  where c.organization_id=v_org_id
+    and c.phone_number=v_phone
+    and c.is_merged_into is null
+  limit 1;
+
+  if v_contact_id is null then
+    insert into public.contacts (
+      organization_id,name,display_name,phone_number,source,source_metadata
+    ) values (
+      v_org_id,trim(p_customer_name),trim(p_customer_name),v_phone,
+      'food_commerce',
+      jsonb_build_object('tenant_slug',lower(trim(p_tenant_slug)),'first_order_session',trim(p_session_key))
+    )
+    on conflict do nothing
+    returning id into v_contact_id;
+
+    if v_contact_id is null then
+      select c.id into v_contact_id
+      from public.contacts c
+      where c.organization_id=v_org_id
+        and (c.phone_number=v_phone or c.wa_identity='phone:' || v_phone)
+        and c.is_merged_into is null
+      limit 1;
+    end if;
+  else
+    update public.contacts
+      set name=coalesce(name,trim(p_customer_name)),
+          display_name=coalesce(display_name,trim(p_customer_name)),
+          updated_at=now()
+      where id=v_contact_id;
+  end if;
+
+  if v_contact_id is null then
+    raise exception 'contact_resolution_failed';
+  end if;
+
+  if coalesce(p_marketing_consent,false) then
+    update public.contacts
+    set consent=jsonb_set(
+          consent,
+          '{marketing}',
+          jsonb_build_object('granted_at',now(),'source','food_checkout','version','v1'),
+          true
+        ),
+        updated_at=now()
+    where id=v_contact_id;
+  end if;
+
+  v_external_id := trim(p_idempotency_key);
+  insert into public.orders (
+    organization_id,external_id,external_provider,customer_external_id,
+    contact_id,status,total_cents,currency,payment_method,fulfillment_status,
+    payload,ordered_at,updated_at_remote
+  ) values (
+    v_org_id,v_external_id,'deskcomm_food',v_phone,v_contact_id,'pending',0,'BRL',
+    case when lower(trim(p_payment_method)) in ('cartao','cartão') then 'cartao'
+         else lower(trim(p_payment_method)) end,
+    null,
+    jsonb_build_object(
+      'source','food_commerce',
+      'session_key',trim(p_session_key),
+      'fulfillment',lower(trim(p_fulfillment)),
+      'address_notes',coalesce(p_address_notes,''),
+      'marketing_consent_at_checkout',coalesce(p_marketing_consent,false)
+    ),
+    now(),now()
+  ) returning id into v_order_id;
+
+  for v_item in select value from jsonb_array_elements(p_items)
+  loop
+    v_item_seq := v_item_seq + 1;
+
+    begin
+      v_qty := coalesce((v_item->>'quantity')::integer,0);
+    exception when others then
+      raise exception 'item_quantity_invalid:%',v_item_seq using errcode='22023';
+    end;
+    if v_qty < 1 or v_qty > 99 then
+      raise exception 'item_quantity_invalid:%',v_item_seq using errcode='22023';
+    end if;
+
+    begin
+      select p.id,p.name,p.price_cents into v_product
+      from public.food_products p
+      where p.id=(v_item->>'product_id')::uuid
+        and p.organization_id=v_org_id
+        and p.is_available=true;
+    exception when invalid_text_representation then
+      raise exception 'product_id_invalid:%',v_item_seq using errcode='22023';
+    end;
+    if not found then
+      raise exception 'product_not_available:%',v_item_seq using errcode='P0002';
+    end if;
+
+    begin
+      select coalesce(array_agg(x.id order by x.id),'{}'::uuid[]),count(*)
+        into v_modifier_ids,v_modifier_count
+      from (
+        select (value #>> '{}')::uuid as id
+        from jsonb_array_elements(coalesce(v_item->'modifier_ids','[]'::jsonb))
+      ) x;
+    exception when others then
+      raise exception 'modifier_ids_invalid:%',v_item_seq using errcode='22023';
+    end;
+
+    if coalesce(array_length(v_modifier_ids,1),0)
+      <> coalesce((select count(distinct x) from unnest(v_modifier_ids) x),0) then
+      raise exception 'modifier_duplicate:%',v_item_seq using errcode='22023';
+    end if;
+
+    select count(*),coalesce(sum(m.price_delta_cents),0),
+           coalesce(jsonb_agg(jsonb_build_object(
+             'id',m.id,'name',m.name,'group_id',g.id,'group_name',g.name,
+             'price_delta_cents',m.price_delta_cents
+           ) order by g.sort_order,m.sort_order,m.name),'[]'::jsonb)
+      into v_matched_modifier_count,v_modifier_delta,v_modifier_snapshot
+    from public.food_modifiers m
+    join public.food_modifier_groups g
+      on g.id=m.group_id and g.organization_id=m.organization_id
+    where m.organization_id=v_org_id
+      and g.product_id=v_product.id
+      and g.is_active=true
+      and m.is_available=true
+      and m.id=any(v_modifier_ids);
+
+    if v_matched_modifier_count <> v_modifier_count then
+      raise exception 'modifier_not_available:%',v_item_seq using errcode='P0002';
+    end if;
+
+    for v_group in
+      select g.id,g.name,g.min_select,g.max_select,g.is_required
+      from public.food_modifier_groups g
+      where g.organization_id=v_org_id
+        and g.product_id=v_product.id
+        and g.is_active=true
+    loop
+      select count(*) into v_group_selected
+      from public.food_modifiers m
+      where m.organization_id=v_org_id
+        and m.group_id=v_group.id
+        and m.id=any(v_modifier_ids);
+
+      if v_group_selected < greatest(v_group.min_select,case when v_group.is_required then 1 else 0 end)
+         or v_group_selected > v_group.max_select then
+        raise exception 'modifier_group_selection_invalid:%:%',v_item_seq,v_group.name using errcode='22023';
+      end if;
+    end loop;
+
+    v_rule_id := null;
+    v_trigger_product_id := null;
+    if nullif(v_item->>'recommendation_rule_id','') is not null then
+      begin
+        v_rule_id := (v_item->>'recommendation_rule_id')::uuid;
+      exception when invalid_text_representation then
+        raise exception 'recommendation_rule_invalid:%',v_item_seq using errcode='22023';
+      end;
+
+      select r.trigger_product_id into v_trigger_product_id
+      from public.food_recommendation_rules r
+      where r.id=v_rule_id
+        and r.organization_id=v_org_id
+        and r.is_active=true
+        and r.recommended_product_id=v_product.id
+        and r.kind in ('upsell','cross_sell','upgrade','combo','order_bump')
+        and (
+          r.trigger_product_id is null
+          or exists (
+            select 1 from jsonb_array_elements(p_items) source_item
+            where source_item->>'product_id'=r.trigger_product_id::text
+          )
+        );
+      if not found then
+        raise exception 'recommendation_rule_invalid:%',v_item_seq using errcode='22023';
+      end if;
+    end if;
+
+    v_line_total := (v_product.price_cents + v_modifier_delta) * v_qty;
+    if v_line_total < 0 then
+      raise exception 'line_total_invalid:%',v_item_seq using errcode='22023';
+    end if;
+    v_total := v_total + v_line_total;
+
+    insert into public.food_order_items (
+      organization_id,order_id,product_id,product_name_snapshot,
+      unit_price_cents,quantity,line_total_cents,selected_modifiers,
+      added_via_recommendation,recommendation_rule_id
+    ) values (
+      v_org_id,v_order_id,v_product.id,v_product.name,
+      v_product.price_cents+v_modifier_delta,v_qty,v_line_total,v_modifier_snapshot,
+      v_rule_id is not null,v_rule_id
+    );
+
+    if v_rule_id is not null then
+      insert into public.food_recommendation_events (
+        organization_id,session_key,rule_id,trigger_product_id,recommended_product_id,
+        order_id,event_type,attributed_revenue_cents,metadata
+      ) values (
+        v_org_id,trim(p_session_key),v_rule_id,v_trigger_product_id,v_product.id,
+        v_order_id,'purchased',v_line_total,
+        jsonb_build_object('quantity',v_qty,'source','food_checkout')
+      );
+    end if;
+  end loop;
+
+  update public.orders
+    set total_cents=v_total,
+        payload=payload || jsonb_build_object('server_calculated_total_cents',v_total),
+        updated_at=now()
+    where id=v_order_id;
+
+  perform public.emit_event(
+    'order.created','order',v_order_id,
+    jsonb_build_object(
+      'order_id',v_order_id,
+      'contact_id',v_contact_id,
+      'total_cents',v_total,
+      'external_provider','deskcomm_food',
+      'session_key',trim(p_session_key),
+      'fulfillment',lower(trim(p_fulfillment))
+    ),
+    jsonb_build_object('source','food_checkout','idempotency_key',trim(p_idempotency_key)),
+    v_org_id
+  );
+
+  select jsonb_build_object(
+    'order_id',v_order_id,
+    'external_id',v_external_id,
+    'contact_id',v_contact_id,
+    'status','pending',
+    'total_cents',v_total,
+    'currency','BRL'
+  ) into v_result;
+
+  insert into public.idempotency_keys (
+    organization_id,key,endpoint,request_hash,status_code,response_body,expires_at
+  ) values (
+    v_org_id,trim(p_idempotency_key),'food_checkout',v_request_hash,201,v_result,now()+interval '24 hours'
+  );
+
+  return v_result;
+end;
+$$;
+REVOKE EXECUTE ON FUNCTION public.fn_food_checkout(text,text,text,text,text,text,text,text,boolean,jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_food_checkout(text,text,text,text,text,text,text,text,boolean,jsonb)
+  TO service_role;
+
+create or replace function public.fn_food_track_recommendation(
+  p_tenant_slug text,
+  p_session_key text,
+  p_event_key text,
+  p_rule_id uuid,
+  p_event_type text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_org_id uuid;
+  v_trigger_product_id uuid;
+  v_recommended_product_id uuid;
+  v_event_id uuid;
+begin
+  if p_session_key is null or length(trim(p_session_key)) < 6 or length(trim(p_session_key)) > 160 then
+    raise exception 'session_key_invalid' using errcode='22023';
+  end if;
+  if p_event_key is null or length(trim(p_event_key)) < 8 or length(trim(p_event_key)) > 180 then
+    raise exception 'event_key_invalid' using errcode='22023';
+  end if;
+  if p_event_type not in ('shown','clicked','added','removed') then
+    raise exception 'recommendation_event_type_invalid' using errcode='22023';
+  end if;
+
+  select o.id into v_org_id
+  from public.organizations o
+  join public.food_commerce_settings s on s.organization_id=o.id
+  where o.slug::text=lower(trim(p_tenant_slug))
+    and o.status='active'
+    and s.is_enabled=true;
+  if v_org_id is null then
+    raise exception 'food_tenant_not_found' using errcode='P0002';
+  end if;
+
+  select r.trigger_product_id,r.recommended_product_id
+    into v_trigger_product_id,v_recommended_product_id
+  from public.food_recommendation_rules r
+  where r.id=p_rule_id
+    and r.organization_id=v_org_id
+    and r.is_active=true;
+  if not found then
+    raise exception 'recommendation_rule_not_found' using errcode='P0002';
+  end if;
+
+  insert into public.food_recommendation_events (
+    organization_id,session_key,event_key,rule_id,trigger_product_id,
+    recommended_product_id,event_type,attributed_revenue_cents,metadata
+  ) values (
+    v_org_id,trim(p_session_key),trim(p_event_key),p_rule_id,v_trigger_product_id,
+    v_recommended_product_id,p_event_type,0,jsonb_build_object('source','food_storefront')
+  )
+  on conflict (organization_id,event_key) where event_key is not null do nothing
+  returning id into v_event_id;
+
+  if v_event_id is null then
+    select id into v_event_id
+    from public.food_recommendation_events
+    where organization_id=v_org_id and event_key=trim(p_event_key)
+    limit 1;
+  end if;
+
+  return v_event_id;
+end;
+$$;
+REVOKE EXECUTE ON FUNCTION public.fn_food_track_recommendation(text,text,text,uuid,text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_food_track_recommendation(text,text,text,uuid,text)
+  TO service_role;
+
+create or replace function public.fn_food_commerce_metrics(
+  p_organization_id uuid,
+  p_from timestamptz default (now() - interval '30 days'),
+  p_to timestamptz default now()
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path to 'public', 'pg_temp'
+as $$
+declare
+  v_orders bigint;
+  v_revenue bigint;
+  v_avg_ticket numeric;
+  v_incremental bigint;
+  v_orders_with_rec bigint;
+  v_attach numeric;
+  v_uplift numeric;
+  v_share numeric;
+  v_pairs jsonb;
+begin
+  if p_from is null or p_to is null or p_from >= p_to then
+    raise exception 'metrics_period_invalid' using errcode='22023';
+  end if;
+  if auth.uid() is null then
+    raise exception 'authentication_required' using errcode='42501';
+  end if;
+  if not (public.fn_role_at_least(p_organization_id,'viewer') or public.fn_is_platform_admin()) then
+    raise exception 'caller_not_authorized_for_org' using errcode='42501';
+  end if;
+
+  select count(*),coalesce(sum(o.total_cents),0),coalesce(avg(o.total_cents),0)
+    into v_orders,v_revenue,v_avg_ticket
+  from public.orders o
+  where o.organization_id=p_organization_id
+    and o.external_provider='deskcomm_food'
+    and o.ordered_at>=p_from and o.ordered_at<p_to
+    and o.status<>'cancelled';
+
+  select coalesce(sum(e.attributed_revenue_cents),0)
+    into v_incremental
+  from public.food_recommendation_events e
+  join public.orders o on o.id=e.order_id and o.organization_id=e.organization_id
+  where e.organization_id=p_organization_id
+    and e.event_type='purchased'
+    and o.ordered_at>=p_from and o.ordered_at<p_to
+    and o.status<>'cancelled';
+
+  select count(distinct oi.order_id)
+    into v_orders_with_rec
+  from public.food_order_items oi
+  join public.orders o on o.id=oi.order_id and o.organization_id=oi.organization_id
+  where oi.organization_id=p_organization_id
+    and oi.added_via_recommendation=true
+    and o.ordered_at>=p_from and o.ordered_at<p_to
+    and o.status<>'cancelled';
+
+  v_attach := case when v_orders>0 then (v_orders_with_rec::numeric/v_orders::numeric)*100 else 0 end;
+  v_uplift := case when (v_revenue-v_incremental)>0 then (v_incremental::numeric/(v_revenue-v_incremental)::numeric)*100 else 0 end;
+  v_share := case when v_revenue>0 then (v_incremental::numeric/v_revenue::numeric)*100 else 0 end;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'product_a',q.product_a,
+    'product_b',q.product_b,
+    'orders_together',q.orders_together
+  ) order by q.orders_together desc,q.product_a,q.product_b),'[]'::jsonb)
+  into v_pairs
+  from (
+    select p1.name as product_a,p2.name as product_b,count(distinct i1.order_id) as orders_together
+    from public.food_order_items i1
+    join public.food_order_items i2
+      on i2.organization_id=i1.organization_id
+     and i2.order_id=i1.order_id
+     and i2.product_id>i1.product_id
+    join public.orders o on o.id=i1.order_id and o.organization_id=i1.organization_id
+    join public.food_products p1 on p1.id=i1.product_id and p1.organization_id=i1.organization_id
+    join public.food_products p2 on p2.id=i2.product_id and p2.organization_id=i2.organization_id
+    where i1.organization_id=p_organization_id
+      and o.ordered_at>=p_from and o.ordered_at<p_to
+      and o.status<>'cancelled'
+      and i1.product_id is not null and i2.product_id is not null
+    group by p1.name,p2.name
+    order by orders_together desc,p1.name,p2.name
+    limit 10
+  ) q;
+
+  return jsonb_build_object(
+    'period',jsonb_build_object('from',p_from,'to',p_to),
+    'orders_count',v_orders,
+    'gross_revenue_cents',v_revenue,
+    'average_ticket_cents',round(v_avg_ticket),
+    'incremental_revenue_cents',v_incremental,
+    'orders_with_recommendation',v_orders_with_rec,
+    'attach_rate_pct',round(v_attach,2),
+    'uplift_pct',round(v_uplift,2),
+    'recommendation_revenue_share_pct',round(v_share,2),
+    'top_product_pairs',v_pairs
+  );
+end;
+$$;
+REVOKE EXECUTE ON FUNCTION public.fn_food_commerce_metrics(uuid,timestamptz,timestamptz)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_food_commerce_metrics(uuid,timestamptz,timestamptz)
+  TO authenticated;
+
+-- ---- 20260818084338_0159_one_inbox_conversation_per_contact_v2 ----
+-- O instalador self-host executa cada statement do baseline em autocommit.
+-- `on commit drop` apagava a tabela logo após o CREATE, antes do backfill.
+drop table if exists _conversation_merge_map;
+create temporary table _conversation_merge_map (
+  loser uuid primary key,
+  winner uuid not null,
+  organization_id uuid not null,
+  contact_id uuid not null
+);
+
+with ranked as (
+  select
+    id,organization_id,contact_id,
+    row_number() over (
+      partition by organization_id,contact_id
+      order by coalesce(last_message_at,updated_at,created_at) desc nulls last,created_at desc,id desc
+    ) as rn,
+    first_value(id) over (
+      partition by organization_id,contact_id
+      order by coalesce(last_message_at,updated_at,created_at) desc nulls last,created_at desc,id desc
+    ) as winner
+  from public.conversations
+  where is_group=false
+)
+insert into _conversation_merge_map(loser,winner,organization_id,contact_id)
+select id,winner,organization_id,contact_id from ranked where rn>1;
+
+with members as (
+  select loser as id,winner from _conversation_merge_map
+  union
+  select winner as id,winner from _conversation_merge_map
+), agg as (
+  select m.winner,
+         min(c.created_at) as first_created_at,
+         max(c.last_inbound_at) as last_inbound_at,
+         max(c.last_outbound_at) as last_outbound_at,
+         max(c.last_message_at) as last_message_at,
+         sum(coalesce(c.unread_count_for_assignee,0))::int as unread_count
+  from members m
+  join public.conversations c on c.id=m.id
+  group by m.winner
+)
+update public.conversations w
+set created_at=a.first_created_at,
+    last_inbound_at=a.last_inbound_at,
+    last_outbound_at=a.last_outbound_at,
+    last_message_at=a.last_message_at,
+    unread_count_for_assignee=a.unread_count,
+    updated_at=now()
+from agg a where w.id=a.winner;
+
+update public.messages t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+update public.agent_cases t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+update public.ai_agent_runs t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+update public.ai_invocations t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+update public.ai_router_decisions t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+update public.contact_field_proposals t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+update public.conversation_assignment_events t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+update public.conversation_notes t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+update public.followup_enrollments t set conversation_id=m.winner from _conversation_merge_map m where t.conversation_id=m.loser;
+
+insert into public.demanda_conversas (organization_id,demanda_id,conversation_id,vinculada_em)
+select d.organization_id,d.demanda_id,m.winner,d.vinculada_em
+from public.demanda_conversas d
+join _conversation_merge_map m on m.loser=d.conversation_id
+on conflict (demanda_id,conversation_id) do nothing;
+delete from public.demanda_conversas d using _conversation_merge_map m where d.conversation_id=m.loser;
+
+update public.cron_jobs t
+set payload=jsonb_set(t.payload,'{conversation_id}',to_jsonb(m.winner::text),false)
+from _conversation_merge_map m where t.payload->>'conversation_id'=m.loser::text;
+update public.job_queue t
+set payload=jsonb_set(t.payload,'{conversation_id}',to_jsonb(m.winner::text),false)
+from _conversation_merge_map m where t.payload->>'conversation_id'=m.loser::text;
+update public.event_log t
+set payload=jsonb_set(t.payload,'{conversation_id}',to_jsonb(m.winner::text),false)
+from _conversation_merge_map m where t.payload->>'conversation_id'=m.loser::text;
+
+delete from public.conversations c using _conversation_merge_map m where c.id=m.loser;
+
+drop table if exists _conversation_merge_map;
+
+create unique index if not exists uniq_conversations_1to1_per_contact
+  on public.conversations(organization_id,contact_id)
+  where is_group=false;
+
+create or replace function public.fn_upsert_wa_conversation(p_org uuid, p_contact uuid, p_session uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare v_id uuid;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text || ':' || p_contact::text,0));
+
+  select c.id into v_id
+  from public.conversations c
+  where c.organization_id=p_org and c.contact_id=p_contact and c.is_group=false
+  order by coalesce(c.last_message_at,c.updated_at,c.created_at) desc nulls last,c.id desc
+  limit 1
+  for update;
+
+  if v_id is null then
+    insert into public.conversations(
+      organization_id,contact_id,channel_session_id,channel,status,is_group,
+      unread_count_for_assignee,metadata
+    ) values (p_org,p_contact,p_session,'whatsapp','open',false,0,'{}'::jsonb)
+    returning id into v_id;
+  else
+    update public.conversations
+    set channel_session_id=p_session,
+        status=case when status in ('closed','archived') then 'open' else status end,
+        status_changed_at=case when status in ('closed','archived') then now() else status_changed_at end,
+        updated_at=now()
+    where id=v_id;
+  end if;
+
+  return v_id;
+end;
+$function$;
+
+-- ---- 20260818084620_0160_food_delivery_daily_report ----
+create or replace function public.fn_food_delivery_report(
+  p_organization_id uuid,
+  p_from timestamptz,
+  p_to timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_result jsonb;
+begin
+  if p_from is null or p_to is null or p_from >= p_to then
+    raise exception 'metrics_period_invalid' using errcode='22023';
+  end if;
+  if auth.uid() is null then
+    raise exception 'authentication_required' using errcode='42501';
+  end if;
+  if not (public.fn_role_at_least(p_organization_id,'agent') or public.fn_is_platform_admin()) then
+    raise exception 'caller_not_authorized_for_org' using errcode='42501';
+  end if;
+
+  with eligible_contacts as (
+    select c.id
+    from public.contacts c
+    where c.organization_id=p_organization_id
+      and coalesce(c.is_anonymized,false)=false
+      and not ('demo'=any(coalesce(c.tags,array[]::text[])))
+      and coalesce(c.phone_number,'') !~ '^\\+?0{4}'
+  ),
+  sarah_activity as (
+    select
+      count(*)::bigint as messages_sent,
+      count(distinct m.contact_id)::bigint as contacts_served,
+      count(*) filter (
+        where coalesce((m.metadata->>'food_upsell_applied')::boolean,false)=true
+      )::bigint as upsell_offers
+    from public.messages m
+    join eligible_contacts ec on ec.id=m.contact_id
+    where m.organization_id=p_organization_id
+      and m.direction='outbound'
+      and m.sent_via='ai'
+      and m.created_at>=p_from and m.created_at<p_to
+      and m.status<>'failed'
+  ),
+  period_orders as (
+    select o.*
+    from public.orders o
+    join eligible_contacts ec on ec.id=o.contact_id
+    where o.organization_id=p_organization_id
+      and o.external_provider='deskcomm_food'
+      and o.ordered_at>=p_from and o.ordered_at<p_to
+      and o.status<>'cancelled'
+  ),
+  order_summary as (
+    select
+      count(*)::bigint as orders_count,
+      coalesce(sum(o.total_cents),0)::bigint as gross_revenue_cents,
+      coalesce(round(avg(o.total_cents)),0)::bigint as average_ticket_cents
+    from period_orders o
+  ),
+  upsell_sales as (
+    select
+      count(distinct oi.order_id)::bigint as orders_with_upsell,
+      coalesce(sum(oi.quantity),0)::bigint as upsell_items_sold,
+      coalesce(sum(oi.line_total_cents),0)::bigint as upsell_revenue_cents
+    from public.food_order_items oi
+    join period_orders o on o.id=oi.order_id
+    where oi.organization_id=p_organization_id
+      and oi.added_via_recommendation=true
+  ),
+  queue_touches as (
+    select
+      j.contact_id,
+      j.created_at as touch_at,
+      case
+        when j.payload->>'food_flow_name'='Campanhas na base' then 'campaign'
+        when j.payload->>'food_automation'='manual_flow_fallback_v1'
+             and j.payload->>'food_flow_name'='Campanhas na base' then 'campaign'
+        when j.payload->>'food_automation'='cart_recovery_v1' then 'recovery'
+        when j.payload->>'food_automation'='silence_followup_v1'
+             and coalesce((j.payload->>'food_order_context')::boolean,false)=true then 'recovery'
+        else null
+      end as touch_kind
+    from public.job_queue j
+    join eligible_contacts ec on ec.id=j.contact_id
+    where j.organization_id=p_organization_id
+      and j.kind='followup_turn'
+      and j.status='done'
+      and j.created_at>=p_from-interval '24 hours' and j.created_at<p_to
+  ),
+  flow_touches as (
+    select
+      fe.contact_id,
+      coalesce(fe.completed_at,fe.updated_at,fe.started_at) as touch_at,
+      case
+        when fp.name='Campanhas na base' then 'campaign'
+        when fp.name='Recuperação de carrinho' then 'recovery'
+        else null
+      end as touch_kind
+    from public.followup_enrollments fe
+    join public.followup_flow_pointers fp
+      on fp.id=fe.pointer_id and fp.organization_id=fe.organization_id
+    join eligible_contacts ec on ec.id=fe.contact_id
+    where fe.organization_id=p_organization_id
+      and fp.name in ('Campanhas na base','Recuperação de carrinho')
+      and fe.steps_taken>0
+      and coalesce(fe.completed_at,fe.updated_at,fe.started_at)>=p_from-interval '24 hours'
+      and coalesce(fe.completed_at,fe.updated_at,fe.started_at)<p_to
+  ),
+  touches as (
+    select * from queue_touches where touch_kind is not null
+    union all
+    select * from flow_touches where touch_kind is not null
+  ),
+  touch_counts as (
+    select
+      count(*) filter (where touch_kind='campaign' and touch_at>=p_from and touch_at<p_to)::bigint as campaigns_sent,
+      count(*) filter (where touch_kind='recovery' and touch_at>=p_from and touch_at<p_to)::bigint as recoveries_sent,
+      count(distinct contact_id) filter (where touch_kind='campaign' and touch_at>=p_from and touch_at<p_to)::bigint as campaign_contacts,
+      count(distinct contact_id) filter (where touch_kind='recovery' and touch_at>=p_from and touch_at<p_to)::bigint as recovery_contacts
+    from touches
+  ),
+  attributed_orders as (
+    select
+      o.id,o.total_cents,
+      t.touch_kind
+    from period_orders o
+    left join lateral (
+      select x.touch_kind,x.touch_at
+      from touches x
+      where x.contact_id=o.contact_id
+        and x.touch_at<=o.ordered_at
+        and x.touch_at>=o.ordered_at-interval '24 hours'
+      order by x.touch_at desc
+      limit 1
+    ) t on true
+  ),
+  attribution as (
+    select
+      coalesce(sum(total_cents) filter (where touch_kind='campaign'),0)::bigint as campaign_revenue_cents,
+      coalesce(sum(total_cents) filter (where touch_kind='recovery'),0)::bigint as recovery_revenue_cents,
+      count(*) filter (where touch_kind='campaign')::bigint as campaign_orders,
+      count(*) filter (where touch_kind='recovery')::bigint as recovered_orders
+    from attributed_orders
+  ),
+  influenced as (
+    select coalesce(sum(o.total_cents),0)::bigint as sarah_influenced_revenue_cents
+    from period_orders o
+    where exists (
+      select 1 from touches t
+      where t.contact_id=o.contact_id
+        and t.touch_at<=o.ordered_at
+        and t.touch_at>=o.ordered_at-interval '24 hours'
+    )
+    or exists (
+      select 1 from public.food_order_items oi
+      where oi.order_id=o.id and oi.organization_id=p_organization_id
+        and oi.added_via_recommendation=true
+    )
+  )
+  select jsonb_build_object(
+    'period',jsonb_build_object('from',p_from,'to',p_to),
+    'sarah',jsonb_build_object(
+      'contacts_served',sa.contacts_served,
+      'messages_sent',sa.messages_sent
+    ),
+    'delivery',jsonb_build_object(
+      'orders_count',os.orders_count,
+      'gross_revenue_cents',os.gross_revenue_cents,
+      'average_ticket_cents',os.average_ticket_cents
+    ),
+    'upsell',jsonb_build_object(
+      'offers',sa.upsell_offers,
+      'orders_with_upsell',us.orders_with_upsell,
+      'items_sold',us.upsell_items_sold,
+      'revenue_cents',us.upsell_revenue_cents
+    ),
+    'campaigns',jsonb_build_object(
+      'sent',tc.campaigns_sent,
+      'contacts',tc.campaign_contacts,
+      'orders',a.campaign_orders,
+      'revenue_cents',a.campaign_revenue_cents
+    ),
+    'recoveries',jsonb_build_object(
+      'sent',tc.recoveries_sent,
+      'contacts',tc.recovery_contacts,
+      'orders',a.recovered_orders,
+      'revenue_cents',a.recovery_revenue_cents
+    ),
+    'sarah_influenced_revenue_cents',i.sarah_influenced_revenue_cents
+  ) into v_result
+  from sarah_activity sa,order_summary os,upsell_sales us,touch_counts tc,attribution a,influenced i;
+
+  return v_result;
+end;
+$function$;
+
+revoke all on function public.fn_food_delivery_report(uuid,timestamptz,timestamptz) from public;
+revoke all on function public.fn_food_delivery_report(uuid,timestamptz,timestamptz) from anon;
+grant execute on function public.fn_food_delivery_report(uuid,timestamptz,timestamptz) to authenticated;
+
+-- ---- 20260818090014_0161_food_sarah_guaranteed_named_opening ----
+create or replace function public.fn_food_deterministic_reply(p_org uuid, p_conversation uuid, p_inbound uuid)
+returns text
+language plpgsql
+stable security definer
+set search_path to 'public'
+as $function$
+declare
+  v_body text;
+  v_sent_at timestamptz;
+  v_inbound_created_at timestamptz;
+  v_contact_id uuid;
+  v_org_name text;
+  v_contact_name text;
+  v_slug text;
+  v_tz text;
+  v_hour int;
+  v_period text;
+  v_named_period text;
+  v_has_prior_ai_today boolean := false;
+  v_prev_outbound text;
+  v_menu text;
+  v_title text;
+  v_price bigint;
+  v_qty int;
+  v_score real;
+  v_same_title_count int;
+  v_min_price bigint;
+  v_intent text;
+  v_reco text;
+begin
+  select m.body,m.sent_at,m.contact_id,m.created_at
+    into v_body,v_sent_at,v_contact_id,v_inbound_created_at
+    from public.messages m
+   where m.organization_id=p_org
+     and m.id=p_inbound
+     and m.conversation_id=p_conversation;
+
+  if v_contact_id is null then return null; end if;
+
+  select coalesce(nullif(f.app_name,''),o.display_name),o.slug,coalesce(nullif(o.timezone,''),'America/Sao_Paulo')
+    into v_org_name,v_slug,v_tz
+    from public.organizations o
+    left join public.food_commerce_settings f on f.organization_id=o.id
+   where o.id=p_org;
+
+  select nullif(btrim(split_part(c.display_name,' ',1)),'')
+    into v_contact_name
+    from public.contacts c
+   where c.id=v_contact_id and c.organization_id=p_org;
+
+  if v_contact_name ~ '^[+0-9(). -]+$' then
+    v_contact_name := null;
+  end if;
+
+  if v_slug is null then return null; end if;
+
+  v_menu := 'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+  v_hour := extract(hour from (coalesce(v_sent_at,v_inbound_created_at,now()) at time zone v_tz));
+  v_period := case
+    when v_hour between 5 and 11 then 'bom dia'
+    when v_hour between 12 and 17 then 'boa tarde'
+    else 'boa noite'
+  end;
+  v_named_period := 'Olá, '||v_period||coalesce(', '||v_contact_name,'')||'! 😊';
+
+  select exists (
+    select 1
+      from public.messages m
+     where m.organization_id=p_org
+       and m.contact_id=v_contact_id
+       and m.direction='outbound'
+       and m.sent_via='ai'
+       and m.status<>'failed'
+       and m.created_at < v_inbound_created_at
+       and (m.created_at at time zone v_tz)::date = (v_inbound_created_at at time zone v_tz)::date
+  ) into v_has_prior_ai_today;
+
+  if not v_has_prior_ai_today then
+    return v_named_period||E'\n\n'||
+           'Muito obrigado por ter entrado em contato com a '||v_org_name||'.'||E'\n\n'||
+           'Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?'||E'\n\n'||
+           'Para acessar nosso cardápio digital, basta acessar o link abaixo:'||E'\n'||
+           v_menu;
+  end if;
+
+  if v_body is null then return null; end if;
+
+  select c.active_intent into v_intent
+    from public.conversations c where c.id=p_conversation and c.organization_id=p_org;
+
+  select m.body into v_prev_outbound from public.messages m
+   where m.organization_id=p_org and m.conversation_id=p_conversation and m.direction='outbound'
+     and m.created_at < v_inbound_created_at
+   order by m.created_at desc limit 1;
+
+  if btrim(v_body) ~* '^https?://[^[:space:]]+$' then
+    return 'Recebi o link 😊. Me diga o que você gostaria que eu verificasse ou fizesse com ele.';
+  end if;
+
+  if v_body ~* '(estranh|confus|bugad|repetindo|repetiu|sem sentido|não entendi|nao entendi)' then
+    return 'Entendi 😅 Obrigada por me avisar. Vou ser mais direta daqui pra frente. Como posso te ajudar agora?';
+  end if;
+
+  if v_body ~* '^[[:space:]]*(oi+|ol[aá]|bom[[:space:]]+dia|boa[[:space:]]+tarde|boa[[:space:]]+noite|e[[:space:]]*a[ií]|eai|hey|hello)[[:space:]]*[!?.]*[[:space:]]*$' then
+    if v_contact_name is not null then
+      return 'Olá, '||v_contact_name||'! 😊 Como posso te ajudar?';
+    end if;
+    return 'Olá! 😊 Como posso te ajudar?';
+  end if;
+
+  if v_body ~* '^[[:space:]]*(sim|quero|pode[[:space:]]+ser|pode[[:space:]]+mandar|manda|claro|ok|beleza|por[[:space:]]+favor|sim[[:space:]]*,?[[:space:]]*por[[:space:]]+favor)[[:space:]]*[!?.]*[[:space:]]*$' then
+    if coalesce(v_prev_outbound,'') ~* '(card[aá]pio|menu)' or v_intent='awaiting_menu_choice' then
+      return 'Acesse nosso cardápio digital por aqui 👇'||E'\n'||v_menu||E'\n\n'||
+             'Você pode montar o seu pedido por lá. Se preferir, eu também posso te ajudar a escolher por aqui.';
+    end if;
+    return 'Claro! 😊 Como posso te ajudar?';
+  end if;
+
+  if v_body ~* '^[[:space:]]*(não|nao|agora[[:space:]]+não|agora[[:space:]]+nao)[[:space:]]*[!?.]*[[:space:]]*$'
+     and (coalesce(v_prev_outbound,'') ~* '(card[aá]pio|menu)' or v_intent='awaiting_menu_choice') then
+    return 'Sem problema! 😊 Me diga como posso te ajudar por aqui.';
+  end if;
+
+  if v_body ~* '(card[aá]pio|menu)' then
+    return 'Acesse nosso cardápio digital por aqui 👇'||E'\n'||v_menu||E'\n\n'||
+           'Você pode montar o seu pedido por lá. Se preferir, eu também posso te ajudar a escolher por aqui.';
+  end if;
+
+  if v_body ~* '(recomend|indica|sugest|sugere|opç|opcao|opção|para[[:space:]]+[0-9]+[[:space:]]+pessoas|[0-9]+[[:space:]]+pessoas)' then
+    select string_agg(x.name, ', ' order by x.sort_order)
+      into v_reco
+      from (
+        select p.name,p.sort_order
+          from public.food_products p
+         where p.organization_id=p_org
+           and p.is_available=true
+         order by p.sort_order,p.name
+         limit 4
+      ) x;
+    if v_reco is not null then
+      return 'Claro! 😊 Para esse grupo, eu sugiro variar entre '||v_reco||'. Todos esses itens estão disponíveis no nosso cardápio. Se quiser, eu também posso te ajudar a montar as quantidades e o valor total.';
+    end if;
+  end if;
+
+  if v_body ~* '(entrega|entregam|delivery|bairro|jacare[ií]|taubat[eé]|s[aã]o[[:space:]]+jos[eé]|hor[aá]rio|abre|fecha|funciona|pagamento|pix|cart[aã]o|dinheiro|taxa|pedido[[:space:]]+m[ií]nimo|retirada|retirar)' then
+    return 'Essa informação ainda não está confirmada por aqui. 😊 Posso te ajudar agora com o cardápio e os produtos; para essa regra específica, posso encaminhar sua dúvida para a equipe.';
+  end if;
+
+  select p.title,p.price_cents,p.available_qty,
+         greatest(word_similarity(lower(p.title),lower(v_body)),similarity(lower(p.title),lower(v_body)))::real
+    into v_title,v_price,v_qty,v_score
+    from public.nuvemshop_products p where p.organization_id=p_org
+   order by greatest(word_similarity(lower(p.title),lower(v_body)),similarity(lower(p.title),lower(v_body))) desc,length(p.title) desc limit 1;
+
+  if coalesce(v_score,0) >= 0.55 then
+    select count(*)::int,min(price_cents) into v_same_title_count,v_min_price
+      from public.nuvemshop_products where organization_id=p_org and lower(title)=lower(v_title);
+    if coalesce(v_qty,0) <= 0 then
+      return v_title||' aparece no nosso cardápio, mas está indisponível no momento. 😊 Posso te mostrar outras opções?';
+    elsif v_same_title_count > 1 then
+      return 'Sim! 😊 '||v_title||' está no nosso cardápio a partir de R$ '||replace(to_char(v_min_price/100.0,'FM999999990D00'),'.',',')||'. Se quiser, eu te ajudo a escolher a opção ideal.';
+    else
+      return 'Sim! 😊 '||v_title||' está no nosso cardápio por R$ '||replace(to_char(v_price/100.0,'FM999999990D00'),'.',',')||'. Se quiser, eu também posso te ajudar a escolher outros itens.';
+    end if;
+  end if;
+
+  return null;
+end;
+$function$;
+
+-- ---- 20260818090638_0162_sarah_named_greeting_published_and_reconnect_safe ----
+create or replace function public.fn_food_normalize_sarah_prompt(p_prompt text)
+returns text
+language plpgsql
+immutable
+set search_path to 'public'
+as $function$
+declare
+  v_prompt text := coalesce(p_prompt,'');
+  v_neutral_pos integer;
+  v_named_marker constant text := '[SAUDACAO_NOME_GARANTIDA_V2]';
+  v_named_block constant text := $block$
+
+[SAUDACAO_NOME_GARANTIDA_V2]
+REGRA FINAL E SOBERANA DE SAUDAÇÃO — PRIORIDADE MÁXIMA
+- Esta regra substitui qualquer instrução anterior que mande usar somente saudação neutra, proíba bom dia/boa tarde/boa noite ou mande ignorar o nome conhecido do contato.
+- O fuso oficial é America/Sao_Paulo. 05:00–11:59 = bom dia; 12:00–17:59 = boa tarde; 18:00–04:59 = boa noite.
+- Se o CRM/contexto já fornecer o nome do contato e ele não for um telefone, use o PRIMEIRO NOME já na primeira linha da saudação. Exemplo: "Olá, bom dia, Sandra! 😊".
+- É proibido responder apenas "Olá! Como posso te ajudar?" quando o nome do contato já estiver disponível.
+- Na PRIMEIRA resposta da Sarah do dia para aquele contato, a abertura deve também apresentar a atendente: "Muito obrigado por ter entrado em contato com a empresa. Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?". Quando houver link oficial do cardápio, inclua-o nessa abertura conforme a configuração do estabelecimento.
+- Nas mensagens seguintes do mesmo dia, não repita a apresentação; use o nome naturalmente quando fizer sentido.
+- Se o nome não estiver disponível, use a saudação pelo período sem inventar nome.
+- Se uma camada determinística já tiver produzido a abertura do turno, não envie uma segunda saudação duplicada.
+$block$;
+begin
+  v_neutral_pos := position('[SAUDACAO_NEUTRA_DEMO_V1]' in v_prompt);
+  if v_neutral_pos > 0 then
+    v_prompt := rtrim(substring(v_prompt from 1 for v_neutral_pos - 1));
+  end if;
+
+  v_prompt := replace(
+    v_prompt,
+    'Não use automaticamente o nome do contato na saudação.',
+    'Quando o nome do contato estiver disponível no contexto, use o primeiro nome na saudação inicial; nunca invente um nome.'
+  );
+  v_prompt := replace(
+    v_prompt,
+    'Não use bom dia, boa tarde ou boa noite. Use sempre uma saudação neutra.',
+    'Use bom dia, boa tarde ou boa noite conforme o horário local em America/Sao_Paulo.'
+  );
+
+  if position(v_named_marker in v_prompt) = 0 then
+    v_prompt := rtrim(v_prompt) || v_named_block;
+  end if;
+
+  return v_prompt;
+end;
+$function$;
+
+revoke all on function public.fn_food_normalize_sarah_prompt(text) from public, anon;
+grant execute on function public.fn_food_normalize_sarah_prompt(text) to service_role;
+
+create or replace function public.fn_enable_food_demo_commercial_flows_on_working_session()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_slug text;
+  v_agent record;
+  v_pointer_ids text[];
+  v_pointer_count integer;
+  v_next_version integer;
+  v_new_version_id uuid;
+  v_prompt text;
+  v_marker constant text := '[FOODSERVICE_COMERCIAL_DEMO_V1]';
+  v_named_marker constant text := '[SAUDACAO_NOME_GARANTIDA_V2]';
+  v_neutral_marker constant text := '[SAUDACAO_NEUTRA_DEMO_V1]';
+  v_block constant text := $block$
+
+[FOODSERVICE_COMERCIAL_DEMO_V1]
+MOTOR COMERCIAL FOODSERVICE
+
+TICKET MÉDIO
+Quando o cliente já escolheu um ou mais itens e o pedido ainda não foi concluído, faça UMA tentativa curta de venda complementar antes de finalizar, desde que ele não tenha recusado adicionais nem pedido objetividade. Consulte crm_search_products antes da sugestão e ofereça no máximo UM complemento realmente compatível com o que ele está comprando. Pode ser bebida, sobremesa, acompanhamento ou outro item pertinente do catálogo. Nunca invente produto, preço, estoque, desconto, combo ou promoção. A sugestão não pode impedir nem atrasar a conclusão do pedido.
+
+CONTINUIDADE / FOLLOW-UP
+Se o cliente demonstrar intenção comercial e combinar que será chamado depois, pedir para ser lembrado, disser que quer retomar em outro horário ou aceitar explicitamente um retorno, não deixe essa promessa apenas no texto. Se ainda não houver horário, pergunte qual horário prefere. Assim que houver um horário explícito, use schedule_followup com o contexto essencial e encerre o turno após o agendamento. Não empilhe retornos, não agende depois de recusa/opt-out e não invente consentimento ou horário.
+
+RECUPERAÇÃO, REATIVAÇÃO E CAMPANHAS
+Quando o turno tiver sido disparado por um fluxo comercial, siga o objetivo e o contexto injetados pelo fluxo. Preserve o histórico, use somente dados reais disponíveis nas ferramentas e mantenha a mensagem curta e natural. Nunca exponha nomes internos de fluxo, tags, estágios ou termos de sistema ao cliente.
+$block$;
+begin
+  select o.slug into v_org_slug
+  from public.organizations o
+  where o.id=new.organization_id;
+
+  if v_org_slug not in ('capri','chopperia-do-gordo')
+     or new.status is distinct from 'WORKING'
+     or new.archived_at is not null then
+    return new;
+  end if;
+
+  select a.id as agent_id,
+         a.published_version_id,
+         v.*
+    into v_agent
+    from public.ai_agents a
+    join public.ai_agent_versions v on v.id = a.published_version_id
+   where a.organization_id = new.organization_id
+     and a.name = 'Sarah'
+     and a.archived_at is null
+     and v.status = 'published'
+     and v.channel_session_id = new.id
+   limit 1;
+
+  if not found then
+    return new;
+  end if;
+
+  select array_agg(p.id::text order by p.name), count(*)::int
+    into v_pointer_ids, v_pointer_count
+    from public.followup_flow_pointers p
+   where p.organization_id = new.organization_id
+     and p.status = 'active'
+     and p.active_version_id is not null
+     and p.name in (
+       'Recuperação de carrinho',
+       'Follow-up automático',
+       'Reativação de clientes',
+       'Campanhas na base'
+     );
+
+  if v_pointer_count <> 4 then
+    return new;
+  end if;
+
+  if coalesce((v_agent.followup ->> 'enabled')::boolean, false)
+     and (v_agent.followup -> 'flow_pointer_ids') @> to_jsonb(v_pointer_ids)
+     and position(v_marker in v_agent.system_prompt) > 0
+     and position(v_named_marker in v_agent.system_prompt) > 0
+     and position(v_neutral_marker in v_agent.system_prompt) = 0 then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(v_agent.agent_id::text));
+
+  select coalesce(max(version_number), 0) + 1
+    into v_next_version
+    from public.ai_agent_versions
+   where agent_id = v_agent.agent_id;
+
+  v_prompt := public.fn_food_normalize_sarah_prompt(v_agent.system_prompt);
+  if position(v_marker in v_prompt) = 0 then
+    v_prompt := rtrim(v_prompt) || v_block;
+  end if;
+
+  insert into public.ai_agent_versions (
+    organization_id, agent_id, version_number, system_prompt, provider, model, credential_id,
+    tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents,
+    history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled,
+    status, created_by, followup, multimodal_input, video_frames_enabled,
+    split_messages, split_max_chars, cases_enabled, operator_enabled, operator_model,
+    operator_tool_ids, pipeline_ids
+  ) values (
+    v_agent.organization_id, v_agent.agent_id, v_next_version, v_prompt,
+    v_agent.provider, v_agent.model, v_agent.credential_id,
+    v_agent.tool_ids, v_agent.trigger_config, new.id, v_agent.max_steps,
+    v_agent.token_budget, v_agent.cost_budget_cents,
+    v_agent.history_message_window, v_agent.history_token_window,
+    v_agent.handoff_keywords, v_agent.handoff_tool_enabled,
+    'draft', v_agent.created_by,
+    jsonb_build_object('enabled', true, 'flow_pointer_ids', to_jsonb(v_pointer_ids)),
+    v_agent.multimodal_input, v_agent.video_frames_enabled,
+    v_agent.split_messages, v_agent.split_max_chars, v_agent.cases_enabled,
+    v_agent.operator_enabled, v_agent.operator_model, v_agent.operator_tool_ids,
+    v_agent.pipeline_ids
+  ) returning id into v_new_version_id;
+
+  perform public.fn_publish_ai_agent_version(new.organization_id, v_agent.agent_id, v_new_version_id);
+  update public.ai_agents
+     set system_prompt=public.fn_food_normalize_sarah_prompt(system_prompt), updated_at=now()
+   where id=v_agent.agent_id;
+
+  return new;
+end;
+$function$;
+
+revoke all on function public.fn_enable_food_demo_commercial_flows_on_working_session() from public, anon;
+grant execute on function public.fn_enable_food_demo_commercial_flows_on_working_session() to service_role;
+
+update public.ai_agents a
+set system_prompt=public.fn_food_normalize_sarah_prompt(a.system_prompt), updated_at=now()
+from public.organizations o
+where o.id=a.organization_id
+  and o.slug in ('capri','chopperia-do-gordo')
+  and a.name='Sarah'
+  and a.archived_at is null;
+
+do $do$
+declare
+  v_agent record;
+  v_next_version integer;
+  v_new_version_id uuid;
+  v_prompt text;
+begin
+  select a.id as agent_id,a.organization_id,v.*
+    into v_agent
+  from public.ai_agents a
+  join public.organizations o on o.id=a.organization_id
+  join public.ai_agent_versions v on v.id=a.published_version_id
+  join public.channel_sessions s on s.id=v.channel_session_id
+  where o.slug='capri'
+    and a.name='Sarah'
+    and a.archived_at is null
+    and v.status='published'
+    and s.status='WORKING'
+    and s.archived_at is null
+  limit 1;
+
+  if not found then
+    -- Instalações novas não têm a organização de demonstração. A asserção só
+    -- deve bloquear quando a Capri existe e está com a publicação inconsistente.
+    if not exists (select 1 from public.organizations where slug='capri') then
+      return;
+    end if;
+    raise exception 'capri_published_sarah_working_session_not_found';
+  end if;
+
+  v_prompt := public.fn_food_normalize_sarah_prompt(v_agent.system_prompt);
+  if v_prompt = v_agent.system_prompt then
+    return;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(v_agent.agent_id::text));
+  select coalesce(max(version_number),0)+1 into v_next_version
+  from public.ai_agent_versions where agent_id=v_agent.agent_id;
+
+  insert into public.ai_agent_versions (
+    organization_id,agent_id,version_number,system_prompt,provider,model,credential_id,
+    tool_ids,trigger_config,channel_session_id,max_steps,token_budget,cost_budget_cents,
+    history_message_window,history_token_window,handoff_keywords,handoff_tool_enabled,
+    status,created_by,followup,multimodal_input,video_frames_enabled,
+    split_messages,split_max_chars,cases_enabled,operator_enabled,operator_model,
+    operator_tool_ids,pipeline_ids
+  ) values (
+    v_agent.organization_id,v_agent.agent_id,v_next_version,v_prompt,
+    v_agent.provider,v_agent.model,v_agent.credential_id,
+    v_agent.tool_ids,v_agent.trigger_config,v_agent.channel_session_id,v_agent.max_steps,
+    v_agent.token_budget,v_agent.cost_budget_cents,
+    v_agent.history_message_window,v_agent.history_token_window,
+    v_agent.handoff_keywords,v_agent.handoff_tool_enabled,
+    'draft',v_agent.created_by,v_agent.followup,v_agent.multimodal_input,v_agent.video_frames_enabled,
+    v_agent.split_messages,v_agent.split_max_chars,v_agent.cases_enabled,
+    v_agent.operator_enabled,v_agent.operator_model,v_agent.operator_tool_ids,v_agent.pipeline_ids
+  ) returning id into v_new_version_id;
+
+  perform public.fn_publish_ai_agent_version(v_agent.organization_id,v_agent.agent_id,v_new_version_id);
+end;
+$do$;
+
+-- ---- 20260818090932_0163_food_sarah_opening_v2_guard ----
+create or replace function public.fn_food_sarah_opening_v2_on_inbound()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_name text;
+  v_slug text;
+  v_tz text;
+  v_contact_name text;
+  v_hour int;
+  v_period text;
+  v_opening text;
+  v_blocked boolean := false;
+  v_force_human boolean := false;
+  v_anonymized boolean := false;
+  v_day date;
+begin
+  if new.direction <> 'inbound'
+     or new.contact_id is null
+     or new.conversation_id is null
+     or new.channel_session_id is null then
+    return new;
+  end if;
+
+  if not exists (
+    select 1
+    from public.food_commerce_settings f
+    where f.organization_id=new.organization_id
+      and f.is_enabled=true
+  ) then
+    return new;
+  end if;
+
+  if not exists (
+    select 1
+    from public.conversations c
+    where c.id=new.conversation_id
+      and c.organization_id=new.organization_id
+      and c.contact_id=new.contact_id
+      and c.is_group=false
+  ) then
+    return new;
+  end if;
+
+  if not exists (
+    select 1
+    from public.channel_sessions s
+    where s.id=new.channel_session_id
+      and s.organization_id=new.organization_id
+      and s.status='WORKING'
+      and s.archived_at is null
+  ) then
+    return new;
+  end if;
+
+  select coalesce(c.is_blocked,false),coalesce(c.force_human,false),coalesce(c.is_anonymized,false),
+         nullif(btrim(split_part(c.display_name,' ',1)),'')
+    into v_blocked,v_force_human,v_anonymized,v_contact_name
+  from public.contacts c
+  where c.id=new.contact_id and c.organization_id=new.organization_id;
+
+  if v_blocked or v_force_human or v_anonymized then
+    return new;
+  end if;
+
+  if v_contact_name ~ '^[+0-9(). -]+$' then
+    v_contact_name := null;
+  end if;
+
+  select coalesce(nullif(f.app_name,''),o.display_name),o.slug,
+         coalesce(nullif(o.timezone,''),'America/Sao_Paulo')
+    into v_org_name,v_slug,v_tz
+  from public.organizations o
+  left join public.food_commerce_settings f on f.organization_id=o.id
+  where o.id=new.organization_id;
+
+  if v_slug is null then
+    return new;
+  end if;
+
+  v_day := (coalesce(new.sent_at,new.created_at,now()) at time zone v_tz)::date;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended(new.organization_id::text||':'||new.contact_id::text||':'||v_day::text,0)
+  );
+
+  if exists (
+    select 1
+    from public.messages m
+    where m.organization_id=new.organization_id
+      and m.contact_id=new.contact_id
+      and m.direction='outbound'
+      and m.sent_via='ai'
+      and m.status<>'failed'
+      and coalesce((m.metadata->>'sarah_opening_v2')::boolean,false)=true
+      and (m.created_at at time zone v_tz)::date=v_day
+  ) then
+    return new;
+  end if;
+
+  v_hour := extract(hour from (coalesce(new.sent_at,new.created_at,now()) at time zone v_tz));
+  v_period := case
+    when v_hour between 5 and 11 then 'bom dia'
+    when v_hour between 12 and 17 then 'boa tarde'
+    else 'boa noite'
+  end;
+
+  v_opening := 'Olá, '||v_period||coalesce(', '||v_contact_name,'')||'! 😊'
+    ||E'\n\n'
+    ||'Muito obrigado por ter entrado em contato com a '||v_org_name||'.'
+    ||E'\n\n'
+    ||'Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?'
+    ||E'\n\n'
+    ||'Para acessar nosso cardápio digital, basta acessar o link abaixo:'
+    ||E'\n'
+    ||'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+
+  insert into public.messages(
+    organization_id,conversation_id,channel_session_id,contact_id,
+    type,direction,status,body,sent_via,sent_at,metadata,created_at
+  )
+  select
+    new.organization_id,new.conversation_id,new.channel_session_id,new.contact_id,
+    'text','outbound','queued',v_opening,'ai',now(),
+    jsonb_build_object(
+      'ai_actor_id','agent-engine-opening-v2',
+      'sarah_opening_v2',true,
+      'deterministic_food_early',true,
+      'reactive_outbox',true,
+      'origin_inbound_message_id',new.id::text
+    ),
+    now()
+  where not exists (
+    select 1
+    from public.messages existing
+    where existing.organization_id=new.organization_id
+      and existing.metadata->>'origin_inbound_message_id'=new.id::text
+      and coalesce((existing.metadata->>'reactive_outbox')::boolean,false)=true
+  );
+
+  return new;
+end;
+$function$;
+
+revoke all on function public.fn_food_sarah_opening_v2_on_inbound() from public, anon;
+grant execute on function public.fn_food_sarah_opening_v2_on_inbound() to service_role;
+
+drop trigger if exists trg_messages_a0_food_opening_v2 on public.messages;
+create trigger trg_messages_a0_food_opening_v2
+after insert on public.messages
+for each row execute function public.fn_food_sarah_opening_v2_on_inbound();
+
+update public.messages m
+set metadata=coalesce(m.metadata,'{}'::jsonb)||jsonb_build_object('sarah_opening_v2',true)
+where m.direction='outbound'
+  and m.sent_via='ai'
+  and m.body ilike '%Meu nome é Sarah%'
+  and exists (
+    select 1 from public.food_commerce_settings f
+    where f.organization_id=m.organization_id and f.is_enabled=true
+  );
+
+-- ---- 20260818092333_0164_foodservice_capri_chopperia_commercial_parity_v3 ----
+-- Paridade comercial entre Capri e Chopperia: upsell persuasivo, recuperação em 3 minutos,
+-- follow-up para contatos reais e campanhas/reativação com memória do último pedido.
+
+create or replace function public.fn_food_append_deterministic_upsell()
+returns trigger
+language plpgsql
+set search_path to 'public'
+as $function$
+declare
+  v_inbound_body text;
+  v_trigger_product_id uuid;
+  v_trigger_name text;
+  v_score real;
+  v_recommended_name text;
+  v_recommended_price bigint;
+  v_rule_id uuid;
+begin
+  if new.direction <> 'outbound' or new.sent_via <> 'ai' or new.body is null
+     or not coalesce((new.metadata->>'deterministic_food_rule')::boolean,false)
+     or coalesce((new.metadata->>'food_upsell_applied')::boolean,false) then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+  if nullif(new.metadata->>'origin_inbound_message_id','') is null then return new; end if;
+
+  select m.body into v_inbound_body
+  from public.messages m
+  where m.id=(new.metadata->>'origin_inbound_message_id')::uuid
+    and m.organization_id=new.organization_id and m.direction='inbound';
+  if v_inbound_body is null then return new; end if;
+
+  select p.id,p.name,
+         greatest(word_similarity(lower(p.name),lower(v_inbound_body)),similarity(lower(p.name),lower(v_inbound_body)))::real
+    into v_trigger_product_id,v_trigger_name,v_score
+  from public.food_products p
+  where p.organization_id=new.organization_id and p.is_available=true
+  order by greatest(word_similarity(lower(p.name),lower(v_inbound_body)),similarity(lower(p.name),lower(v_inbound_body))) desc,p.sort_order,p.name
+  limit 1;
+  if v_trigger_product_id is null or coalesce(v_score,0)<0.55 then return new; end if;
+
+  select r.id,rp.name,rp.price_cents
+    into v_rule_id,v_recommended_name,v_recommended_price
+  from public.food_recommendation_rules r
+  join public.food_products rp on rp.id=r.recommended_product_id and rp.organization_id=r.organization_id
+  where r.organization_id=new.organization_id and r.is_active=true and r.trigger_product_id=v_trigger_product_id
+    and r.recommended_product_id is not null and r.kind in ('upsell','cross_sell','upgrade','combo','order_bump')
+    and rp.is_available=true
+  order by r.priority,r.created_at limit 1;
+  if v_recommended_name is null or v_recommended_price is null then return new; end if;
+  if position(lower(v_recommended_name) in lower(new.body))>0 then return new; end if;
+
+  new.body:=rtrim(new.body)||E'\n\n'||'Aproveitando sua escolha: '||v_trigger_name||' combina muito bem com '||v_recommended_name||'. Por só R$ '||replace(to_char(v_recommended_price/100.0,'FM999999990D00'),'.',',')||' a mais, seu pedido fica mais completo. Quer que eu já inclua para você? 😊';
+  new.metadata:=coalesce(new.metadata,'{}'::jsonb)||jsonb_build_object('food_upsell_applied',true,'food_upsell_rule_id',v_rule_id);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_cancel_recovery_on_order_created()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if new.external_provider is distinct from 'deskcomm_food' or new.contact_id is null
+     or not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+  update public.cron_jobs
+     set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'pedido concluído no cardápio'),updated_at=now()
+   where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true
+     and payload->>'food_automation' in ('cart_recovery_v1','silence_followup_v1');
+  update public.followup_enrollments e
+     set status='cancelled',next_eval_at=null,claimed_until=null,cancel_reason=coalesce(e.cancel_reason,'pedido concluído no cardápio'),updated_at=now()
+    from public.followup_flow_pointers p
+   where e.pointer_id=p.id and e.organization_id=new.organization_id and e.contact_id=new.contact_id
+     and e.status in ('active','waiting_reply','paused_handoff','paused_manual')
+     and p.organization_id=new.organization_id and p.name in ('Recuperação de carrinho','Follow-up automático');
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_demo_manage_silence_followup()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_slug text; v_is_eligible boolean:=false; v_can_send boolean:=false;
+  v_latest_inbound text; v_is_order_context boolean:=false;
+  v_delay interval:=interval '5 minutes'; v_delay_label text:='5 minutos';
+begin
+  select o.slug into v_org_slug from public.organizations o where o.id=new.organization_id;
+  if v_org_slug not in ('capri','chopperia-do-gordo') then return new; end if;
+  if new.contact_id is null or new.is_group=true or new.last_inbound_at is null then return new; end if;
+  if tg_op='UPDATE' and old.last_inbound_at is not distinct from new.last_inbound_at then return new; end if;
+
+  update public.cron_jobs set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'cliente voltou a responder'),updated_at=now()
+  where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true and payload->>'food_automation'='cart_recovery_v1';
+
+  select coalesce(c.is_blocked,false)=false and coalesce(c.force_human,false)=false and coalesce(c.is_anonymized,false)=false and c.is_merged_into is null
+    into v_is_eligible
+  from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id;
+  select exists(select 1 from public.channel_sessions cs where cs.id=new.channel_session_id and cs.organization_id=new.organization_id and cs.status='WORKING' and cs.archived_at is null)
+    into v_can_send;
+
+  update public.cron_jobs set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'substituído por nova mensagem inbound'),updated_at=now()
+  where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true and payload->>'food_automation'='silence_followup_v1';
+  if not coalesce(v_is_eligible,false) or not coalesce(v_can_send,false) then return new; end if;
+
+  select m.body into v_latest_inbound
+  from public.messages m
+  where m.organization_id=new.organization_id and m.conversation_id=new.id and m.contact_id=new.contact_id and m.direction='inbound' and m.body is not null
+  order by m.created_at desc limit 1;
+
+  v_is_order_context:=coalesce(v_latest_inbound,'') ~* '(pedido|compr|quero|adicion|inclu|carrinho|card[aá]pio|menu|quantidade|unidade)'
+    or exists(select 1 from public.food_products p where p.organization_id=new.organization_id and p.is_available=true
+      and greatest(word_similarity(lower(p.name),lower(coalesce(v_latest_inbound,''))),similarity(lower(p.name),lower(coalesce(v_latest_inbound,''))))>=0.55);
+  if v_is_order_context then v_delay:=interval '3 minutes'; v_delay_label:='3 minutos'; end if;
+
+  insert into public.cron_jobs(organization_id,contact_id,kind,tz,job_kind,payload,next_run_at,enabled,max_attempts)
+  values(new.organization_id,new.contact_id,'at','America/Sao_Paulo','followup_turn',jsonb_build_object(
+    'mode','agent',
+    'reason',case when v_is_order_context then 'Recuperação automática de venda: o cliente estava em contexto de pedido/produto e ficou sem responder por cerca de '||v_delay_label||'. Faça UMA retomada curta, natural e altamente persuasiva para ajudá-lo a concluir. Retome exatamente o interesse demonstrado, reduza atrito e faça uma pergunta simples de fechamento. Se houver uma oportunidade real, ofereça UM complemento relevante do catálogo. Não invente desconto, promoção, produto ou preço.' else 'Follow-up automático: o cliente iniciou atendimento e ficou sem responder por cerca de '||v_delay_label||'. Faça UMA retomada curta, útil e sem pressão. Não diga que havia uma promessa ou horário combinado.' end,
+    'context_snapshot',case when v_is_order_context then 'O cliente estava avançando em uma compra. Retome do ponto em que parou, preserve o contexto e facilite a conclusão. Se citar item/preço, consulte dados reais do catálogo.' else 'Retome a conversa do ponto em que parou e ajude o cliente a avançar no atendimento. Se ele já recusou, pediu para parar ou houve handoff humano, não envie nova abordagem.' end,
+    'food_automation','silence_followup_v1','food_order_context',v_is_order_context,'conversation_id',new.id),now()+v_delay,true,3);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_demo_schedule_cart_recovery()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare v_org_slug text; v_abandoned_stage uuid; v_can_send boolean; v_delay interval:=interval '3 minutes'; v_delay_label text:='3 minutos';
+begin
+  select o.slug into v_org_slug from public.organizations o where o.id=new.organization_id;
+  if v_org_slug not in ('capri','chopperia-do-gordo') then return new; end if;
+  select s.id into v_abandoned_stage from public.crm_stages s join public.crm_pipelines p on p.id=s.pipeline_id
+  where p.organization_id=new.organization_id and s.slug='carrinho_abandonado' and coalesce(s.is_archived,false)=false order by s.position limit 1;
+  if tg_op='UPDATE' and old.stage_id is distinct from new.stage_id and old.stage_id=v_abandoned_stage and new.stage_id is distinct from v_abandoned_stage then
+    update public.cron_jobs set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'lead deixou Carrinho abandonado'),updated_at=now()
+    where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true and payload->>'food_automation'='cart_recovery_v1'; return new; end if;
+  if new.stage_id is distinct from v_abandoned_stage or (tg_op='UPDATE' and old.stage_id is not distinct from new.stage_id) or new.status<>'open' then return new; end if;
+  select exists(select 1 from public.channel_sessions cs where cs.organization_id=new.organization_id and cs.status='WORKING' and cs.archived_at is null)
+    and exists(select 1 from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id and coalesce(c.is_blocked,false)=false and coalesce(c.force_human,false)=false and coalesce(c.is_anonymized,false)=false and c.is_merged_into is null)
+    into v_can_send;
+  if not coalesce(v_can_send,false) then return new; end if;
+  update public.cron_jobs set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'substituído por recuperação mais recente'),updated_at=now()
+  where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true and payload->>'food_automation'='cart_recovery_v1';
+  insert into public.cron_jobs(organization_id,contact_id,kind,tz,job_kind,payload,next_run_at,enabled,max_attempts)
+  values(new.organization_id,new.contact_id,'at','America/Sao_Paulo','followup_turn',jsonb_build_object(
+    'mode','agent','reason','Recuperação automática: o cliente deixou um pedido no carrinho e não concluiu há cerca de 3 minutos. Faça UMA retomada curta, natural e altamente persuasiva para recuperar a venda. Mostre que concluir é fácil, retome o interesse pelo pedido e crie vontade de finalizar sem pressionar. Se houver oportunidade real, ofereça UM complemento relevante do catálogo. Não invente desconto, produto, preço ou promoção.',
+    'context_snapshot','Carrinho abandonado. Retome do ponto em que a conversa parou, preserve o pedido já montado e facilite a conclusão. Se fizer sentido, reforce em uma frase o valor/conveniência do que o cliente já escolheu e faça uma pergunta simples de fechamento. Se precisar citar item/preço, consulte as ferramentas disponíveis.',
+    'food_automation','cart_recovery_v1','crm_lead_id',new.id),now()+v_delay,true,3);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_demo_schedule_manual_flow_fallback()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_slug text; v_pointer_name text; v_reason text; v_context text; v_can_send boolean:=false;
+  v_last_order_id uuid; v_last_order_at timestamptz; v_last_total bigint; v_last_items text; v_last_order_context text;
+begin
+  select o.slug into v_org_slug from public.organizations o where o.id=new.organization_id;
+  if v_org_slug not in ('capri','chopperia-do-gordo') then return new; end if;
+  select name into v_pointer_name from public.followup_flow_pointers where id=new.pointer_id and organization_id=new.organization_id and status='active';
+  if v_pointer_name not in ('Reativação de clientes','Campanhas na base') then return new; end if;
+  select exists(select 1 from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id and coalesce(c.is_blocked,false)=false and coalesce(c.force_human,false)=false and coalesce(c.is_anonymized,false)=false and c.is_merged_into is null)
+    and exists(select 1 from public.channel_sessions cs where cs.organization_id=new.organization_id and cs.status='WORKING' and cs.archived_at is null) into v_can_send;
+  if not coalesce(v_can_send,false) then return new; end if;
+
+  select o.id,o.ordered_at,o.total_cents into v_last_order_id,v_last_order_at,v_last_total
+  from public.orders o
+  where o.organization_id=new.organization_id and o.contact_id=new.contact_id and o.external_provider='deskcomm_food' and o.status<>'cancelled'
+  order by o.ordered_at desc nulls last,o.created_at desc limit 1;
+  if v_last_order_id is not null then
+    select string_agg(oi.quantity::text||'x '||oi.product_name_snapshot,', ' order by oi.created_at,oi.product_name_snapshot)
+      into v_last_items
+    from public.food_order_items oi where oi.organization_id=new.organization_id and oi.order_id=v_last_order_id;
+    v_last_order_context:='Último pedido confirmado: '||coalesce(v_last_items,'itens não detalhados')||', total R$ '||replace(to_char(coalesce(v_last_total,0)/100.0,'FM999999990D00'),'.',',')||', realizado em '||to_char(v_last_order_at at time zone 'America/Sao_Paulo','DD/MM/YYYY')||'. ';
+  else
+    v_last_order_context:='Não há pedido concluído identificado para este contato no checkout Deskcomm. ';
+  end if;
+
+  if v_pointer_name='Reativação de clientes' then
+    v_reason:='Reativação comercial. Faça UMA mensagem curta, humana e muito persuasiva para gerar uma nova compra. Se houver último pedido, use-o naturalmente para demonstrar memória e relevância. Em seguida, procure uma oportunidade real de vender MAIS: consulte o catálogo e ofereça UM produto complementar, upgrade ou nova opção coerente com o histórico. Nunca invente desconto, promoção, produto, preço, estoque ou benefício.';
+    v_context:=v_last_order_context||'Não transforme a mensagem em spam. O objetivo é lembrar a preferência do cliente e criar um próximo pedido maior e relevante.';
+  else
+    v_reason:='Campanha comercial personalizada. Faça UMA mensagem curta, humana e muito persuasiva para gerar nova compra. Se houver último pedido, mencione-o naturalmente. Depois, não se limite a repetir o pedido: consulte o catálogo e ofereça UM complemento, upgrade ou produto adicional realmente compatível para aumentar o ticket. Nunca invente promoção, desconto, preço, estoque ou benefício.';
+    v_context:=v_last_order_context||'Use o histórico como memória comercial e o catálogo atual como fonte de verdade. Evite linguagem genérica de disparo em massa.';
+  end if;
+
+  insert into public.cron_jobs(organization_id,contact_id,kind,tz,job_kind,payload,next_run_at,enabled,max_attempts)
+  values(new.organization_id,new.contact_id,'at','America/Sao_Paulo','followup_turn',jsonb_build_object(
+    'mode','agent','reason',v_reason,'context_snapshot',v_context,'food_automation','manual_flow_fallback_v1',
+    'food_flow_name',v_pointer_name,'food_enrollment_ref',new.id,'last_order_id',v_last_order_id),now()+interval '20 seconds',true,3);
+  return new;
+end;
+$function$;
+
+-- Recovery flow: 3 minutos nas duas operações.
+with targets as (
+  select fv.id,fv.graph
+  from public.followup_flow_versions fv
+  join public.followup_flow_pointers fp on fp.active_version_id=fv.id
+  join public.organizations o on o.id=fp.organization_id
+  where o.slug in ('capri','chopperia-do-gordo') and fp.name='Recuperação de carrinho' and fp.status='active'
+), rewritten as (
+  select t.id,jsonb_set(t.graph,'{nodes}',(
+    select jsonb_agg(case when n->>'id'='wait' then
+      jsonb_set(jsonb_set(n,'{label}',to_jsonb('Aguardar 3 minutos'::text),false),'{config,duration_ms}',to_jsonb(180000::int),false)
+      else n end)
+    from jsonb_array_elements(t.graph->'nodes') n
+  ),false) new_graph from targets t
+)
+update public.followup_flow_versions fv set graph=r.new_graph from rewritten r where fv.id=r.id;
+
+-- Campanhas e reativação: memória do último pedido + venda adicional relevante.
+with targets as (
+  select fv.id,fv.graph,fp.name
+  from public.followup_flow_versions fv
+  join public.followup_flow_pointers fp on fp.active_version_id=fv.id
+  join public.organizations o on o.id=fp.organization_id
+  where o.slug in ('capri','chopperia-do-gordo') and fp.name in ('Campanhas na base','Reativação de clientes') and fp.status='active'
+), rewritten as (
+  select t.id,jsonb_set(t.graph,'{nodes}',(
+    select jsonb_agg(case when n->>'id'='action' then
+      jsonb_set(n,'{config,prompt_hint}',to_jsonb(case when t.name='Campanhas na base' then
+        'Envie uma mensagem comercial curta, humana, personalizada e muito persuasiva para gerar nova compra. Use o histórico do cliente. Se houver último pedido, relembre-o naturalmente para demonstrar memória. Depois, não se limite a repetir: ofereça UM produto adicional, complemento ou upgrade realmente compatível, consultando somente o catálogo atual. Nunca invente promoção, desconto, preço, estoque, escassez ou benefício. Evite texto genérico de disparo em massa e respeite opt-out.'
+      else
+        'Reative este cliente com uma mensagem curta, humana e muito persuasiva. Se houver último pedido, relembre-o naturalmente. Em seguida, procure uma oportunidade real de vender MAIS oferecendo UM complemento, upgrade ou produto adicional coerente com o histórico e com o catálogo atual. Nunca invente promoção, desconto, preço, estoque, escassez ou benefício. Não pareça spam e respeite opt-out.' end),true)
+      else n end)
+    from jsonb_array_elements(t.graph->'nodes') n
+  ),false) new_graph from targets t
+)
+update public.followup_flow_versions fv set graph=r.new_graph from rewritten r where fv.id=r.id;
+
+-- ---- 20260818092925_0165_foodservice_conversation_coherence_v1 ----
+create or replace function public.fn_food_normalize_sarah_prompt(p_prompt text)
+returns text
+language plpgsql
+immutable
+set search_path to 'public'
+as $function$
+declare
+  v_prompt text := coalesce(p_prompt,'');
+  v_neutral_pos integer;
+  v_named_marker constant text := '[SAUDACAO_NOME_GARANTIDA_V2]';
+  v_sales_marker constant text := '[FOODSERVICE_VENDAS_PERSUASIVAS_V2]';
+  v_coherence_marker constant text := '[FOODSERVICE_CONTINUIDADE_V1]';
+  v_named_block constant text := $named$
+
+[SAUDACAO_NOME_GARANTIDA_V2]
+REGRA FINAL E SOBERANA DE SAUDAÇÃO — PRIORIDADE MÁXIMA
+- Esta regra substitui qualquer instrução anterior que mande usar somente saudação neutra, proíba bom dia/boa tarde/boa noite ou mande ignorar o nome conhecido do contato.
+- O fuso oficial é America/Sao_Paulo. 05:00–11:59 = bom dia; 12:00–17:59 = boa tarde; 18:00–04:59 = boa noite.
+- Se o CRM/contexto já fornecer o nome do contato e ele não for um telefone, use o PRIMEIRO NOME já na primeira linha da PRIMEIRA resposta do atendimento. Exemplo: "Olá, bom dia, Sandra! 😊".
+- É proibido responder apenas "Olá! Como posso te ajudar?" quando o nome do contato já estiver disponível na primeira resposta.
+- Na PRIMEIRA resposta da Sarah do dia para aquele contato, a abertura deve também apresentar a atendente: "Muito obrigado por ter entrado em contato com a empresa. Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?". Quando houver link oficial do cardápio, inclua-o nessa abertura conforme a configuração do estabelecimento.
+- Depois dessa primeira resposta, NÃO repita bom dia/boa tarde/boa noite nem a apresentação da Sarah no mesmo dia. Continue diretamente do ponto atual da conversa.
+- Se o nome não estiver disponível, use a saudação pelo período sem inventar nome.
+- Se uma camada determinística já tiver produzido a abertura do turno, não envie uma segunda saudação duplicada.
+$named$;
+  v_sales_block constant text := $sales$
+
+[FOODSERVICE_VENDAS_PERSUASIVAS_V2]
+VENDA ADICIONAL É PRIORIDADE COMERCIAL.
+- Sempre que houver oportunidade real e relevante durante um pedido, faça UMA tentativa persuasiva de aumentar o ticket antes da conclusão.
+- A oferta deve conectar o item escolhido a um complemento real do catálogo usando combinação, conveniência, ocasião de consumo ou benefício concreto.
+- Use linguagem de fechamento e torne fácil dizer sim.
+- Nunca invente desconto, promoção, escassez, preço, estoque, combo ou benefício.
+- Em campanhas e reativação, se houver histórico de pedido, relembre a compra anterior de modo natural e ofereça UM produto complementar, upgrade ou nova opção coerente do catálogo atual.
+$sales$;
+  v_coherence_block constant text := $coherence$
+
+[FOODSERVICE_CONTINUIDADE_V1]
+CONTINUIDADE E IDENTIDADE — REGRA ABSOLUTA
+- A MENSAGEM ATUAL do cliente é o assunto principal do turno. Histórico, resumo, memória e mensagens antigas são apenas referência; não continue espontaneamente um assunto antigo que a mensagem atual não retomou.
+- Depois da primeira resposta do atendimento no dia, responda diretamente. NÃO reinicie com "olá", "bom dia", "boa tarde" ou "boa noite" em cada mensagem e NÃO repita sua apresentação.
+- Você é Sarah, uma agente comercial VIRTUAL do estabelecimento. Você não se desloca fisicamente, não comparece a reuniões, não chega a locais, não encontra clientes presencialmente e não promete estar fisicamente em nenhum lugar.
+- Mensagens outbound do histórico podem ter sido enviadas manualmente por um atendente humano do estabelecimento. Uma frase em primeira pessoa no histórico NÃO prova que foi você quem disse ou fará aquilo. Nunca transforme ação, viagem, compromisso, relação pessoal ou agenda de um humano em ação sua.
+- Se alguém perguntar se você vai fisicamente a algum lugar ou estará presencialmente em algum local, esclareça de forma natural que você é a atendente virtual e pode ajudar pelo WhatsApp.
+- Não atribua ao cliente planos ou compromissos de outra pessoa.
+- Não ecoe emoções, religião, intimidade ou fatos pessoais antigos se a mensagem atual não estiver falando disso. Mantenha o papel de agente comercial do estabelecimento.
+$coherence$;
+begin
+  v_neutral_pos := position('[SAUDACAO_NEUTRA_DEMO_V1]' in v_prompt);
+  if v_neutral_pos > 0 then
+    v_prompt := rtrim(substring(v_prompt from 1 for v_neutral_pos - 1));
+  end if;
+  v_prompt := replace(v_prompt,'Não use automaticamente o nome do contato na saudação.','Quando o nome do contato estiver disponível no contexto, use o primeiro nome na saudação inicial; nunca invente um nome.');
+  v_prompt := replace(v_prompt,'Não use bom dia, boa tarde ou boa noite. Use sempre uma saudação neutra.','Use bom dia, boa tarde ou boa noite conforme o horário local em America/Sao_Paulo, somente na primeira resposta do atendimento.');
+  if position(v_named_marker in v_prompt)=0 then v_prompt := rtrim(v_prompt)||v_named_block; end if;
+  if position(v_sales_marker in v_prompt)=0 then v_prompt := rtrim(v_prompt)||v_sales_block; end if;
+  if position(v_coherence_marker in v_prompt)=0 then v_prompt := rtrim(v_prompt)||v_coherence_block; end if;
+  return v_prompt;
+end;
+$function$;
+
+create or replace function public.fn_food_sarah_opening_v2_on_inbound()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_name text; v_slug text; v_tz text; v_contact_name text; v_hour int; v_period text; v_opening text;
+  v_blocked boolean:=false; v_force_human boolean:=false; v_anonymized boolean:=false; v_day date;
+begin
+  if new.direction<>'inbound' or new.contact_id is null or new.conversation_id is null or new.channel_session_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+  if not exists(select 1 from public.conversations c where c.id=new.conversation_id and c.organization_id=new.organization_id and c.contact_id=new.contact_id and c.is_group=false) then return new; end if;
+  if not exists(select 1 from public.channel_sessions s where s.id=new.channel_session_id and s.organization_id=new.organization_id and s.status='WORKING' and s.archived_at is null) then return new; end if;
+
+  select coalesce(c.is_blocked,false),coalesce(c.force_human,false),coalesce(c.is_anonymized,false),nullif(btrim(split_part(c.display_name,' ',1)),'')
+  into v_blocked,v_force_human,v_anonymized,v_contact_name
+  from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id;
+  if v_blocked or v_force_human or v_anonymized then return new; end if;
+  if v_contact_name ~ '^[+0-9(). -]+$' then v_contact_name:=null; end if;
+
+  select coalesce(nullif(f.app_name,''),o.display_name),o.slug,coalesce(nullif(o.timezone,''),'America/Sao_Paulo')
+  into v_org_name,v_slug,v_tz
+  from public.organizations o left join public.food_commerce_settings f on f.organization_id=o.id
+  where o.id=new.organization_id;
+  if v_slug is null then return new; end if;
+
+  v_day := (coalesce(new.sent_at,new.created_at,now()) at time zone v_tz)::date;
+  perform pg_advisory_xact_lock(hashtextextended(new.organization_id::text||':'||new.contact_id::text||':'||v_day::text,0));
+  if exists(
+    select 1 from public.messages m
+    where m.organization_id=new.organization_id and m.contact_id=new.contact_id
+      and m.direction='outbound' and m.sent_via='ai' and m.status<>'failed'
+      and m.created_at < coalesce(new.created_at,now())
+      and (m.created_at at time zone v_tz)::date=v_day
+  ) then return new; end if;
+
+  v_hour:=extract(hour from (coalesce(new.sent_at,new.created_at,now()) at time zone v_tz));
+  v_period:=case when v_hour between 5 and 11 then 'bom dia' when v_hour between 12 and 17 then 'boa tarde' else 'boa noite' end;
+  v_opening:='Olá, '||v_period||coalesce(', '||v_contact_name,'')||'! 😊'||E'\n\n'||
+    'Muito obrigado por ter entrado em contato com a '||v_org_name||'.'||E'\n\n'||
+    'Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?'||E'\n\n'||
+    'Para acessar nosso cardápio digital, basta acessar o link abaixo:'||E'\n'||
+    'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+
+  insert into public.messages(organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,metadata,created_at)
+  select new.organization_id,new.conversation_id,new.channel_session_id,new.contact_id,'text','outbound','queued',v_opening,'ai',now(),
+    jsonb_build_object('ai_actor_id','agent-engine-opening-v2','sarah_opening_v2',true,'deterministic_food_early',true,'reactive_outbox',true,'origin_inbound_message_id',new.id::text),now()
+  where not exists(select 1 from public.messages existing where existing.organization_id=new.organization_id and existing.metadata->>'origin_inbound_message_id'=new.id::text and coalesce((existing.metadata->>'reactive_outbox')::boolean,false)=true);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_sarah_outbound_coherence()
+returns trigger
+language plpgsql
+set search_path to 'public'
+as $function$
+declare
+  v_tz text; v_day date; v_has_prior_ai boolean:=false; v_cleaned text;
+begin
+  if new.direction<>'outbound' or new.sent_via<>'ai' or coalesce(new.body,'')='' or new.contact_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+  if coalesce((new.metadata->>'sarah_opening_v2')::boolean,false)=true then return new; end if;
+  select coalesce(nullif(o.timezone,''),'America/Sao_Paulo') into v_tz from public.organizations o where o.id=new.organization_id;
+  v_day := (coalesce(new.created_at,now()) at time zone v_tz)::date;
+  select exists(select 1 from public.messages m where m.organization_id=new.organization_id and m.contact_id=new.contact_id and m.direction='outbound' and m.sent_via='ai' and m.status<>'failed' and m.id is distinct from new.id and m.created_at<coalesce(new.created_at,now()) and (m.created_at at time zone v_tz)::date=v_day) into v_has_prior_ai;
+  if v_has_prior_ai then
+    v_cleaned:=regexp_replace(new.body,'^[[:space:]]*(Olá|Oi)[,!]?[[:space:]]*(bom dia|boa tarde|boa noite)(,[^!\n\r]+)?!?[[:space:]]*[😊🙂]?[[:space:]]*([\r\n]+[[:space:]]*)*','','i');
+    if btrim(v_cleaned)<>'' and v_cleaned is distinct from new.body then
+      new.body:=v_cleaned;
+      new.metadata:=coalesce(new.metadata,'{}'::jsonb)||jsonb_build_object('repeated_daypart_greeting_removed',true);
+    end if;
+  end if;
+  return new;
+end;
+$function$;
+
+drop trigger if exists trg_messages_ahz_food_sarah_coherence on public.messages;
+create trigger trg_messages_ahz_food_sarah_coherence
+before insert or update of body on public.messages
+for each row execute function public.fn_food_sarah_outbound_coherence();
+
+revoke all on function public.fn_food_sarah_opening_v2_on_inbound() from public,anon,authenticated;
+grant execute on function public.fn_food_sarah_opening_v2_on_inbound() to service_role;
+
+update public.ai_agents a
+set system_prompt=public.fn_food_normalize_sarah_prompt(a.system_prompt),updated_at=now()
+from public.organizations o
+where a.organization_id=o.id and o.slug in ('capri','chopperia-do-gordo') and a.name='Sarah';
+
+-- ---- 20260818093056_0166_foodservice_block_virtual_agent_physical_claims ----
+create or replace function public.fn_food_sarah_outbound_coherence()
+returns trigger
+language plpgsql
+set search_path to 'public'
+as $function$
+declare
+  v_tz text;
+  v_day date;
+  v_has_prior_ai boolean:=false;
+  v_cleaned text;
+  v_org_name text;
+  v_physical_claim boolean:=false;
+begin
+  if new.direction<>'outbound' or new.sent_via<>'ai' or coalesce(new.body,'')='' or new.contact_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+
+  select coalesce(nullif(o.timezone,''),'America/Sao_Paulo'),coalesce(nullif(f.app_name,''),o.display_name)
+    into v_tz,v_org_name
+  from public.organizations o left join public.food_commerce_settings f on f.organization_id=o.id
+  where o.id=new.organization_id;
+
+  -- Sarah e uma agente virtual: alegacoes em primeira pessoa de presenca/deslocamento fisico
+  -- sao falsas para este produto e devem ser neutralizadas antes do envio.
+  v_physical_claim :=
+       new.body ~* '(^|[^[:alpha:]])(vou|irei)[[:space:]]+(ao|à|a|na|no)[[:space:]]+'
+    or new.body ~* '(^|[^[:alpha:]])estarei[[:space:]]+(no|na|aí|lá)([^[:alpha:]]|$)'
+    or new.body ~* '(^|[^[:alpha:]])(quando[[:space:]]+(eu[[:space:]]+)?chegar|te[[:space:]]+aviso[[:space:]]+quando[[:space:]]+(eu[[:space:]]+)?chegar)([^[:alpha:]]|$)'
+    or new.body ~* '(^|[^[:alpha:]])(te[[:space:]]+encontro|nos[[:space:]]+encontramos|estar[[:space:]]+por[[:space:]]+lá)([^[:alpha:]]|$)'
+    or (new.body ~* '(^|[^[:alpha:]])estou[[:space:]]+aqui([^[:alpha:]]|$)'
+        and new.body ~* '(^|[^[:alpha:]])(chopperia|capri|padaria|loja|estabelecimento|reunião|reuniao|lá|aí)([^[:alpha:]]|$)');
+
+  if v_physical_claim then
+    new.body := 'Sou a Sarah, atendente virtual da '||coalesce(v_org_name,'empresa')||'. Não vou fisicamente a locais ou reuniões, mas posso te ajudar por aqui com cardápio, pedidos e atendimento. 😊';
+    new.metadata := coalesce(new.metadata,'{}'::jsonb)||jsonb_build_object('virtual_physical_claim_blocked',true);
+    return new;
+  end if;
+
+  if coalesce((new.metadata->>'sarah_opening_v2')::boolean,false)=true then return new; end if;
+
+  v_day := (coalesce(new.created_at,now()) at time zone v_tz)::date;
+  select exists(
+    select 1 from public.messages m
+    where m.organization_id=new.organization_id and m.contact_id=new.contact_id
+      and m.direction='outbound' and m.sent_via='ai' and m.status<>'failed'
+      and m.id is distinct from new.id
+      and m.created_at < coalesce(new.created_at,now())
+      and (m.created_at at time zone v_tz)::date=v_day
+  ) into v_has_prior_ai;
+
+  if v_has_prior_ai then
+    v_cleaned := regexp_replace(new.body,
+      '^[[:space:]]*(Olá|Oi)[,!]?[[:space:]]*(bom dia|boa tarde|boa noite)(,[^!\n\r]+)?!?[[:space:]]*[😊🙂]?[[:space:]]*([\r\n]+[[:space:]]*)*',
+      '','i');
+    if btrim(v_cleaned)<>'' and v_cleaned is distinct from new.body then
+      new.body:=v_cleaned;
+      new.metadata:=coalesce(new.metadata,'{}'::jsonb)||jsonb_build_object('repeated_daypart_greeting_removed',true);
+    end if;
+  end if;
+  return new;
+end;
+$function$;
+
+-- ---- 20260818093353_0167_foodservice_pause_ai_on_human_device_reply ----
+create or replace function public.fn_food_pause_ai_on_human_device_reply()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if new.direction<>'outbound'
+     or new.sent_via<>'external_device'
+     or new.contact_id is null
+     or new.conversation_id is null then
+    return new;
+  end if;
+
+  if not exists(
+    select 1 from public.food_commerce_settings f
+    where f.organization_id=new.organization_id and f.is_enabled=true
+  ) then
+    return new;
+  end if;
+
+  -- Um atendente humano assumiu a conversa pelo aparelho. Sarah nao entra no meio
+  -- durante 30 minutos; cada nova resposta humana renova a janela.
+  update public.conversations c
+     set bot_silenced_until=greatest(coalesce(c.bot_silenced_until,now()),now()+interval '30 minutes'),
+         updated_at=now()
+   where c.id=new.conversation_id
+     and c.organization_id=new.organization_id
+     and c.contact_id=new.contact_id
+     and c.is_group=false;
+
+  -- Retomadas automaticas pendentes deixam de fazer sentido enquanto o humano atende.
+  update public.cron_jobs
+     set enabled=false,
+         cancelled_at=coalesce(cancelled_at,now()),
+         cancel_reason=coalesce(cancel_reason,'atendimento assumido manualmente no WhatsApp'),
+         updated_at=now()
+   where organization_id=new.organization_id
+     and contact_id=new.contact_id
+     and enabled=true
+     and payload->>'food_automation' in ('cart_recovery_v1','silence_followup_v1');
+
+  return new;
+end;
+$function$;
+
+revoke all on function public.fn_food_pause_ai_on_human_device_reply() from public,anon,authenticated;
+grant execute on function public.fn_food_pause_ai_on_human_device_reply() to service_role;
+
+drop trigger if exists trg_messages_human_device_pauses_food_ai on public.messages;
+create trigger trg_messages_human_device_pauses_food_ai
+after insert on public.messages
+for each row execute function public.fn_food_pause_ai_on_human_device_reply();
+
+-- ---- 20260818094827_0168_foodservice_internal_trigger_rpc_hardening ----
+revoke all on function public.fn_food_cancel_recovery_on_order_created() from public,anon,authenticated;
+grant execute on function public.fn_food_cancel_recovery_on_order_created() to service_role;
+
+revoke all on function public.fn_food_demo_manage_silence_followup() from public,anon,authenticated;
+grant execute on function public.fn_food_demo_manage_silence_followup() to service_role;
+
+revoke all on function public.fn_food_demo_schedule_cart_recovery() from public,anon,authenticated;
+grant execute on function public.fn_food_demo_schedule_cart_recovery() to service_role;
+
+revoke all on function public.fn_food_demo_schedule_manual_flow_fallback() from public,anon,authenticated;
+grant execute on function public.fn_food_demo_schedule_manual_flow_fallback() to service_role;
+
+revoke all on function public.fn_enable_food_demo_commercial_flows_on_working_session() from public,anon,authenticated;
+grant execute on function public.fn_enable_food_demo_commercial_flows_on_working_session() to service_role;
+
+-- ---- 20260818095405_0169_foodservice_publish_normalized_working_agents ----
+do $do$
+declare
+  r record;
+  v_next integer;
+  v_new uuid;
+  v_current text;
+  v_normalized text;
+begin
+  for r in
+    select a.id as agent_id,a.organization_id,a.published_version_id
+    from public.ai_agents a
+    join public.organizations o on o.id=a.organization_id
+    join public.ai_agent_versions v on v.id=a.published_version_id
+    join public.channel_sessions cs on cs.id=v.channel_session_id and cs.organization_id=a.organization_id
+    where o.slug in ('capri','chopperia-do-gordo')
+      and a.name='Sarah'
+      and a.archived_at is null
+      and cs.status='WORKING'
+      and cs.archived_at is null
+  loop
+    select v.system_prompt,public.fn_food_normalize_sarah_prompt(v.system_prompt)
+      into v_current,v_normalized
+    from public.ai_agent_versions v
+    where v.id=r.published_version_id;
+
+    if v_normalized is distinct from v_current then
+      select coalesce(max(version_number),0)+1
+        into v_next
+      from public.ai_agent_versions
+      where agent_id=r.agent_id;
+
+      insert into public.ai_agent_versions(
+        organization_id,agent_id,version_number,system_prompt,provider,model,credential_id,
+        tool_ids,trigger_config,channel_session_id,max_steps,token_budget,cost_budget_cents,
+        history_message_window,history_token_window,handoff_keywords,handoff_tool_enabled,
+        status,created_by,followup,multimodal_input,video_frames_enabled,
+        split_messages,split_max_chars,cases_enabled,operator_enabled,operator_model,
+        operator_tool_ids,pipeline_ids
+      )
+      select organization_id,agent_id,v_next,v_normalized,provider,model,credential_id,
+        tool_ids,trigger_config,channel_session_id,max_steps,token_budget,cost_budget_cents,
+        history_message_window,history_token_window,handoff_keywords,handoff_tool_enabled,
+        'draft',created_by,followup,multimodal_input,video_frames_enabled,
+        split_messages,split_max_chars,cases_enabled,operator_enabled,operator_model,
+        operator_tool_ids,pipeline_ids
+      from public.ai_agent_versions
+      where id=r.published_version_id
+      returning id into v_new;
+
+      perform public.fn_publish_ai_agent_version(r.organization_id,r.agent_id,v_new);
+    end if;
+  end loop;
+end;
+$do$;
+
+-- ---- 20260818095948_0170_foodservice_human_takeover_full_guard ----
+create or replace function public.fn_food_conversation_ai_available(p_org uuid,p_conversation uuid,p_contact uuid)
+returns boolean
+language sql
+stable
+security invoker
+set search_path to 'public'
+as $function$
+  select exists(
+    select 1
+    from public.conversations c
+    where c.id=p_conversation
+      and c.organization_id=p_org
+      and c.contact_id=p_contact
+      and c.is_group=false
+      and (c.bot_silenced_until is null or c.bot_silenced_until<=now())
+  );
+$function$;
+
+revoke all on function public.fn_food_conversation_ai_available(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_food_conversation_ai_available(uuid,uuid,uuid) to service_role;
+
+create or replace function public.fn_food_sarah_opening_v2_on_inbound()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_name text; v_slug text; v_tz text; v_contact_name text; v_hour int; v_period text; v_opening text;
+  v_blocked boolean:=false; v_force_human boolean:=false; v_anonymized boolean:=false; v_day date;
+begin
+  if new.direction<>'inbound' or new.contact_id is null or new.conversation_id is null or new.channel_session_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+  if not public.fn_food_conversation_ai_available(new.organization_id,new.conversation_id,new.contact_id) then return new; end if;
+  if not exists(select 1 from public.channel_sessions s where s.id=new.channel_session_id and s.organization_id=new.organization_id and s.status='WORKING' and s.archived_at is null) then return new; end if;
+
+  select coalesce(c.is_blocked,false),coalesce(c.force_human,false),coalesce(c.is_anonymized,false),nullif(btrim(split_part(c.display_name,' ',1)),'')
+  into v_blocked,v_force_human,v_anonymized,v_contact_name
+  from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id;
+  if v_blocked or v_force_human or v_anonymized then return new; end if;
+  if v_contact_name ~ '^[+0-9(). -]+$' then v_contact_name:=null; end if;
+
+  select coalesce(nullif(f.app_name,''),o.display_name),o.slug,coalesce(nullif(o.timezone,''),'America/Sao_Paulo')
+  into v_org_name,v_slug,v_tz
+  from public.organizations o left join public.food_commerce_settings f on f.organization_id=o.id
+  where o.id=new.organization_id;
+  if v_slug is null then return new; end if;
+
+  v_day := (coalesce(new.sent_at,new.created_at,now()) at time zone v_tz)::date;
+  perform pg_advisory_xact_lock(hashtextextended(new.organization_id::text||':'||new.contact_id::text||':'||v_day::text,0));
+
+  if exists(
+    select 1 from public.messages m
+    where m.organization_id=new.organization_id and m.contact_id=new.contact_id
+      and m.direction='outbound' and m.sent_via='ai' and m.status<>'failed'
+      and m.created_at < coalesce(new.created_at,now())
+      and (m.created_at at time zone v_tz)::date=v_day
+  ) then return new; end if;
+
+  v_hour:=extract(hour from (coalesce(new.sent_at,new.created_at,now()) at time zone v_tz));
+  v_period:=case when v_hour between 5 and 11 then 'bom dia' when v_hour between 12 and 17 then 'boa tarde' else 'boa noite' end;
+  v_opening:='Olá, '||v_period||coalesce(', '||v_contact_name,'')||'! 😊'||E'\n\n'||
+    'Muito obrigado por ter entrado em contato com a '||v_org_name||'.'||E'\n\n'||
+    'Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?'||E'\n\n'||
+    'Para acessar nosso cardápio digital, basta acessar o link abaixo:'||E'\n'||
+    'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+
+  insert into public.messages(organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,metadata,created_at)
+  select new.organization_id,new.conversation_id,new.channel_session_id,new.contact_id,'text','outbound','queued',v_opening,'ai',now(),
+    jsonb_build_object('ai_actor_id','agent-engine-opening-v2','sarah_opening_v2',true,'deterministic_food_early',true,'reactive_outbox',true,'origin_inbound_message_id',new.id::text),now()
+  where not exists(select 1 from public.messages existing where existing.organization_id=new.organization_id and existing.metadata->>'origin_inbound_message_id'=new.id::text and coalesce((existing.metadata->>'reactive_outbox')::boolean,false)=true);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_deterministic_on_inbound()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_reply text;
+  v_contact_blocked boolean := false;
+  v_contact_force_human boolean := false;
+  v_contact_anonymized boolean := false;
+begin
+  if new.direction <> 'inbound' or new.contact_id is null or new.conversation_id is null or new.channel_session_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+  if not public.fn_food_conversation_ai_available(new.organization_id,new.conversation_id,new.contact_id) then return new; end if;
+  if not exists(select 1 from public.channel_sessions s where s.id=new.channel_session_id and s.organization_id=new.organization_id and s.status='WORKING' and s.archived_at is null) then return new; end if;
+
+  select coalesce(c.is_blocked,false),coalesce(c.force_human,false),coalesce(c.is_anonymized,false)
+    into v_contact_blocked,v_contact_force_human,v_contact_anonymized
+  from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id;
+  if v_contact_blocked or v_contact_force_human or v_contact_anonymized then return new; end if;
+
+  v_reply:=public.fn_food_deterministic_reply(new.organization_id,new.conversation_id,new.id);
+  if v_reply is null then return new; end if;
+
+  insert into public.messages(organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,metadata,created_at)
+  select new.organization_id,new.conversation_id,new.channel_session_id,new.contact_id,
+    'text','outbound','queued',v_reply,'ai',now(),
+    jsonb_build_object('ai_actor_id','agent-engine-deterministic-early','deterministic_food_rule',true,'deterministic_food_early',true,'reactive_outbox',true,'origin_inbound_message_id',new.id::text),
+    now()-interval '2 minutes'
+  where not exists(select 1 from public.messages existing where existing.organization_id=new.organization_id and existing.metadata->>'origin_inbound_message_id'=new.id::text and coalesce((existing.metadata->>'reactive_outbox')::boolean,false)=true);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_fast_enqueue_inbound()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_blocked boolean:=false; v_force_human boolean:=false; v_anonymized boolean:=false;
+begin
+  if new.direction<>'inbound' or new.contact_id is null or new.conversation_id is null or new.channel_session_id is null or new.body is null
+     or not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+  if exists(select 1 from public.messages m where m.organization_id=new.organization_id and m.metadata->>'origin_inbound_message_id'=new.id::text and coalesce((m.metadata->>'reactive_outbox')::boolean,false)) then return new; end if;
+  if not public.fn_food_conversation_ai_available(new.organization_id,new.conversation_id,new.contact_id) then return new; end if;
+  if not exists(select 1 from public.channel_sessions s where s.id=new.channel_session_id and s.organization_id=new.organization_id and s.status='WORKING' and s.archived_at is null) then return new; end if;
+
+  select coalesce(c.is_blocked,false),coalesce(c.force_human,false),coalesce(c.is_anonymized,false)
+    into v_blocked,v_force_human,v_anonymized
+  from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id;
+  if v_blocked or v_force_human or v_anonymized then return new; end if;
+
+  insert into public.job_queue(organization_id,contact_id,kind,source_event_id,payload,status,priority,run_after,max_attempts)
+  select new.organization_id,new.contact_id,'inbound_turn',null,
+    jsonb_build_object('v',1,'crm_event_id',new.id::text,'event_type','message.received','conversation_id',new.conversation_id::text,'contact_id',new.contact_id::text,'channel_session_id',new.channel_session_id::text,'inbound_message_id',new.id::text,'channel','whatsapp','source','db_fast_path'),
+    'pending',20,clock_timestamp()+interval '250 milliseconds',2
+  where not exists(select 1 from public.job_queue j where j.organization_id=new.organization_id and j.kind='inbound_turn' and j.payload->>'inbound_message_id'=new.id::text);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_demo_manage_silence_followup()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_slug text; v_is_eligible boolean:=false; v_can_send boolean:=false; v_latest_inbound text; v_is_order_context boolean:=false;
+  v_delay interval:=interval '5 minutes'; v_delay_label text:='5 minutos';
+begin
+  select o.slug into v_org_slug from public.organizations o where o.id=new.organization_id;
+  if v_org_slug not in ('capri','chopperia-do-gordo') then return new; end if;
+  if new.contact_id is null or new.is_group=true or new.last_inbound_at is null then return new; end if;
+  if tg_op='UPDATE' and old.last_inbound_at is not distinct from new.last_inbound_at then return new; end if;
+
+  update public.cron_jobs set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'cliente voltou a responder'),updated_at=now()
+  where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true and payload->>'food_automation'='cart_recovery_v1';
+  update public.cron_jobs set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'substituído por nova mensagem inbound'),updated_at=now()
+  where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true and payload->>'food_automation'='silence_followup_v1';
+
+  if new.bot_silenced_until is not null and new.bot_silenced_until>now() then return new; end if;
+
+  select coalesce(c.is_blocked,false)=false and coalesce(c.force_human,false)=false and coalesce(c.is_anonymized,false)=false and c.is_merged_into is null
+    into v_is_eligible from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id;
+  select exists(select 1 from public.channel_sessions cs where cs.id=new.channel_session_id and cs.organization_id=new.organization_id and cs.status='WORKING' and cs.archived_at is null)
+    into v_can_send;
+  if not coalesce(v_is_eligible,false) or not coalesce(v_can_send,false) then return new; end if;
+
+  select m.body into v_latest_inbound from public.messages m where m.organization_id=new.organization_id and m.conversation_id=new.id and m.contact_id=new.contact_id and m.direction='inbound' and m.body is not null order by m.created_at desc limit 1;
+  v_is_order_context:=coalesce(v_latest_inbound,'') ~* '(pedido|compr|quero|adicion|inclu|carrinho|card[aá]pio|menu|quantidade|unidade)'
+    or exists(select 1 from public.food_products p where p.organization_id=new.organization_id and p.is_available=true and greatest(word_similarity(lower(p.name),lower(coalesce(v_latest_inbound,''))),similarity(lower(p.name),lower(coalesce(v_latest_inbound,''))))>=0.55);
+  if v_is_order_context then v_delay:=interval '3 minutes'; v_delay_label:='3 minutos'; end if;
+
+  insert into public.cron_jobs(organization_id,contact_id,kind,tz,job_kind,payload,next_run_at,enabled,max_attempts)
+  values(new.organization_id,new.contact_id,'at','America/Sao_Paulo','followup_turn',jsonb_build_object(
+    'mode','agent',
+    'reason',case when v_is_order_context then 'Recuperação automática de venda: o cliente estava em contexto de pedido/produto e ficou sem responder por cerca de '||v_delay_label||'. Faça UMA retomada curta, natural e altamente persuasiva para ajudá-lo a concluir. Retome exatamente o interesse demonstrado, reduza atrito e faça uma pergunta simples de fechamento. Se houver uma oportunidade real, ofereça UM complemento relevante do catálogo. Não invente desconto, promoção, produto ou preço.' else 'Follow-up automático: o cliente iniciou atendimento e ficou sem responder por cerca de '||v_delay_label||'. Faça UMA retomada curta, útil e sem pressão. Não diga que havia uma promessa ou horário combinado.' end,
+    'context_snapshot',case when v_is_order_context then 'O cliente estava avançando em uma compra. Retome do ponto em que parou, preserve o contexto e facilite a conclusão. Se citar item/preço, consulte dados reais do catálogo.' else 'Retome a conversa do ponto em que parou e ajude o cliente a avançar no atendimento. Se ele já recusou, pediu para parar ou houve handoff humano, não envie nova abordagem.' end,
+    'food_automation','silence_followup_v1','food_order_context',v_is_order_context,'conversation_id',new.id),now()+v_delay,true,3);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_pause_ai_on_human_device_reply()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if new.direction<>'outbound' or new.sent_via<>'external_device' or new.contact_id is null or new.conversation_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+
+  update public.conversations c
+     set bot_silenced_until=greatest(coalesce(c.bot_silenced_until,now()),now()+interval '30 minutes'),updated_at=now()
+   where c.id=new.conversation_id and c.organization_id=new.organization_id and c.contact_id=new.contact_id and c.is_group=false;
+
+  update public.cron_jobs
+     set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'atendimento assumido manualmente no WhatsApp'),updated_at=now()
+   where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true
+     and payload->>'food_automation' in ('cart_recovery_v1','silence_followup_v1','manual_flow_fallback_v1');
+
+  update public.followup_enrollments e
+     set status='cancelled',next_eval_at=null,claimed_until=null,cancel_reason=coalesce(e.cancel_reason,'atendimento assumido manualmente no WhatsApp'),updated_at=now()
+    from public.followup_flow_pointers p
+   where e.pointer_id=p.id
+     and e.organization_id=new.organization_id
+     and e.contact_id=new.contact_id
+     and e.status in ('active','waiting_reply','paused_handoff','paused_manual')
+     and p.organization_id=new.organization_id
+     and p.name in ('Recuperação de carrinho','Follow-up automático','Reativação de clientes','Campanhas na base');
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_demo_schedule_cart_recovery()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare v_org_slug text; v_abandoned_stage uuid; v_can_send boolean; v_delay interval:=interval '3 minutes';
+begin
+  select o.slug into v_org_slug from public.organizations o where o.id=new.organization_id;
+  if v_org_slug not in ('capri','chopperia-do-gordo') then return new; end if;
+  select s.id into v_abandoned_stage from public.crm_stages s join public.crm_pipelines p on p.id=s.pipeline_id where p.organization_id=new.organization_id and s.slug='carrinho_abandonado' and coalesce(s.is_archived,false)=false order by s.position limit 1;
+  if tg_op='UPDATE' and old.stage_id is distinct from new.stage_id and old.stage_id=v_abandoned_stage and new.stage_id is distinct from v_abandoned_stage then
+    update public.cron_jobs set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'lead deixou Carrinho abandonado'),updated_at=now()
+    where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true and payload->>'food_automation'='cart_recovery_v1'; return new; end if;
+  if new.stage_id is distinct from v_abandoned_stage or (tg_op='UPDATE' and old.stage_id is not distinct from new.stage_id) or new.status<>'open' then return new; end if;
+  if exists(select 1 from public.conversations c where c.organization_id=new.organization_id and c.contact_id=new.contact_id and c.is_group=false and c.bot_silenced_until>now()) then return new; end if;
+  select exists(select 1 from public.channel_sessions cs where cs.organization_id=new.organization_id and cs.status='WORKING' and cs.archived_at is null)
+    and exists(select 1 from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id and coalesce(c.is_blocked,false)=false and coalesce(c.force_human,false)=false and coalesce(c.is_anonymized,false)=false and c.is_merged_into is null)
+    into v_can_send;
+  if not coalesce(v_can_send,false) then return new; end if;
+  update public.cron_jobs set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'substituído por recuperação mais recente'),updated_at=now()
+  where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true and payload->>'food_automation'='cart_recovery_v1';
+  insert into public.cron_jobs(organization_id,contact_id,kind,tz,job_kind,payload,next_run_at,enabled,max_attempts)
+  values(new.organization_id,new.contact_id,'at','America/Sao_Paulo','followup_turn',jsonb_build_object('mode','agent','reason','Recuperação automática: o cliente deixou um pedido no carrinho e não concluiu há cerca de 3 minutos. Faça UMA retomada curta, natural e altamente persuasiva para recuperar a venda. Mostre que concluir é fácil, retome o interesse pelo pedido e crie vontade de finalizar sem pressionar. Se houver oportunidade real, ofereça UM complemento relevante do catálogo. Não invente desconto, produto, preço ou promoção.','context_snapshot','Carrinho abandonado. Retome do ponto em que a conversa parou, preserve o pedido já montado e facilite a conclusão. Se fizer sentido, reforce em uma frase o valor/conveniência do que o cliente já escolheu e faça uma pergunta simples de fechamento. Se precisar citar item/preço, consulte as ferramentas disponíveis.','food_automation','cart_recovery_v1','crm_lead_id',new.id),now()+v_delay,true,3);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_demo_schedule_manual_flow_fallback()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_slug text; v_pointer_name text; v_reason text; v_context text; v_can_send boolean:=false;
+  v_last_order_id uuid; v_last_order_at timestamptz; v_last_total bigint; v_last_items text; v_last_order_context text;
+begin
+  select o.slug into v_org_slug from public.organizations o where o.id=new.organization_id;
+  if v_org_slug not in ('capri','chopperia-do-gordo') then return new; end if;
+  select name into v_pointer_name from public.followup_flow_pointers where id=new.pointer_id and organization_id=new.organization_id and status='active';
+  if v_pointer_name not in ('Reativação de clientes','Campanhas na base') then return new; end if;
+  if exists(select 1 from public.conversations c where c.organization_id=new.organization_id and c.contact_id=new.contact_id and c.is_group=false and c.bot_silenced_until>now()) then return new; end if;
+  select exists(select 1 from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id and coalesce(c.is_blocked,false)=false and coalesce(c.force_human,false)=false and coalesce(c.is_anonymized,false)=false and c.is_merged_into is null)
+    and exists(select 1 from public.channel_sessions cs where cs.organization_id=new.organization_id and cs.status='WORKING' and cs.archived_at is null) into v_can_send;
+  if not coalesce(v_can_send,false) then return new; end if;
+
+  select o.id,o.ordered_at,o.total_cents into v_last_order_id,v_last_order_at,v_last_total from public.orders o
+  where o.organization_id=new.organization_id and o.contact_id=new.contact_id and o.external_provider='deskcomm_food' and o.status<>'cancelled'
+  order by o.ordered_at desc nulls last,o.created_at desc limit 1;
+  if v_last_order_id is not null then
+    select string_agg(oi.quantity::text||'x '||oi.product_name_snapshot,', ' order by oi.created_at,oi.product_name_snapshot) into v_last_items
+    from public.food_order_items oi where oi.organization_id=new.organization_id and oi.order_id=v_last_order_id;
+    v_last_order_context:='Último pedido confirmado: '||coalesce(v_last_items,'itens não detalhados')||', total R$ '||replace(to_char(coalesce(v_last_total,0)/100.0,'FM999999990D00'),'.',',')||', realizado em '||to_char(v_last_order_at at time zone 'America/Sao_Paulo','DD/MM/YYYY')||'. ';
+  else v_last_order_context:='Não há pedido concluído identificado para este contato no checkout Deskcomm. '; end if;
+
+  if v_pointer_name='Reativação de clientes' then
+    v_reason:='Reativação comercial. Faça UMA mensagem curta, humana e muito persuasiva para gerar uma nova compra. Se houver último pedido, use-o naturalmente para demonstrar memória e relevância. Em seguida, procure uma oportunidade real de vender MAIS: consulte o catálogo e ofereça UM produto complementar, upgrade ou nova opção coerente com o histórico. Nunca invente desconto, promoção, produto, preço, estoque ou benefício.';
+    v_context:=v_last_order_context||'Não transforme a mensagem em spam. O objetivo é lembrar a preferência do cliente e criar um próximo pedido maior e relevante.';
+  else
+    v_reason:='Campanha comercial personalizada. Faça UMA mensagem curta, humana e muito persuasiva para gerar nova compra. Se houver último pedido, mencione-o naturalmente. Depois, não se limite a repetir o pedido: consulte o catálogo e ofereça UM complemento, upgrade ou produto adicional realmente compatível para aumentar o ticket. Nunca invente promoção, desconto, preço, estoque ou benefício.';
+    v_context:=v_last_order_context||'Use o histórico como memória comercial e o catálogo atual como fonte de verdade. Evite linguagem genérica de disparo em massa.';
+  end if;
+  insert into public.cron_jobs(organization_id,contact_id,kind,tz,job_kind,payload,next_run_at,enabled,max_attempts)
+  values(new.organization_id,new.contact_id,'at','America/Sao_Paulo','followup_turn',jsonb_build_object('mode','agent','reason',v_reason,'context_snapshot',v_context,'food_automation','manual_flow_fallback_v1','food_flow_name',v_pointer_name,'food_enrollment_ref',new.id,'last_order_id',v_last_order_id),now()+interval '20 seconds',true,3);
+  return new;
+end;
+$function$;
+
+revoke all on function public.fn_food_sarah_opening_v2_on_inbound() from public,anon,authenticated;
+grant execute on function public.fn_food_sarah_opening_v2_on_inbound() to service_role;
+revoke all on function public.fn_food_deterministic_on_inbound() from public,anon,authenticated;
+grant execute on function public.fn_food_deterministic_on_inbound() to service_role;
+revoke all on function public.fn_food_fast_enqueue_inbound() from public,anon,authenticated;
+grant execute on function public.fn_food_fast_enqueue_inbound() to service_role;
+revoke all on function public.fn_food_demo_manage_silence_followup() from public,anon,authenticated;
+grant execute on function public.fn_food_demo_manage_silence_followup() to service_role;
+revoke all on function public.fn_food_demo_schedule_cart_recovery() from public,anon,authenticated;
+grant execute on function public.fn_food_demo_schedule_cart_recovery() to service_role;
+revoke all on function public.fn_food_demo_schedule_manual_flow_fallback() from public,anon,authenticated;
+grant execute on function public.fn_food_demo_schedule_manual_flow_fallback() to service_role;
+
+-- ---- 20260818100524_0171_foodservice_greeting_only_first_ai_message ----
+create or replace function public.fn_food_normalize_sarah_prompt(p_prompt text)
+returns text
+language plpgsql
+immutable
+set search_path to 'public'
+as $function$
+declare
+  v_prompt text:=coalesce(p_prompt,'');
+  v_neutral_pos integer;
+  v_named_marker constant text:='[SAUDACAO_NOME_GARANTIDA_V2]';
+  v_sales_marker constant text:='[FOODSERVICE_VENDAS_PERSUASIVAS_V2]';
+  v_coherence_marker constant text:='[FOODSERVICE_CONTINUIDADE_V1]';
+  v_once_marker constant text:='[SAUDACAO_SOMENTE_PRIMEIRA_MENSAGEM_V3]';
+  v_named_block constant text:=$named$
+
+[SAUDACAO_NOME_GARANTIDA_V2]
+REGRA FINAL E SOBERANA DE SAUDAÇÃO — PRIORIDADE MÁXIMA
+- Esta regra substitui qualquer instrução anterior que mande usar somente saudação neutra, proíba bom dia/boa tarde/boa noite ou mande ignorar o nome conhecido do contato.
+- O fuso oficial é America/Sao_Paulo. 05:00–11:59 = bom dia; 12:00–17:59 = boa tarde; 18:00–04:59 = boa noite.
+- Se o CRM/contexto já fornecer o nome do contato e ele não for um telefone, use o PRIMEIRO NOME já na primeira linha da PRIMEIRA resposta do atendimento. Exemplo: "Olá, bom dia, Sandra! 😊".
+- É proibido responder apenas "Olá! Como posso te ajudar?" quando o nome do contato já estiver disponível na primeira resposta.
+- Na PRIMEIRA resposta da Sarah nesta conversa para aquele contato, a abertura deve também apresentar a atendente: "Muito obrigado por ter entrado em contato com a empresa. Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?". Quando houver link oficial do cardápio, inclua-o nessa abertura conforme a configuração do estabelecimento.
+- Depois dessa primeira resposta, NÃO repita bom dia/boa tarde/boa noite nem a apresentação da Sarah nesta conversa, mesmo em outro dia. Continue diretamente do ponto atual.
+- Se o nome não estiver disponível, use a saudação pelo período sem inventar nome.
+- Se uma camada determinística já tiver produzido a abertura do turno, não envie uma segunda saudação duplicada.
+$named$;
+  v_sales_block constant text:=$sales$
+
+[FOODSERVICE_VENDAS_PERSUASIVAS_V2]
+VENDA ADICIONAL É PRIORIDADE COMERCIAL.
+- Sempre que houver oportunidade real e relevante durante um pedido, faça UMA tentativa persuasiva de aumentar o ticket antes da conclusão.
+- A oferta deve conectar o item escolhido a um complemento real do catálogo usando combinação, conveniência, ocasião de consumo ou benefício concreto.
+- Use linguagem de fechamento: torne fácil dizer sim e pergunte se pode incluir o complemento no pedido.
+- Nunca invente desconto, promoção, escassez, preço, estoque, combo ou benefício.
+- Em campanhas e reativação, se houver histórico de pedido, relembre a compra anterior de modo natural para demonstrar memória comercial. Depois, não se limite a repetir o pedido: consulte o catálogo atual e ofereça UM produto complementar, upgrade ou nova opção coerente para aumentar o ticket.
+- Persuasão máxima com relevância e veracidade; nunca transforme a conversa em spam.
+$sales$;
+  v_coherence_block constant text:=$coherence$
+
+[FOODSERVICE_CONTINUIDADE_V1]
+CONTINUIDADE E IDENTIDADE — REGRA ABSOLUTA
+- A MENSAGEM ATUAL do cliente é o assunto principal do turno. Histórico, resumo, memória e mensagens antigas são apenas referência; não continue espontaneamente um assunto antigo que a mensagem atual não retomou.
+- Depois da primeira resposta do atendimento, responda diretamente. NÃO reinicie com "olá", "bom dia", "boa tarde" ou "boa noite" em mensagens seguintes e NÃO repita sua apresentação.
+- Você é Sarah, uma agente comercial VIRTUAL do estabelecimento. Você não se desloca fisicamente, não comparece a reuniões, não chega a locais, não encontra clientes presencialmente e não promete estar fisicamente em nenhum lugar.
+- Mensagens outbound do histórico podem ter sido enviadas manualmente por um atendente humano do estabelecimento. Uma frase em primeira pessoa no histórico NÃO prova que foi você quem disse ou fará aquilo. Nunca transforme ação, viagem, compromisso, relação pessoal ou agenda de um humano em ação sua.
+- Se alguém perguntar se você vai fisicamente a algum lugar ou estará presencialmente em algum local, esclareça de forma natural que você é a atendente virtual e pode ajudar pelo WhatsApp. Não finja presença física.
+- Não atribua ao cliente planos ou compromissos de outra pessoa.
+- Não ecoe emoções, religião, intimidade ou fatos pessoais antigos se a mensagem atual não estiver falando disso. Mantenha o papel de agente comercial do estabelecimento.
+$coherence$;
+  v_once_block constant text:=$once$
+
+[SAUDACAO_SOMENTE_PRIMEIRA_MENSAGEM_V3]
+REGRA SOBERANA DE CONTINUIDADE DA SAUDAÇÃO
+- Bom dia, boa tarde ou boa noite aparecem SOMENTE na primeira resposta da Sarah nessa conversa.
+- Se já existe qualquer resposta anterior da Sarah no histórico, mesmo de outro dia, NÃO use nova saudação de horário e NÃO se apresente novamente.
+- Comece diretamente pela resposta ao conteúdo atual do cliente.
+- Esta regra substitui qualquer regra anterior que fale em "primeira resposta do dia" ou permita nova saudação em outro dia.
+$once$;
+begin
+  v_neutral_pos:=position('[SAUDACAO_NEUTRA_DEMO_V1]' in v_prompt);
+  if v_neutral_pos>0 then v_prompt:=rtrim(substring(v_prompt from 1 for v_neutral_pos-1)); end if;
+
+  v_prompt:=replace(v_prompt,'Não use automaticamente o nome do contato na saudação.','Quando o nome do contato estiver disponível no contexto, use o primeiro nome na saudação inicial; nunca invente um nome.');
+  v_prompt:=replace(v_prompt,'Não use bom dia, boa tarde ou boa noite. Use sempre uma saudação neutra.','Use bom dia, boa tarde ou boa noite conforme o horário local em America/Sao_Paulo, somente na primeira resposta do atendimento.');
+  v_prompt:=replace(v_prompt,'Na PRIMEIRA resposta da Sarah do dia para aquele contato','Na PRIMEIRA resposta da Sarah nesta conversa para aquele contato');
+  v_prompt:=replace(v_prompt,'Depois dessa primeira resposta, NÃO repita bom dia/boa tarde/boa noite nem a apresentação da Sarah no mesmo dia. Continue diretamente do ponto atual da conversa.','Depois dessa primeira resposta, NÃO repita bom dia/boa tarde/boa noite nem a apresentação da Sarah nesta conversa, mesmo em outro dia. Continue diretamente do ponto atual.');
+
+  if position(v_named_marker in v_prompt)=0 then v_prompt:=rtrim(v_prompt)||v_named_block; end if;
+  if position(v_sales_marker in v_prompt)=0 then v_prompt:=rtrim(v_prompt)||v_sales_block; end if;
+  if position(v_coherence_marker in v_prompt)=0 then v_prompt:=rtrim(v_prompt)||v_coherence_block; end if;
+  if position(v_once_marker in v_prompt)=0 then v_prompt:=rtrim(v_prompt)||v_once_block; end if;
+  return v_prompt;
+end;
+$function$;
+
+create or replace function public.fn_food_sarah_opening_v2_on_inbound()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_name text; v_slug text; v_tz text; v_contact_name text; v_hour int; v_period text; v_opening text;
+  v_blocked boolean:=false; v_force_human boolean:=false; v_anonymized boolean:=false;
+begin
+  if new.direction<>'inbound' or new.contact_id is null or new.conversation_id is null or new.channel_session_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+  if not public.fn_food_conversation_ai_available(new.organization_id,new.conversation_id,new.contact_id) then return new; end if;
+  if not exists(select 1 from public.channel_sessions s where s.id=new.channel_session_id and s.organization_id=new.organization_id and s.status='WORKING' and s.archived_at is null) then return new; end if;
+
+  select coalesce(c.is_blocked,false),coalesce(c.force_human,false),coalesce(c.is_anonymized,false),nullif(btrim(split_part(c.display_name,' ',1)),'')
+    into v_blocked,v_force_human,v_anonymized,v_contact_name
+  from public.contacts c where c.id=new.contact_id and c.organization_id=new.organization_id;
+  if v_blocked or v_force_human or v_anonymized then return new; end if;
+  if v_contact_name ~ '^[+0-9(). -]+$' then v_contact_name:=null; end if;
+
+  if exists(
+    select 1 from public.messages m
+    where m.organization_id=new.organization_id
+      and m.conversation_id=new.conversation_id
+      and m.contact_id=new.contact_id
+      and m.direction='outbound'
+      and m.sent_via='ai'
+      and m.status<>'failed'
+      and m.created_at<coalesce(new.created_at,now())
+  ) then return new; end if;
+
+  select coalesce(nullif(f.app_name,''),o.display_name),o.slug,coalesce(nullif(o.timezone,''),'America/Sao_Paulo')
+    into v_org_name,v_slug,v_tz
+  from public.organizations o left join public.food_commerce_settings f on f.organization_id=o.id
+  where o.id=new.organization_id;
+  if v_slug is null then return new; end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(new.organization_id::text||':'||new.conversation_id::text,0));
+
+  if exists(
+    select 1 from public.messages m
+    where m.organization_id=new.organization_id and m.conversation_id=new.conversation_id and m.contact_id=new.contact_id
+      and m.direction='outbound' and m.sent_via='ai' and m.status<>'failed'
+      and m.created_at<coalesce(new.created_at,now())
+  ) then return new; end if;
+
+  v_hour:=extract(hour from (coalesce(new.sent_at,new.created_at,now()) at time zone v_tz));
+  v_period:=case when v_hour between 5 and 11 then 'bom dia' when v_hour between 12 and 17 then 'boa tarde' else 'boa noite' end;
+  v_opening:='Olá, '||v_period||coalesce(', '||v_contact_name,'')||'! 😊'||E'\n\n'||
+    'Muito obrigado por ter entrado em contato com a '||v_org_name||'.'||E'\n\n'||
+    'Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?'||E'\n\n'||
+    'Para acessar nosso cardápio digital, basta acessar o link abaixo:'||E'\n'||
+    'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+
+  insert into public.messages(organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,metadata,created_at)
+  select new.organization_id,new.conversation_id,new.channel_session_id,new.contact_id,'text','outbound','queued',v_opening,'ai',now(),
+    jsonb_build_object('ai_actor_id','agent-engine-opening-v2','sarah_opening_v2',true,'deterministic_food_early',true,'reactive_outbox',true,'origin_inbound_message_id',new.id::text),now()
+  where not exists(select 1 from public.messages existing where existing.organization_id=new.organization_id and existing.metadata->>'origin_inbound_message_id'=new.id::text and coalesce((existing.metadata->>'reactive_outbox')::boolean,false)=true);
+  return new;
+end;
+$function$;
+
+create or replace function public.fn_food_sarah_outbound_coherence()
+returns trigger
+language plpgsql
+set search_path to 'public'
+as $function$
+declare
+  v_cleaned text; v_org_name text; v_physical_claim boolean:=false; v_has_prior_ai boolean:=false;
+begin
+  if new.direction<>'outbound' or new.sent_via<>'ai' or coalesce(new.body,'')='' or new.contact_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+
+  select coalesce(nullif(f.app_name,''),o.display_name) into v_org_name
+  from public.organizations o left join public.food_commerce_settings f on f.organization_id=o.id
+  where o.id=new.organization_id;
+
+  v_physical_claim:=
+       new.body ~* '(^|[^[:alpha:]])(vou|irei)[[:space:]]+(ao|à|a|na|no)[[:space:]]+'
+    or new.body ~* '(^|[^[:alpha:]])estarei[[:space:]]+(no|na|aí|lá)([^[:alpha:]]|$)'
+    or new.body ~* '(^|[^[:alpha:]])(quando[[:space:]]+(eu[[:space:]]+)?chegar|te[[:space:]]+aviso[[:space:]]+quando[[:space:]]+(eu[[:space:]]+)?chegar)([^[:alpha:]]|$)'
+    or new.body ~* '(^|[^[:alpha:]])(te[[:space:]]+encontro|nos[[:space:]]+encontramos|estar[[:space:]]+por[[:space:]]+lá)([^[:alpha:]]|$)'
+    or (new.body ~* '(^|[^[:alpha:]])estou[[:space:]]+aqui([^[:alpha:]]|$)' and new.body ~* '(^|[^[:alpha:]])(chopperia|capri|padaria|loja|estabelecimento|reunião|reuniao|lá|aí)([^[:alpha:]]|$)');
+  if v_physical_claim then
+    new.body:='Sou a Sarah, atendente virtual da '||coalesce(v_org_name,'empresa')||'. Não vou fisicamente a locais ou reuniões, mas posso te ajudar por aqui com cardápio, pedidos e atendimento. 😊';
+    new.metadata:=coalesce(new.metadata,'{}'::jsonb)||jsonb_build_object('virtual_physical_claim_blocked',true);
+    return new;
+  end if;
+
+  if coalesce((new.metadata->>'sarah_opening_v2')::boolean,false)=true then return new; end if;
+
+  select exists(
+    select 1 from public.messages m
+    where m.organization_id=new.organization_id
+      and m.conversation_id=new.conversation_id
+      and m.contact_id=new.contact_id
+      and m.direction='outbound' and m.sent_via='ai' and m.status<>'failed'
+      and m.id is distinct from new.id
+      and m.created_at<coalesce(new.created_at,now())
+  ) into v_has_prior_ai;
+
+  if v_has_prior_ai then
+    v_cleaned:=regexp_replace(new.body,'^[[:space:]]*(Olá|Oi)[,!]?[[:space:]]*(bom dia|boa tarde|boa noite)(,[^!\n\r]+)?!?[[:space:]]*[😊🙂]?[[:space:]]*([\r\n]+[[:space:]]*)*','','i');
+    if btrim(v_cleaned)<>'' and v_cleaned is distinct from new.body then
+      new.body:=v_cleaned;
+      new.metadata:=coalesce(new.metadata,'{}'::jsonb)||jsonb_build_object('repeated_daypart_greeting_removed',true);
+    end if;
+  end if;
+  return new;
+end;
+$function$;
+
+update public.ai_agents a
+set system_prompt=public.fn_food_normalize_sarah_prompt(a.system_prompt),updated_at=now()
+from public.organizations o
+where a.organization_id=o.id and o.slug in ('capri','chopperia-do-gordo') and a.name='Sarah';
+
+revoke all on function public.fn_food_sarah_opening_v2_on_inbound() from public,anon,authenticated;
+grant execute on function public.fn_food_sarah_opening_v2_on_inbound() to service_role;
+
+-- ---- 20260818101343_0172_foodservice_human_takeover_cancel_pending_ai_work ----
+create or replace function public.fn_food_pause_ai_on_human_device_reply()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if new.direction<>'outbound' or new.sent_via<>'external_device' or new.contact_id is null or new.conversation_id is null then return new; end if;
+  if not exists(select 1 from public.food_commerce_settings f where f.organization_id=new.organization_id and f.is_enabled=true) then return new; end if;
+
+  update public.conversations c
+     set bot_silenced_until=greatest(coalesce(c.bot_silenced_until,now()),now()+interval '30 minutes'),updated_at=now()
+   where c.id=new.conversation_id and c.organization_id=new.organization_id and c.contact_id=new.contact_id and c.is_group=false;
+
+  update public.cron_jobs
+     set enabled=false,cancelled_at=coalesce(cancelled_at,now()),cancel_reason=coalesce(cancel_reason,'atendimento assumido manualmente no WhatsApp'),updated_at=now()
+   where organization_id=new.organization_id and contact_id=new.contact_id and enabled=true
+     and payload->>'food_automation' in ('cart_recovery_v1','silence_followup_v1','manual_flow_fallback_v1');
+
+  update public.followup_enrollments e
+     set status='cancelled',next_eval_at=null,claimed_until=null,cancel_reason=coalesce(e.cancel_reason,'atendimento assumido manualmente no WhatsApp'),updated_at=now()
+    from public.followup_flow_pointers p
+   where e.pointer_id=p.id
+     and e.organization_id=new.organization_id
+     and e.contact_id=new.contact_id
+     and e.status in ('active','waiting_reply','paused_handoff','paused_manual')
+     and p.organization_id=new.organization_id
+     and p.name in ('Recuperação de carrinho','Follow-up automático','Reativação de clientes','Campanhas na base');
+
+  update public.job_queue
+     set status='done',
+         last_error='cancelado: atendimento assumido manualmente no WhatsApp',
+         locked_by=null,
+         locked_at=null
+   where organization_id=new.organization_id
+     and contact_id=new.contact_id
+     and status='pending'
+     and kind in ('inbound_turn','followup_turn');
+
+  update public.event_log
+     set status='done',
+         last_error=coalesce(last_error,'cancelado: atendimento assumido manualmente no WhatsApp'),
+         updated_at=now()
+   where organization_id=new.organization_id
+     and event_type='ai_agent.dispatch_requested'
+     and status='pending'
+     and payload->>'contact_id'=new.contact_id::text;
+
+  return new;
+end;
+$function$;
+
+revoke all on function public.fn_food_pause_ai_on_human_device_reply() from public,anon,authenticated;
+grant execute on function public.fn_food_pause_ai_on_human_device_reply() to service_role;
+
+-- ---- 20260818101652_0173_foodservice_reconnect_publish_any_prompt_normalization ----
+create or replace function public.fn_enable_food_demo_commercial_flows_on_working_session()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_org_slug text;
+  v_agent record;
+  v_pointer_ids text[];
+  v_pointer_count integer;
+  v_next_version integer;
+  v_new_version_id uuid;
+  v_prompt text;
+  v_marker constant text := '[FOODSERVICE_COMERCIAL_DEMO_V1]';
+  v_block constant text := $block$
+
+[FOODSERVICE_COMERCIAL_DEMO_V1]
+MOTOR COMERCIAL FOODSERVICE
+
+TICKET MÉDIO
+Quando o cliente já escolheu um ou mais itens e o pedido ainda não foi concluído, faça UMA tentativa curta de venda complementar antes de finalizar, desde que ele não tenha recusado adicionais nem pedido objetividade. Consulte crm_search_products antes da sugestão e ofereça no máximo UM complemento realmente compatível com o que ele está comprando. Pode ser bebida, sobremesa, acompanhamento ou outro item pertinente do catálogo. Nunca invente produto, preço, estoque, desconto, combo ou promoção. A sugestão não pode impedir nem atrasar a conclusão do pedido.
+
+CONTINUIDADE / FOLLOW-UP
+Se o cliente demonstrar intenção comercial e combinar que será chamado depois, pedir para ser lembrado, disser que quer retomar em outro horário ou aceitar explicitamente um retorno, não deixe essa promessa apenas no texto. Se ainda não houver horário, pergunte qual horário prefere. Assim que houver um horário explícito, use schedule_followup com o contexto essencial e encerre o turno após o agendamento. Não empilhe retornos, não agende depois de recusa/opt-out e não invente consentimento ou horário.
+
+RECUPERAÇÃO, REATIVAÇÃO E CAMPANHAS
+Quando o turno tiver sido disparado por um fluxo comercial, siga o objetivo e o contexto injetados pelo fluxo. Preserve o histórico, use somente dados reais disponíveis nas ferramentas e mantenha a mensagem curta e natural. Nunca exponha nomes internos de fluxo, tags, estágios ou termos de sistema ao cliente.
+$block$;
+begin
+  select o.slug into v_org_slug
+  from public.organizations o
+  where o.id=new.organization_id;
+
+  if v_org_slug not in ('capri','chopperia-do-gordo')
+     or new.status is distinct from 'WORKING'
+     or new.archived_at is not null then
+    return new;
+  end if;
+
+  select a.id as agent_id,
+         a.published_version_id,
+         v.*
+    into v_agent
+    from public.ai_agents a
+    join public.ai_agent_versions v on v.id=a.published_version_id
+   where a.organization_id=new.organization_id
+     and a.name='Sarah'
+     and a.archived_at is null
+     and v.status='published'
+     and v.channel_session_id=new.id
+   limit 1;
+
+  if not found then return new; end if;
+
+  select array_agg(p.id::text order by p.name),count(*)::int
+    into v_pointer_ids,v_pointer_count
+    from public.followup_flow_pointers p
+   where p.organization_id=new.organization_id
+     and p.status='active'
+     and p.active_version_id is not null
+     and p.name in ('Recuperação de carrinho','Follow-up automático','Reativação de clientes','Campanhas na base');
+
+  if v_pointer_count<>4 then return new; end if;
+
+  -- Normaliza ANTES de decidir se há trabalho. Assim qualquer regra nova de prompt
+  -- também força publicação, mesmo quando os quatro fluxos já estavam corretos.
+  v_prompt:=public.fn_food_normalize_sarah_prompt(v_agent.system_prompt);
+  if position(v_marker in v_prompt)=0 then
+    v_prompt:=rtrim(v_prompt)||v_block;
+  end if;
+
+  if coalesce((v_agent.followup->>'enabled')::boolean,false)
+     and (v_agent.followup->'flow_pointer_ids') @> to_jsonb(v_pointer_ids)
+     and v_prompt is not distinct from v_agent.system_prompt then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(v_agent.agent_id::text));
+
+  select coalesce(max(version_number),0)+1
+    into v_next_version
+    from public.ai_agent_versions
+   where agent_id=v_agent.agent_id;
+
+  insert into public.ai_agent_versions(
+    organization_id,agent_id,version_number,system_prompt,provider,model,credential_id,
+    tool_ids,trigger_config,channel_session_id,max_steps,token_budget,cost_budget_cents,
+    history_message_window,history_token_window,handoff_keywords,handoff_tool_enabled,
+    status,created_by,followup,multimodal_input,video_frames_enabled,
+    split_messages,split_max_chars,cases_enabled,operator_enabled,operator_model,
+    operator_tool_ids,pipeline_ids
+  ) values (
+    v_agent.organization_id,v_agent.agent_id,v_next_version,v_prompt,
+    v_agent.provider,v_agent.model,v_agent.credential_id,
+    v_agent.tool_ids,v_agent.trigger_config,new.id,v_agent.max_steps,
+    v_agent.token_budget,v_agent.cost_budget_cents,
+    v_agent.history_message_window,v_agent.history_token_window,
+    v_agent.handoff_keywords,v_agent.handoff_tool_enabled,
+    'draft',v_agent.created_by,
+    jsonb_build_object('enabled',true,'flow_pointer_ids',to_jsonb(v_pointer_ids)),
+    v_agent.multimodal_input,v_agent.video_frames_enabled,
+    v_agent.split_messages,v_agent.split_max_chars,v_agent.cases_enabled,
+    v_agent.operator_enabled,v_agent.operator_model,v_agent.operator_tool_ids,
+    v_agent.pipeline_ids
+  ) returning id into v_new_version_id;
+
+  perform public.fn_publish_ai_agent_version(new.organization_id,v_agent.agent_id,v_new_version_id);
+  update public.ai_agents
+     set system_prompt=public.fn_food_normalize_sarah_prompt(system_prompt),updated_at=now()
+   where id=v_agent.agent_id;
+
+  return new;
+end;
+$function$;
+
+revoke all on function public.fn_enable_food_demo_commercial_flows_on_working_session() from public,anon,authenticated;
+grant execute on function public.fn_enable_food_demo_commercial_flows_on_working_session() to service_role;
+
+-- ---- 20260818125500_0174_auto_route_sarah_to_working_whatsapp ----
+-- Regra global de produto:
+-- qualquer sessão WhatsApp que entrar em WORKING em uma organização com Sarah
+-- publicada ganha roteamento automático para ela. O router é por sessão, então
+-- múltiplos WhatsApps podem ser atendidos simultaneamente pela mesma Sarah.
+
+create or replace function public.fn_ensure_sarah_router_for_session(p_session_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_session record;
+  v_sarah_id uuid;
+  v_router_id uuid;
+begin
+  select cs.id,cs.organization_id,cs.status,cs.archived_at
+    into v_session
+    from public.channel_sessions cs
+   where cs.id=p_session_id
+   for update;
+
+  if not found or v_session.status is distinct from 'WORKING' or v_session.archived_at is not null then
+    return null;
+  end if;
+
+  select a.id
+    into v_sarah_id
+    from public.ai_agents a
+    join public.ai_agent_versions v on v.id=a.published_version_id
+   where a.organization_id=v_session.organization_id
+     and a.archived_at is null
+     and lower(trim(a.name))='sarah'
+     and v.status='published'
+   order by a.priority desc,a.created_at asc
+   limit 1;
+
+  -- Sarah sem versão publicada representa pausa/despublicação explícita.
+  if v_sarah_id is null then return null; end if;
+
+  select r.id into v_router_id
+    from public.ai_routers r
+   where r.organization_id=v_session.organization_id
+     and r.channel_session_id=p_session_id
+     and r.is_active
+   order by r.created_at asc
+   limit 1
+   for update;
+
+  if v_router_id is null then
+    insert into public.ai_routers(
+      organization_id,name,channel_session_id,is_active,config,fallback_agent_id,created_by
+    ) values (
+      v_session.organization_id,
+      'Sarah • automático',
+      p_session_id,
+      true,
+      jsonb_build_object(
+        'classifier_model','claude-haiku-4-5',
+        'sticky',true,
+        'min_confidence',0.6,
+        'managed_by','auto_sarah_working_session_v1'
+      ),
+      v_sarah_id,
+      null
+    )
+    returning id into v_router_id;
+  else
+    -- Preserva membros/configuração de routers customizados e garante Sarah
+    -- apenas como fallback universal da sessão.
+    update public.ai_routers
+       set fallback_agent_id=v_sarah_id,updated_at=now()
+     where id=v_router_id and fallback_agent_id is distinct from v_sarah_id;
+  end if;
+
+  return v_router_id;
+end;
+$$;
+
+revoke all on function public.fn_ensure_sarah_router_for_session(uuid) from public,anon,authenticated;
+
+create or replace function public.fn_auto_route_sarah_to_working_session()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status='WORKING' and new.archived_at is null then
+    perform public.fn_ensure_sarah_router_for_session(new.id);
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.fn_auto_route_sarah_to_working_session() from public,anon,authenticated;
+
+drop trigger if exists trg_channel_sessions_auto_route_sarah on public.channel_sessions;
+create trigger trg_channel_sessions_auto_route_sarah
+after insert or update of status,archived_at on public.channel_sessions
+for each row
+execute function public.fn_auto_route_sarah_to_working_session();
+
+-- Também cobre a ordem inversa: WhatsApp já conectado e Sarah publicada depois.
+create or replace function public.fn_auto_route_working_sessions_when_sarah_published()
+returns trigger
+language plpgsql
+security definer
+set search_path=public
+as $$
+declare r record;
+begin
+  if new.archived_at is not null or lower(trim(new.name)) <> 'sarah' or new.published_version_id is null then
+    return new;
+  end if;
+
+  if tg_op='UPDATE'
+     and old.published_version_id is not distinct from new.published_version_id
+     and old.archived_at is not distinct from new.archived_at then
+    return new;
+  end if;
+
+  for r in
+    select cs.id
+      from public.channel_sessions cs
+     where cs.organization_id=new.organization_id
+       and cs.status='WORKING'
+       and cs.archived_at is null
+  loop
+    perform public.fn_ensure_sarah_router_for_session(r.id);
+  end loop;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.fn_auto_route_working_sessions_when_sarah_published() from public,anon,authenticated;
+
+drop trigger if exists trg_ai_agents_auto_route_sarah on public.ai_agents;
+create trigger trg_ai_agents_auto_route_sarah
+after insert or update of published_version_id,archived_at on public.ai_agents
+for each row
+execute function public.fn_auto_route_working_sessions_when_sarah_published();
+
+-- Backfill idempotente para sessões que já estavam conectadas quando a migration entrou.
+do $$
+declare r record;
+begin
+  for r in select id from public.channel_sessions where status='WORKING' and archived_at is null
+  loop
+    perform public.fn_ensure_sarah_router_for_session(r.id);
+  end loop;
+end $$;
+
+-- ---- 20260821103000_0175_food_read_functions_stable ----
+-- Estas RPCs apenas leem dados. Sem a declaração explícita, PostgreSQL as
+-- classifica como VOLATILE e o gate de SECURITY DEFINER corretamente as trata
+-- como funções potencialmente capazes de escrever.
+alter function public.fn_food_public_catalog(text) stable;
+alter function public.fn_food_delivery_report(uuid,timestamptz,timestamptz) stable;
+
+revoke execute on function public.fn_food_public_catalog(text)
+  from public, anon, authenticated;
+grant execute on function public.fn_food_public_catalog(text) to service_role;
+
+-- ---- VARREDURA anon: fechamento auto-curativo do baseline ----
+-- O dump concede EXECUTE em funções novas a anon por default. Como o baseline
+-- cresce por apêndice, este fechamento precisa permanecer depois de TODA DDL
+-- que crie função. O teste varredura-anon-e-o-ultimo-bloco vigia essa ordem.
+do $$
+declare
+  f record;
+  tinha_auth boolean;
+  tinha_service boolean;
+begin
+  if to_regrole('anon') is null then
+    return;
+  end if;
+
+  for f in
+    select p.oid, p.oid::regprocedure as assinatura
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prosecdef
+  loop
+    tinha_auth := to_regrole('authenticated') is not null
+                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
+    tinha_service := to_regrole('service_role') is not null
+                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
+
+    execute format('revoke execute on function %s from public, anon', f.assinatura);
+
+    if tinha_auth then
+      execute format('grant execute on function %s to authenticated', f.assinatura);
+    end if;
+    if tinha_service then
+      execute format('grant execute on function %s to service_role', f.assinatura);
+    end if;
+  end loop;
+end $$;

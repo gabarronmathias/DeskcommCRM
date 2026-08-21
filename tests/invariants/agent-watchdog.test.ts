@@ -36,16 +36,20 @@ const SESSION = "bbbbbbbb-0000-4000-8000-000000000003";
 const CONV = "bbbbbbbb-0000-4000-8000-000000000004";
 const QUEUED_MSG = "bbbbbbbb-0000-4000-8000-000000000005";
 const WAHA_SESSION_NAME = "watchdog-proof-session";
+const WEBHOOK_TOKEN = "watchdog-proof-token";
 const NOWEB_ID = "3EB0WATCHDOGPROOF";
 
 let wahaMock: http.Server;
 let wahaPort = 0;
 const sendTextCalls: Array<{ session: string; chatId: string; text: string }> = [];
+const webhookPutCalls: Array<{ name: string; config: { webhooks: Array<{ events: string[] }> } }> = [];
 
 function watchdogCfg(): WatchdogConfig {
   return {
     wahaBaseUrl: `http://127.0.0.1:${wahaPort}`,
     wahaApiKey: "test-key",
+    webhookBaseUrl: `http://127.0.0.1:${wahaPort}`,
+    webhookHmacSecret: "0123456789abcdef",
     intervalMs: 1000,
     redriveMinAgeMs: 0,
     redriveBatchSize: 10,
@@ -57,6 +61,28 @@ beforeAll(async () => {
   // WAHA-mock: /api/sessions responde WORKING; /api/sendText devolve o shape
   // NOWEB aninhado (o que quebrava o parse antigo).
   wahaMock = http.createServer((req, res) => {
+    if (req.method === "GET" && req.url === `/api/sessions/${WAHA_SESSION_NAME}`) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        name: WAHA_SESSION_NAME,
+        status: "WORKING",
+        config: {
+          webhooks: [{ url: "https://host-antigo/api/v1/webhooks/waha/token-antigo", events: ["message"] }],
+          noweb: { store: { enabled: false } },
+        },
+      }));
+      return;
+    }
+    if (req.method === "PUT" && req.url === `/api/sessions/${WAHA_SESSION_NAME}`) {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        webhookPutCalls.push(JSON.parse(body) as (typeof webhookPutCalls)[number]);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
     if (req.method === "GET" && req.url?.startsWith("/api/sessions")) {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify([{ name: WAHA_SESSION_NAME, status: "WORKING" }]));
@@ -91,9 +117,10 @@ beforeAll(async () => {
   );
   // A DIVERGÊNCIA do incidente real: espelho STARTING, WAHA (mock) WORKING.
   await pool.query(
-    `insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
-     values ($1, $2, $3, 'STARTING', '\\x00'::bytea) on conflict (id) do nothing`,
-    [SESSION, ORG, WAHA_SESSION_NAME],
+    `insert into channel_sessions
+       (id, organization_id, waha_session_name, status, webhook_secret_encrypted, webhook_path_token)
+     values ($1, $2, $3, 'STARTING', '\\x00'::bytea, $4) on conflict (id) do nothing`,
+    [SESSION, ORG, WAHA_SESSION_NAME, WEBHOOK_TOKEN],
   );
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
@@ -127,13 +154,15 @@ afterAll(async () => {
 describe("4A-2 — watchdog reconcilia o espelho e reenvia queued", () => {
   it("reconciliador: espelho STARTING vira WORKING (fonte = WAHA real)", async () => {
     const fixed = await reconcileSessions(pool, watchdogCfg(), log);
-    expect(fixed).toBeGreaterThanOrEqual(1);
+    expect(fixed).toBeGreaterThanOrEqual(2);
 
     const { rows } = await pool.query(
       "select status from channel_sessions where id = $1",
       [SESSION],
     );
     expect(rows[0]!.status).toBe("WORKING");
+    expect(webhookPutCalls).toHaveLength(1);
+    expect(webhookPutCalls[0]!.config.webhooks[0]!.events).toContain("message.any");
   });
 
   it("redrive: a queued sai sent COM external_id (shape NOWEB parseado)", async () => {

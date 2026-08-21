@@ -189,7 +189,10 @@ function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = join(dir, e.name);
     if (e.isDirectory()) return e.name === "node_modules" ? [] : walk(p);
-    return /\.tsx?$/.test(e.name) ? [p] : [];
+    // A lista de dívida e as regexes usam o separador estável de repositório.
+    // Sem normalizar, o gate inteiro falha no Windows porque `node:path.join`
+    // devolve barras invertidas e nenhuma entrada conhecida é reconhecida.
+    return /\.tsx?$/.test(e.name) ? [p.replaceAll("\\", "/")] : [];
   });
 }
 

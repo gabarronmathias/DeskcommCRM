@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { branding } from "@/lib/branding";
+
 type Props = {
   newCount: number;
 };
 
 export default function OrderAlert({ newCount }: Props) {
+  const appName = branding().name;
   const audioContextRef = useRef<AudioContext | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
 
@@ -108,7 +111,7 @@ export default function OrderAlert({ newCount }: Props) {
 
   useEffect(() => {
     if (newCount <= 0) {
-      document.title = "Pedidos | Deskcomm";
+      document.title = `Pedidos | ${appName}`;
       return;
     }
 
@@ -116,7 +119,7 @@ export default function OrderAlert({ newCount }: Props) {
 
     document.title = `🔔 ${newCount} NOVO${
       newCount > 1 ? "S" : ""
-    } PEDIDO${newCount > 1 ? "S" : ""} | Deskcomm`;
+    } PEDIDO${newCount > 1 ? "S" : ""} | ${appName}`;
 
     const titleInterval = window.setInterval(() => {
       visible = !visible;
@@ -124,15 +127,15 @@ export default function OrderAlert({ newCount }: Props) {
       document.title = visible
         ? `🔔 ${newCount} NOVO${
             newCount > 1 ? "S" : ""
-          } PEDIDO${newCount > 1 ? "S" : ""} | Deskcomm`
-        : "⚠️ PEDIDO AGUARDANDO | Deskcomm";
+          } PEDIDO${newCount > 1 ? "S" : ""} | ${appName}`
+        : `⚠️ PEDIDO AGUARDANDO | ${appName}`;
     }, 900);
 
     return () => {
       window.clearInterval(titleInterval);
-      document.title = "Pedidos | Deskcomm";
+      document.title = `Pedidos | ${appName}`;
     };
-  }, [newCount]);
+  }, [appName, newCount]);
 
   useEffect(() => {
     if (newCount <= 0 || !soundEnabled) return;

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { NextResponse } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
@@ -9,7 +8,8 @@ import {
   reactivateChannelSession,
   type ChannelReactivationActor,
 } from "@/lib/channels/reactivate";
-import { getWahaClient } from "@/lib/waha/client";
+import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
+import { canonicalWahaWebhookUrl, ensureWahaSessionWebhook } from "@/lib/waha/session-webhook";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -58,7 +58,7 @@ async function ensureChannelSession(
   orgId: string,
   sessionName: string,
   actor: ChannelReactivationActor,
-): Promise<string> {
+): Promise<{ id: string; webhookPathToken: string }> {
   const supabase = await createClient();
   const buscar = (colunas: string) =>
     supabase
@@ -68,12 +68,27 @@ async function ensureChannelSession(
       .eq("waha_session_name", sessionName)
       .maybeSingle();
   const { data: existingRaw } = await queryTolerantToMissingArchived(
-    () => buscar(`id, ${ARCHIVED_AT}`),
-    () => buscar("id"),
+    () => buscar(`id, webhook_path_token, ${ARCHIVED_AT}`),
+    () => buscar("id, webhook_path_token"),
   );
-  const existing = existingRaw as { id: string; archived_at?: string | null } | null;
+  const existing = existingRaw as {
+    id: string;
+    webhook_path_token: string | null;
+    archived_at?: string | null;
+  } | null;
   if (existing?.id) {
-    if (!existing.archived_at) return existing.id;
+    const webhookPathToken = existing.webhook_path_token ?? crypto.randomUUID().replace(/-/g, "");
+    if (!existing.archived_at) {
+      if (!existing.webhook_path_token) {
+        const { error: tokenErr } = await supabase
+          .from("channel_sessions")
+          .update({ webhook_path_token: webhookPathToken })
+          .eq("organization_id", orgId)
+          .eq("id", existing.id);
+        if (tokenErr) throw new Error(`channel_session_webhook_token_failed: ${tokenErr.message}`);
+      }
+      return { id: existing.id, webhookPathToken };
+    }
     const { error: reErr } = await reactivateChannelSession(
       supabase,
       {
@@ -86,19 +101,21 @@ async function ensureChannelSession(
         last_status_change_at: new Date().toISOString(),
         consecutive_health_fails: 0,
         phone_number: null,
+        webhook_path_token: webhookPathToken,
       },
       actor,
     );
     if (reErr) throw new Error(`channel_session_reactivate_failed: ${reErr.message}`);
-    return existing.id;
+    return { id: existing.id, webhookPathToken };
   }
+  const webhookPathToken = crypto.randomUUID().replace(/-/g, "");
   const { data: created, error } = await supabase
     .from("channel_sessions")
     .insert({
       organization_id: orgId,
       waha_session_name: sessionName,
       engine: "NOWEB",
-      webhook_path_token: crypto.randomUUID().replace(/-/g, ""),
+      webhook_path_token: webhookPathToken,
       webhook_secret_encrypted: Buffer.from([0]),
       status: "STARTING",
       last_status_change_at: new Date().toISOString(),
@@ -109,7 +126,7 @@ async function ensureChannelSession(
     .select("id")
     .single();
   if (error) throw new Error(`channel_session_insert_failed: ${error.message}`);
-  return created.id as string;
+  return { id: created.id as string, webhookPathToken };
 }
 
 export async function GET() {
@@ -141,11 +158,12 @@ export async function POST(req: Request) {
   const sessionName = defaultSessionName(activeOrg.orgId);
 
   // 1) Make sure we have a row in channel_sessions.
-  const channelSessionId = await ensureChannelSession(activeOrg.orgId, sessionName, {
+  const channelSession = await ensureChannelSession(activeOrg.orgId, sessionName, {
     userId: user.id,
     requestId,
     metadata: { provider: CHANNEL_PROVIDER_WAHA, origin: "onboarding" },
   });
+  const webhookUrl = canonicalWahaWebhookUrl(req.url, channelSession.webhookPathToken);
 
   // 1b) `?restart=1` = pedido explícito de QR novo. O start sozinho não resolve
   // uma sessão FAILED: o WAHA responde 422 ("already exists") e o usuário fica
@@ -162,10 +180,16 @@ export async function POST(req: Request) {
   // 2) Start the session in WAHA. Idempotent — WAHA returns 422 if already started; treat as ok.
   try {
     const remote = (await waha.startSession(sessionName)) as WahaSessionResponse;
+    await ensureWahaSessionWebhook(sessionName, webhookUrl);
     // `requestId` também na resposta: é ele que liga o `X-Request-Id` que o
     // operador vê ao evento `channel.reactivated` que a ressurreição gravou.
     return ok(
-      { status: remote.status ?? "STARTING", session: sessionName, channel_session_id: channelSessionId },
+      {
+        status: remote.status ?? "STARTING",
+        session: sessionName,
+        channel_session_id: channelSession.id,
+        webhook_configured: true,
+      },
       { requestId },
     );
   } catch (err) {
@@ -174,13 +198,15 @@ export async function POST(req: Request) {
       // Session already exists — just fetch status.
       const remote = (await waha.getSessionQr(sessionName)) as WahaSessionResponse;
       return ok(
-        { status: remote.status ?? "RUNNING", session: sessionName, channel_session_id: channelSessionId },
+        {
+          status: remote.status ?? "RUNNING",
+          session: sessionName,
+          channel_session_id: channelSession.id,
+          webhook_configured: true,
+        },
         { requestId },
       );
     }
-    return NextResponse.json(
-      { error: { code: "waha_start_failed", message: msg } },
-      { status: 502 },
-    );
+    return fail("waha_error", wahaFriendlyError(err), 502, { requestId });
   }
 }

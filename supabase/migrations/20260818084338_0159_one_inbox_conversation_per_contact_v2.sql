@@ -1,9 +1,12 @@
+-- O instalador self-host executa cada statement do baseline em autocommit.
+-- `on commit drop` apagava a tabela logo após o CREATE, antes do backfill.
+drop table if exists _conversation_merge_map;
 create temporary table _conversation_merge_map (
   loser uuid primary key,
   winner uuid not null,
   organization_id uuid not null,
   contact_id uuid not null
-) on commit drop;
+);
 
 with ranked as (
   select
@@ -74,6 +77,8 @@ set payload=jsonb_set(t.payload,'{conversation_id}',to_jsonb(m.winner::text),fal
 from _conversation_merge_map m where t.payload->>'conversation_id'=m.loser::text;
 
 delete from public.conversations c using _conversation_merge_map m where c.id=m.loser;
+
+drop table if exists _conversation_merge_map;
 
 create unique index if not exists uniq_conversations_1to1_per_contact
   on public.conversations(organization_id,contact_id)

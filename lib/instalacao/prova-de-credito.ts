@@ -19,7 +19,7 @@
  * por que nada funciona.
  */
 import { normalizarErro } from "@/lib/agent-engine/edge/llm/run-model-call";
-import { OPENROUTER_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import { ALIBABA_ENDPOINT, OPENROUTER_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
 
 export type ResultadoDaProva =
   | { ok: true }
@@ -68,6 +68,12 @@ export function montarRequisicaoDeProva(
     case "openrouter":
       return {
         url: `${baseUrl ?? OPENROUTER_ENDPOINT}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: { model: modelo, max_tokens: 1, messages: msg },
+      };
+    case "alibaba":
+      return {
+        url: `${baseUrl ?? ALIBABA_ENDPOINT}/chat/completions`,
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 1, messages: msg },
       };

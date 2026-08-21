@@ -1,11 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { NextRequest, NextResponse } from "next/server";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { fail, ok } from "@/lib/api/wrappers";
-import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -35,17 +33,6 @@ const checkoutSchema = z.object({
   items: z.array(itemSchema).min(1).max(50),
 });
 
-function publicClient() {
-  return createSupabaseClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-    global: { headers: { "X-Client-Info": "deskcomm-crm/food-public" } },
-  });
-}
-
 function opaque(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }
@@ -72,7 +59,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     return fail("not_found", "Cardápio não encontrado.", 404, { requestId });
   }
 
-  const supabase = publicClient();
+  // O catálogo é público por esta rota, mas a RPC é SECURITY DEFINER e não deve
+  // ficar diretamente exposta à anon key. A rota valida o slug e é a fronteira
+  // pública única; o banco aceita a chamada somente do service role.
+  const supabase = createAdminClient();
   const { data, error } = await supabase.rpc("fn_food_public_catalog", {
     p_tenant_slug: slug,
   });
