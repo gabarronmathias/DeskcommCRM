@@ -779,12 +779,28 @@ async function handleSessionStatus(
     // o espelho do canal congelava sem erro visível.
     update.warmup_completed_at = now;
   }
-  await admin.from("channel_sessions").update(update).eq("id", session.id);
+  // WAHA pode emitir diversos eventos `WORKING` para a mesma sessão durante o
+  // boot. A prospecção precisa reagir à TRANSIÇÃO, não a cada eco do status.
+  // Fazemos a condição no banco para que webhooks concorrentes não consigam
+  // observar o mesmo estado anterior e despachar vários contatos.
+  let becameWorking = false;
+  if (status === "WORKING") {
+    const { data: transitioned } = await admin
+      .from("channel_sessions")
+      .update(update)
+      .eq("id", session.id)
+      .neq("status", "WORKING")
+      .select("id");
+    becameWorking = (transitioned?.length ?? 0) > 0;
+  } else {
+    await admin.from("channel_sessions").update(update).eq("id", session.id);
+  }
 
   // A reconexão é o gatilho operacional da prospecção: quando o WAHA confirma
   // WORKING, o primeiro item pendente é despachado na mesma transação lógica do
-  // webhook. O claim permanece idempotente para eventos WORKING duplicados.
-  if (status === "WORKING") {
+  // webhook. A transição é atômica e o claim continua sendo a barreira de
+  // concorrência da fila.
+  if (becameWorking) {
     try {
       await dispatchProspectingOnConnection(admin, session.organization_id);
     } catch (error) {

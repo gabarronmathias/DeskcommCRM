@@ -108,12 +108,10 @@ export async function POST(
     await waha.stopSession(nomeSessao);
     if (force) await waha.logoutSession(nomeSessao);
 
-    // O PUT de configuração acontece com a sessão parada, antes do start. Isso
-    // elimina a janela em que o QR poderia ser escaneado numa sessão sem inbound.
-    await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
-    const remote = (await waha.startSession(nomeSessao)) as { status?: string };
-    const nextStatus = remote.status ?? "STARTING";
-
+    // Persiste o estado ANTES de iniciar o transporte. Se o WAHA responder
+    // WORKING muito rápido, o webhook enxerga STARTING e registra uma única
+    // transição real para WORKING; gravar STARTING depois do start podia
+    // sobrescrever essa confirmação e disparar a prospecção repetidamente.
     await supabase
       .from("channel_sessions")
       .update({
@@ -123,6 +121,12 @@ export async function POST(
       })
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
+
+    // O PUT de configuração acontece com a sessão parada, antes do start. Isso
+    // elimina a janela em que o QR poderia ser escaneado numa sessão sem inbound.
+    await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
+    const remote = (await waha.startSession(nomeSessao)) as { status?: string };
+    const nextStatus = remote.status ?? "STARTING";
 
     void audit({
       action: "channel.reconnected",
