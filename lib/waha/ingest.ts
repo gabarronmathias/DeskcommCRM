@@ -802,7 +802,16 @@ async function handleSessionStatus(
   // concorrência da fila.
   if (becameWorking) {
     try {
-      await dispatchProspectingCampaignOnConnection(admin, session.organization_id);
+      const campaign = await dispatchProspectingCampaignOnConnection(admin, session.organization_id);
+      console.info("[waha.ingest] prospecting connection campaign", {
+        organizationId: session.organization_id,
+        outcome: campaign.outcome,
+        sent: campaign.sent,
+        cancelled: campaign.cancelled,
+        held: campaign.held,
+        failed: campaign.failed,
+        reason: campaign.reason ?? null,
+      });
     } catch (error) {
       const detail = error instanceof Error ? error.message.slice(0, 240) : "unknown";
       console.error("[waha.ingest] prospecting auto-start failed", detail);
