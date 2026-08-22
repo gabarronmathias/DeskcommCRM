@@ -5,7 +5,7 @@ export const SARAH_STAGE_NAME = "Sarah Atendendo";
 export const FOLLOWUP_FLOW_NAME = "Follow-up prospecção 48h";
 
 export const OPENING_MESSAGE = (company: string) =>
-  `Olá! Tudo bem? Sou a Sarah, da Gabarron & Mathias. Vi a ${company} e queria me apresentar: somos especialistas em atendimento para delivery e ajudamos negócios de alimentação a vender mais, recuperar oportunidades e trazer clientes de volta pelo WhatsApp. Como vocês organizam o atendimento por aí hoje?`;
+  `Olá! Tudo bem?\nSou a Sarah, da Gabarron & Mathias.\n\nVi a ${company} e queria me apresentar: Somos especialistas em atendimento para delivery e ajudamos negócios de alimentação a vender mais, recuperar oportunidades e trazer clientes de volta pelo WhatsApp.\n\nComo vocês organizam o atendimento por aí hoje?`;
 
 export const SARAH_POSITIONING =
   "Nós ajudamos padarias, restaurantes, pizzarias, hamburguerias, esfiharias e deliveries a transformar o WhatsApp e a própria base de clientes em uma máquina de vendas recorrentes.";

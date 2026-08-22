@@ -28,8 +28,10 @@ describe("prospecção foodservice", () => {
   it("personaliza a abertura sem inventar dono ou relacionamento anterior", () => {
     const text = OPENING_MESSAGE("Padaria Teste");
     expect(text).toContain("Vi a Padaria Teste");
-    expect(text).toContain("somos especialistas em atendimento para delivery");
+    expect(text).toContain("Somos especialistas em atendimento para delivery");
     expect(text).toContain("Como vocês organizam o atendimento por aí hoje?");
+    expect(text).toContain("Olá! Tudo bem?\nSou a Sarah");
+    expect(text).toContain("pelo WhatsApp.\n\nComo vocês");
     expect(text).not.toContain("vocês trabalham com delivery hoje?");
     expect(text).not.toContain("obrigado por entrar em contato");
     expect(text).not.toContain("dono");
