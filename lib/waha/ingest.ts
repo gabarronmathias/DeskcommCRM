@@ -13,6 +13,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { audit } from "@/lib/audit";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
+import { dispatchProspectingOnConnection } from "@/lib/prospecting/auto-start";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
@@ -779,6 +780,18 @@ async function handleSessionStatus(
     update.warmup_completed_at = now;
   }
   await admin.from("channel_sessions").update(update).eq("id", session.id);
+
+  // A reconexão é o gatilho operacional da prospecção: quando o WAHA confirma
+  // WORKING, o primeiro item pendente é despachado na mesma transação lógica do
+  // webhook. O claim permanece idempotente para eventos WORKING duplicados.
+  if (status === "WORKING") {
+    try {
+      await dispatchProspectingOnConnection(admin, session.organization_id);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message.slice(0, 240) : "unknown";
+      console.error("[waha.ingest] prospecting auto-start failed", detail);
+    }
+  }
 
   // ─── E agora alguém precisa SABER ────────────────────────────────────────
   //
