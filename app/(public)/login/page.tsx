@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/LoginForm";
-import { GM_LOGIN_LOGO_DATA_URI } from "@/lib/branding/login-logo";
 
 export const metadata = { title: "Entrar | Gabarron & Mathias" };
 
@@ -20,11 +19,10 @@ export default async function LoginPage({
             aria-hidden="true"
             className="absolute h-32 w-56 rounded-full bg-[#c9a866]/10 blur-3xl"
           />
-          {/* O logo vem embutido como data URI para usar exatamente o arquivo enviado,
-              sem depender de asset externo nem do otimizador do Next. */}
+          {/* O logo é servido por uma rota same-origin para evitar bloqueio de data URI/CSP. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={GM_LOGIN_LOGO_DATA_URI}
+            src="/login-logo"
             alt="Gabarron & Mathias"
             width={512}
             height={512}
