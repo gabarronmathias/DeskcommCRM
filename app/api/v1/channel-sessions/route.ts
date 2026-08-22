@@ -97,6 +97,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .select(`${CHANNEL_COLUMNS}, webhook_path_token, ${ARCHIVED_AT}`)
       .eq("organization_id", activeOrg.orgId)
       .not("waha_session_name", "is", null)
+      .order("phone_number", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -109,6 +110,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           .select(`${CHANNEL_COLUMNS}, webhook_path_token`)
           .eq("organization_id", activeOrg.orgId)
           .not("waha_session_name", "is", null)
+          .order("phone_number", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -147,7 +149,6 @@ export async function POST(req: NextRequest): Promise<Response> {
       last_status_change_at: new Date().toISOString(),
       consecutive_health_fails: 0,
       webhook_path_token: webhookPathToken,
-      ...(existing.archived_at ? { phone_number: null } : {}),
     };
     if (existing.archived_at) {
       const { error } = await reactivateChannelSession(
