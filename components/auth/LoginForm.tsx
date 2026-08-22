@@ -53,7 +53,7 @@ export function LoginForm({ next }: { next?: string }) {
   };
 
   return (
-    <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+    <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="email" className="text-sm font-medium text-white/80">
           Email
@@ -64,7 +64,7 @@ export function LoginForm({ next }: { next?: string }) {
           autoComplete="email"
           autoFocus
           aria-invalid={errors.email ? true : undefined}
-          className="h-11 rounded-xl border-white/10 bg-white/[0.045] text-white shadow-none transition-colors placeholder:text-white/25 focus-visible:border-[#c9a866]/60 focus-visible:ring-[#c9a866]/20"
+          className="h-10 rounded-xl border-white/10 bg-white/[0.055] text-white shadow-none transition-colors placeholder:text-white/25 focus-visible:border-[#c9a866]/60 focus-visible:ring-[#c9a866]/20"
           {...register("email")}
         />
         {errors.email && (
@@ -81,7 +81,7 @@ export function LoginForm({ next }: { next?: string }) {
           type="password"
           autoComplete="current-password"
           aria-invalid={errors.password ? true : undefined}
-          className="h-11 rounded-xl border-white/10 bg-white/[0.045] text-white shadow-none transition-colors placeholder:text-white/25 focus-visible:border-[#c9a866]/60 focus-visible:ring-[#c9a866]/20"
+          className="h-10 rounded-xl border-white/10 bg-white/[0.055] text-white shadow-none transition-colors placeholder:text-white/25 focus-visible:border-[#c9a866]/60 focus-visible:ring-[#c9a866]/20"
           {...register("password")}
         />
         {errors.password && (
@@ -100,7 +100,7 @@ export function LoginForm({ next }: { next?: string }) {
 
       <Button
         type="submit"
-        className="h-11 w-full rounded-xl bg-[#c9a866] font-semibold text-[#0b0c0f] shadow-[0_12px_35px_rgba(201,168,102,0.18)] transition-all hover:bg-[#d8b879] hover:shadow-[0_15px_40px_rgba(201,168,102,0.25)]"
+        className="h-10 w-full rounded-xl bg-[#c9a866] font-semibold text-[#0b0c0f] shadow-[0_12px_35px_rgba(201,168,102,0.18)] transition-all hover:bg-[#d8b879] hover:shadow-[0_15px_40px_rgba(201,168,102,0.25)]"
         disabled={isPending}
       >
         {isPending ? "Entrando..." : "Entrar"}
