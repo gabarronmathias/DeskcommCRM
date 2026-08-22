@@ -1,7 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/LoginForm";
-import { branding } from "@/lib/branding";
 
 export const metadata = { title: "Entrar" };
 
@@ -14,8 +14,16 @@ export default async function LoginPage({
   return (
     <div className="space-y-6">
       <div className="space-y-1.5 text-center">
+        <Image
+          src="/branding/gabarron-mathias-logo.jpg"
+          alt="Gabarron & Mathias"
+          width={220}
+          height={100}
+          className="mx-auto mb-4 h-20 w-auto object-contain"
+          priority
+        />
         <h1 className="text-2xl font-semibold tracking-tight">Entrar</h1>
-        <p className="text-sm text-muted-foreground">{branding().name}</p>
+        <p className="text-sm text-muted-foreground">Gabarron & Mathias</p>
       </div>
       {reset === "success" && (
         <div
