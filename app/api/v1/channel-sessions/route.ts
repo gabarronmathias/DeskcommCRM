@@ -165,7 +165,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           metadata: { provider: "waha", origin: "connections" },
         },
       );
-      if (error) return fail("internal_error", error.message, 500, { requestId });
+      if (error) return fail("internal_error", error.message ?? "channel_session_reactivate_failed", 500, { requestId });
     } else {
       const { error } = await supabase
         .from("channel_sessions")
