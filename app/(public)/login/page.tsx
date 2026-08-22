@@ -15,26 +15,31 @@ export default async function LoginPage({
   return (
     <div className="space-y-7">
       <div className="text-center">
-        <div className="relative mx-auto mb-5 flex h-48 w-full items-center justify-center sm:h-52">
+        <div className="relative mx-auto mb-4 flex h-[320px] w-full items-center justify-center sm:h-[350px]">
           <div
             aria-hidden="true"
-            className="absolute h-36 w-72 rounded-full bg-[#c9a866]/10 blur-3xl"
+            className="absolute h-56 w-80 rounded-full bg-[#c9a866]/10 blur-3xl"
           />
-          <Image
-            src="/branding/gabarron-mathias-logo.jpg"
-            alt="Gabarron & Mathias"
-            width={420}
-            height={420}
-            className="relative z-10 h-48 w-48 object-contain mix-blend-screen contrast-125 saturate-110 sm:h-52 sm:w-52"
-            priority
-          />
+
+          <div className="relative h-[300px] w-[300px] overflow-hidden rounded-full bg-[#001124] sm:h-[330px] sm:w-[330px]">
+            <Image
+              src="/branding/gabarron-mathias-logo.jpg"
+              alt="Gabarron & Mathias"
+              width={1080}
+              height={1080}
+              className="absolute inset-0 h-full w-full scale-[1.78] object-contain mix-blend-lighten contrast-[1.08] saturate-[1.08]"
+              priority
+              unoptimized
+              draggable={false}
+            />
+          </div>
         </div>
 
-        <div className="mx-auto mb-5 h-px w-40 bg-gradient-to-r from-transparent via-[#c9a866]/70 to-transparent" />
+        <div className="mx-auto mb-5 h-px w-44 bg-gradient-to-r from-transparent via-[#c9a866]/75 to-transparent" />
 
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Entrar</h1>
-          <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-[#c9a866]">
+          <h1 className="text-3xl font-semibold tracking-tight text-white">Entrar</h1>
+          <p className="text-[11px] font-medium uppercase tracking-[0.30em] text-[#c9a866]">
             Gabarron &amp; Mathias
           </p>
         </div>
@@ -99,16 +104,16 @@ export default async function LoginPage({
         <p>
           <Link
             href="/login/forgot"
-            className="text-white/45 underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#c9a866]"
+            className="text-white/50 underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#c9a866]"
           >
             Esqueci minha senha
           </Link>
         </p>
-        <p className="text-white/40">
+        <p className="text-white/45">
           Não tem conta?{" "}
           <Link
             href="/signup"
-            className="font-medium text-white/80 underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#c9a866]"
+            className="font-medium text-white/85 underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#c9a866]"
           >
             Criar conta
           </Link>
