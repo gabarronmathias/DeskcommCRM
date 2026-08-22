@@ -13,7 +13,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { audit } from "@/lib/audit";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
-import { dispatchProspectingOnConnection } from "@/lib/prospecting/auto-start";
+import { dispatchProspectingCampaignOnConnection } from "@/lib/prospecting/auto-start";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
@@ -802,7 +802,7 @@ async function handleSessionStatus(
   // concorrência da fila.
   if (becameWorking) {
     try {
-      await dispatchProspectingOnConnection(admin, session.organization_id);
+      await dispatchProspectingCampaignOnConnection(admin, session.organization_id);
     } catch (error) {
       const detail = error instanceof Error ? error.message.slice(0, 240) : "unknown";
       console.error("[waha.ingest] prospecting auto-start failed", detail);
