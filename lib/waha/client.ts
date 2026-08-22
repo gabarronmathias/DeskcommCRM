@@ -111,7 +111,10 @@ export class WahaClient {
     const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
       headers: { "X-Api-Key": this.apiKey },
     });
-    if (!res.ok) throw new Error(`waha_${res.status}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_${res.status}: ${body.slice(0, 400)}`);
+    }
     return (await res.json()) as { qr?: string; status: string };
   }
 
