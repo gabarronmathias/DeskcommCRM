@@ -5,6 +5,10 @@
 export const PUBLIC_PATHS: RegExp[] = [
   /^\/$/,
   /^\/login(\/.*)?$/,
+  // Imagem usada pela própria tela pública de login. A rota não tem extensão,
+  // então o proxy a intercepta; ela precisa ser pública para não virar um 307
+  // de volta para /login e quebrar o <img> antes de existir sessão.
+  /^\/login-logo$/,
   /^\/signup$/,
   /^\/auth\/confirm$/,
   /^\/403$/,
