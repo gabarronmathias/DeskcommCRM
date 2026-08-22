@@ -1,8 +1,8 @@
 /**
  * GET  /api/v1/channel-sessions — lista os canais WhatsApp da org (do DB).
  *   Acessível a qualquer membro (usado pelo seletor do inbox e pela sidebar).
- * POST /api/v1/channel-sessions — conecta um NOVO número (cria a sessão com
- *   nome único e inicia no WAHA). Admin only.
+ * POST /api/v1/channel-sessions — inicia o único canal WhatsApp da organização.
+ *   Repetir o clique reutiliza a sessão existente, inclusive após exclusão.
  *
  * Garantia de produção: toda nova sessão sai do onboarding com webhook inbound canônico no WAHA.
  * organization_id resolvido da sessão (cookie) — nunca do body.
@@ -15,6 +15,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { reactivateChannelSession } from "@/lib/channels/reactivate";
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
@@ -85,9 +86,115 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
-  const sessionName = `org_${activeOrg.orgId.slice(0, 8)}_${randomUUID().replace(/-/g, "").slice(0, 6)}`;
-  const webhookPathToken = randomUUID().replace(/-/g, "");
+
+  // This endpoint used to generate a random WAHA name on every click. That
+  // made “Conectar novo WhatsApp” create another database row and another
+  // remote session each time. A QR channel is singular per organization:
+  // reuse the latest WAHA row, including an archived row restored by Delete.
+  const findExisting = () =>
+    supabase
+      .from("channel_sessions")
+      .select(`${CHANNEL_COLUMNS}, webhook_path_token, ${ARCHIVED_AT}`)
+      .eq("organization_id", activeOrg.orgId)
+      .not("waha_session_name", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+  const { data: existingRaw, error: existingErr, schemaOutdated } =
+    await queryTolerantToMissingArchived(
+      findExisting,
+      () =>
+        supabase
+          .from("channel_sessions")
+          .select(`${CHANNEL_COLUMNS}, webhook_path_token`)
+          .eq("organization_id", activeOrg.orgId)
+          .not("waha_session_name", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+    );
+  if (existingErr) return fail("internal_error", existingErr.message, 500, { requestId });
+
+  const existing = existingRaw as
+    | (Record<string, unknown> & {
+        id: string;
+        waha_session_name: string | null;
+        webhook_path_token: string | null;
+        archived_at?: string | null;
+        status?: string | null;
+      })
+    | null;
+  const sessionName = existing?.waha_session_name ?? `org_${activeOrg.orgId.slice(0, 8)}`;
+  const webhookPathToken = existing?.webhook_path_token ?? randomUUID().replace(/-/g, "");
   const webhookUrl = canonicalWahaWebhookUrl(req.url, webhookPathToken);
+
+  // A second click while the QR is already being shown (or after it is
+  // connected) is a no-op. It must never restart or duplicate the session.
+  if (
+    existing?.id &&
+    !existing.archived_at &&
+    ["STARTING", "SCAN_QR_CODE", "WORKING"].includes(existing.status ?? "")
+  ) {
+    return ok(existing, {
+      requestId,
+      ...(schemaOutdated ? { meta: { schema_outdated: true } } : {}),
+    });
+  }
+
+  if (existing?.id) {
+    const patch = {
+      status: "STARTING",
+      last_status_change_at: new Date().toISOString(),
+      consecutive_health_fails: 0,
+      webhook_path_token: webhookPathToken,
+      ...(existing.archived_at ? { phone_number: null } : {}),
+    };
+    if (existing.archived_at) {
+      const { error } = await reactivateChannelSession(
+        supabase,
+        {
+          organizationId: activeOrg.orgId,
+          channelSessionId: existing.id,
+          archivedAt: existing.archived_at,
+        },
+        patch,
+        {
+          userId: user.id,
+          requestId,
+          metadata: { provider: "waha", origin: "connections" },
+        },
+      );
+      if (error) return fail("internal_error", error.message, 500, { requestId });
+    } else {
+      const { error } = await supabase
+        .from("channel_sessions")
+        .update(patch)
+        .eq("organization_id", activeOrg.orgId)
+        .eq("id", existing.id);
+      if (error) return fail("internal_error", error.message, 500, { requestId });
+    }
+
+    try {
+      await ensureWahaSessionWebhook(sessionName, webhookUrl);
+      let remote: { status?: string };
+      try {
+        remote = (await waha.startSession(sessionName)) as { status?: string };
+      } catch (err) {
+        // WAHA answers 409/422 when the same idempotent start is already in
+        // flight. Read its state instead of turning a second click into an
+        // error (or creating a new session).
+        const message = err instanceof Error ? err.message : String(err);
+        if (!message.includes("409") && !message.includes("422")) throw err;
+        remote = (await waha.getSessionQr(sessionName)) as { status?: string };
+      }
+      return ok(
+        { ...existing, ...patch, id: existing.id, waha_session_name: sessionName, status: remote.status ?? "STARTING" },
+        { requestId, ...(schemaOutdated ? { meta: { schema_outdated: true } } : {}) },
+      );
+    } catch (err) {
+      return fail("waha_error", wahaFriendlyError(err), 502, { requestId });
+    }
+  }
 
   const { data: created, error: insErr } = await supabase
     .from("channel_sessions")
