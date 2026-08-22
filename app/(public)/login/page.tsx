@@ -15,19 +15,20 @@ export default async function LoginPage({
   return (
     <div className="space-y-7">
       <div className="text-center">
-        <div className="relative mx-auto mb-4 flex h-[320px] w-full items-center justify-center sm:h-[350px]">
+        <div className="relative mx-auto mb-4 flex h-[350px] w-full items-center justify-center sm:h-[390px]">
           <div
             aria-hidden="true"
-            className="absolute h-56 w-80 rounded-full bg-[#c9a866]/10 blur-3xl"
+            className="absolute h-64 w-96 rounded-full bg-[#c9a866]/10 blur-3xl"
           />
 
-          <div className="relative h-[300px] w-[300px] overflow-hidden rounded-full bg-[#001124] sm:h-[330px] sm:w-[330px]">
+          <div className="relative h-[330px] w-[330px] overflow-hidden rounded-full bg-[#071435] sm:h-[370px] sm:w-[370px]">
             <Image
               src="/branding/gabarron-mathias-logo.jpg"
               alt="Gabarron & Mathias"
               width={1080}
               height={1080}
-              className="absolute inset-0 h-full w-full scale-[1.78] object-contain mix-blend-lighten contrast-[1.08] saturate-[1.08]"
+              className="absolute inset-0 h-full w-full object-cover contrast-[1.04] saturate-[1.05]"
+              style={{ clipPath: "circle(48.5% at 50% 50%)" }}
               priority
               unoptimized
               draggable={false}
@@ -35,7 +36,7 @@ export default async function LoginPage({
           </div>
         </div>
 
-        <div className="mx-auto mb-5 h-px w-44 bg-gradient-to-r from-transparent via-[#c9a866]/75 to-transparent" />
+        <div className="mx-auto mb-5 h-px w-48 bg-gradient-to-r from-transparent via-[#c9a866]/80 to-transparent" />
 
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight text-white">Entrar</h1>
