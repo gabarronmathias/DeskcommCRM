@@ -223,7 +223,14 @@ export class WahaClient {
       },
       body: JSON.stringify({ session, chatId, text }),
     });
-    if (!res.ok) throw new Error(`waha_${res.status}`);
+    if (!res.ok) {
+      // WAHA often includes the actionable transport cause in the response
+      // body (for example an invalid session or a disconnected engine). Keep
+      // it in the error so the prospecting dispatcher can distinguish that
+      // from an ordinary failed lead.
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_${res.status}: ${body.slice(0, 400)}`);
+    }
     return res.json();
   }
 
