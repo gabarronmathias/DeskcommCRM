@@ -102,13 +102,34 @@ async function cancel(db: SupabaseClient, row: QueueRow, reason: string): Promis
   return { queueId: row.id, outcome: "cancelled", reason };
 }
 
-async function hold(db: SupabaseClient, row: QueueRow, reason: string): Promise<DispatchResult> {
+function holdDelayFromTimelock(timeEnforcementEnds: string | null): number {
+  const endsAt = timeEnforcementEnds ? Date.parse(timeEnforcementEnds) : Number.NaN;
+  if (Number.isFinite(endsAt)) {
+    // Give WAHA a one-minute settling buffer, without holding a lead forever
+    // when a provider returns a malformed far-future date.
+    return Math.max(10 * 60_000, Math.min(24 * 60 * 60_000, endsAt - Date.now() + 60_000));
+  }
+  // WAHA may return 463 before its timelock endpoint exposes an expiry. Do not
+  // hammer the account in that case; the regular scheduler will resume later.
+  return 4 * 60 * 60_000;
+}
+
+function isWahaReachoutTimelock(detail: string | null | undefined): boolean {
+  return /(?:\b463\b|reachout\s+timelock)/i.test(detail ?? "");
+}
+
+async function hold(
+  db: SupabaseClient,
+  row: QueueRow,
+  reason: string,
+  options: { delayMs?: number; errorMessage?: string | null } = {},
+): Promise<DispatchResult> {
   await patchQueue(db, row, {
     status: "pending",
     claimed_at: null,
-    scheduled_for: new Date(Date.now() + 5 * 60_000).toISOString(),
+    scheduled_for: new Date(Date.now() + (options.delayMs ?? 5 * 60_000)).toISOString(),
     error_code: reason,
-    error_message: null,
+    error_message: options.errorMessage ?? null,
   });
   return { queueId: row.id, outcome: "held", reason };
 }
@@ -236,6 +257,26 @@ export async function dispatchQueueRow(db: SupabaseClient, row: QueueRow): Promi
   if (row.kind === "followup" && conversation.last_inbound_at) return cancel(db, row, "replied");
   if (session.status !== "WORKING") return hold(db, row, "channel_session_not_working");
 
+  // A WORKING session does not mean WhatsApp is accepting new conversations.
+  // Query WAHA before creating any outbound CRM message so a temporary 463
+  // restriction preserves the lead instead of generating a red failure.
+  if (session.provider === "waha" && session.waha_session_name) {
+    const waha = getWahaClient();
+    if (!waha) return hold(db, row, "waha_not_configured");
+    try {
+      const timelock = await waha.getReachoutTimelock(session.waha_session_name);
+      if (timelock.isActive) {
+        return hold(db, row, "waha_reachout_timelock", {
+          delayMs: holdDelayFromTimelock(timelock.timeEnforcementEnds),
+          errorMessage: "O WhatsApp pausou temporariamente novas conversas deste número.",
+        });
+      }
+    } catch {
+      // The endpoint is a preflight only: a transient WAHA status failure must
+      // not block established conversations or turn into a false restriction.
+    }
+  }
+
   const existing = await reconcileExisting(db, row);
   if (existing?.status === "sent") return onSent(db, row, existing.id);
   if (existing?.status === "queued" || existing?.status === "sending")
@@ -303,6 +344,13 @@ export async function dispatchQueueRow(db: SupabaseClient, row: QueueRow): Promi
     );
     if (message.status === "sent") return onSent(db, row, message.id);
     if (message.status === "failed") {
+      const detail = `${message.error_code ?? ""} ${message.error_message ?? ""}`;
+      if (isWahaReachoutTimelock(detail)) {
+        return hold(db, row, "waha_reachout_timelock", {
+          delayMs: holdDelayFromTimelock(null),
+          errorMessage: "O WhatsApp recusou temporariamente novas conversas (código 463).",
+        });
+      }
       await patchQueue(db, row, {
         status: "failed",
         crm_message_id: message.id,
@@ -327,6 +375,12 @@ export async function dispatchQueueRow(db: SupabaseClient, row: QueueRow): Promi
   } catch (error) {
     if (error instanceof ApiError && error.status === 403) return cancel(db, row, "opt_out");
     const detail = error instanceof Error ? error.message.slice(0, 240) : "unknown";
+    if (isWahaReachoutTimelock(detail)) {
+      return hold(db, row, "waha_reachout_timelock", {
+        delayMs: holdDelayFromTimelock(null),
+        errorMessage: "O WhatsApp recusou temporariamente novas conversas (código 463).",
+      });
+    }
     if (row.attempts >= row.max_attempts) {
       await patchQueue(db, row, {
         status: "failed",

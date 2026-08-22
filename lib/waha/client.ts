@@ -10,6 +10,11 @@
  */
 import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alcance";
 
+export type WahaReachoutTimelock = {
+  isActive: boolean;
+  timeEnforcementEnds: string | null;
+};
+
 export class WahaClient {
   constructor(
     private readonly baseUrl: string,
@@ -177,6 +182,36 @@ export class WahaClient {
       numberExists: body.numberExists === true,
       chatId: typeof body.chatId === "string" && body.chatId.trim() ? body.chatId.trim() : null,
       pn: typeof body.pn === "string" && body.pn.trim() ? body.pn.trim() : null,
+    };
+  }
+
+  /**
+   * WAHA reports the WhatsApp "reachout timelock" separately from the session
+   * status. A session can therefore be WORKING while WhatsApp temporarily
+   * refuses a first message to a new contact (provider error 463).
+   *
+   * This preflight prevents us from creating a failed CRM message for every
+   * prospect while that temporary restriction is active.
+   */
+  async getReachoutTimelock(session: string): Promise<WahaReachoutTimelock> {
+    const res = await fetch(
+      `${this.baseUrl}/api/sessions/${encodeURIComponent(session)}/timelock`,
+      { headers: { "X-Api-Key": this.apiKey } },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_timelock_${res.status}: ${body.slice(0, 200)}`);
+    }
+    const body = (await res.json()) as {
+      isActive?: unknown;
+      timeEnforcementEnds?: unknown;
+    };
+    return {
+      isActive: body.isActive === true,
+      timeEnforcementEnds:
+        typeof body.timeEnforcementEnds === "string" && body.timeEnforcementEnds.trim()
+          ? body.timeEnforcementEnds
+          : null,
     };
   }
 
