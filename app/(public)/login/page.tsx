@@ -19,16 +19,19 @@ export default async function LoginPage({
             aria-hidden="true"
             className="absolute h-32 w-56 rounded-full bg-[#c9a866]/10 blur-3xl"
           />
-          {/* O logo é servido por uma rota same-origin para evitar bloqueio de data URI/CSP. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/login-logo"
-            alt="Gabarron & Mathias"
-            width={512}
-            height={512}
-            className="relative z-10 h-[195px] w-[195px] object-contain sm:h-[210px] sm:w-[210px]"
-            draggable={false}
-          />
+
+          <div className="relative z-10 h-[195px] w-[195px] overflow-hidden rounded-full bg-[#071435] sm:h-[210px] sm:w-[210px]">
+            {/* Asset estático já versionado em /public: não depende de rota, auth, CSP ou data URI. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/branding/gabarron-mathias-logo.jpg?v=20260822-1"
+              alt="Gabarron & Mathias"
+              width={1080}
+              height={1080}
+              className="absolute inset-0 h-full w-full scale-[1.48] object-contain mix-blend-lighten contrast-[1.08] saturate-[1.08]"
+              draggable={false}
+            />
+          </div>
         </div>
 
         <div className="mx-auto mb-3 h-px w-36 bg-gradient-to-r from-transparent via-[#c9a866]/75 to-transparent" />
