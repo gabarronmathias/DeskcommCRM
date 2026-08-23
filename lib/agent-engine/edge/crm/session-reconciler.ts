@@ -31,6 +31,8 @@ export interface WatchdogConfig {
   webhookHmacSecret?: string;
   /** intervalo do tick (knob WATCHDOG_INTERVAL_MS) */
   intervalMs: number;
+  /** revalidação completa do webhook; transição para WORKING ignora a espera */
+  webhookRepairIntervalMs: number;
   /** idade mínima de uma queued para redrive — evita corrida com o insert do handler */
   redriveMinAgeMs: number;
   /** teto de redrives por tick (anti-rajada) */
@@ -43,6 +45,14 @@ interface WahaSession {
   name: string;
   status: string;
 }
+
+interface SessionWatchState {
+  status: string;
+  webhookCheckedAt: number | null;
+}
+
+/** Estado efêmero: ao reiniciar, a primeira sessão WORKING é revalidada. */
+type SessionWatchStateByName = Map<string, SessionWatchState>;
 
 async function fetchWahaSessions(cfg: WatchdogConfig): Promise<WahaSession[] | null> {
   try {
@@ -63,6 +73,7 @@ export async function reconcileSessions(
   pool: pg.Pool,
   cfg: WatchdogConfig,
   log: Logger,
+  stateByName: SessionWatchStateByName = new Map(),
 ): Promise<number> {
   const sessions = await fetchWahaSessions(cfg);
   if (sessions === null) {
@@ -81,6 +92,7 @@ export async function reconcileSessions(
   const localByName = new Map(localSessions.map((session) => [session.waha_session_name, session]));
   let fixed = 0;
   for (const s of sessions) {
+    const previous = stateByName.get(s.name);
     const { rows } = await pool.query<{ id: string; status: string }>(
       `update channel_sessions
        set status = $2, updated_at = now()
@@ -97,10 +109,17 @@ export async function reconcileSessions(
       });
     }
     const local = localByName.get(s.name);
+    const shouldRepairWebhook =
+      previous === undefined ||
+      previous.status !== 'WORKING' ||
+      previous.webhookCheckedAt === null ||
+      Date.now() - previous.webhookCheckedAt >= cfg.webhookRepairIntervalMs;
+    let webhookCheckedAt = s.status === 'WORKING' ? previous?.webhookCheckedAt ?? null : null;
     if (
       s.status === 'WORKING' &&
       local?.webhook_path_token &&
-      cfg.webhookBaseUrl
+      cfg.webhookBaseUrl &&
+      shouldRepairWebhook
     ) {
       const webhookUrl =
         `${cfg.webhookBaseUrl.replace(/\/+$/u, '')}/api/v1/webhooks/waha/` +
@@ -118,6 +137,7 @@ export async function reconcileSessions(
             waha_session: s.name,
           });
         }
+        webhookCheckedAt = Date.now();
       } catch (err) {
         log.warn('watchdog: reparo do webhook falhou — novo tick tentará novamente', {
           channel_session_id: local.id,
@@ -126,6 +146,7 @@ export async function reconcileSessions(
         });
       }
     }
+    stateByName.set(s.name, { status: s.status, webhookCheckedAt });
   }
   return fixed;
 }
@@ -268,9 +289,10 @@ export async function runSessionWatchdogLoop(
   log: Logger,
   signal: AbortSignal,
 ): Promise<void> {
+  const stateByName: SessionWatchStateByName = new Map();
   while (!signal.aborted) {
     try {
-      const fixed = await reconcileSessions(pool, cfg, log);
+      const fixed = await reconcileSessions(pool, cfg, log, stateByName);
       const redriven = await redriveQueued(pool, cfg, log);
       if (fixed + redriven > 0) {
         log.info('watchdog: tick com ação', { reconciled: fixed, redriven });

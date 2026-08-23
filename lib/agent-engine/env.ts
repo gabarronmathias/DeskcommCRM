@@ -49,7 +49,9 @@ const envSchema = z.object({
   QUEUE_VISIBILITY_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
   // Porta do /healthz (bind 0.0.0.0 no container; 0 = porta efêmera em teste).
   HEALTH_PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
-  QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(250),
+  // O primeiro check ocioso é rápido; o loop aplica backoff até o teto abaixo.
+  QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1_000),
+  QUEUE_IDLE_POLL_MAX_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   QUEUE_REAPER_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   SHUTDOWN_GRACE_MS: z.coerce.number().int().positive().default(30_000),
   // Watchdog de sessão (Fase 4A-2) — o ÚNICO ponto do engine que fala com o
@@ -61,6 +63,8 @@ const envSchema = z.object({
   WAHA_WEBHOOK_BASE_URL: z.string().url().optional(),
   WAHA_HMAC_SECRET: z.string().min(16).optional(),
   WATCHDOG_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+  // Uma configuração já validada não precisa ser baixada em todo tick.
+  WEBHOOK_REPAIR_INTERVAL_MS: z.coerce.number().int().positive().default(21_600_000),
   WATCHDOG_REDRIVE_MIN_AGE_MS: z.coerce.number().int().positive().default(30_000),
   WATCHDOG_REDRIVE_BATCH_SIZE: z.coerce.number().int().positive().default(10),
   WATCHDOG_REDRIVE_SPACING_MS: z.coerce.number().int().positive().default(4_000),

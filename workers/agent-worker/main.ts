@@ -211,6 +211,7 @@ export async function startWorker(
             ...(env.WAHA_WEBHOOK_BASE_URL ? { webhookBaseUrl: env.WAHA_WEBHOOK_BASE_URL } : {}),
             ...(env.WAHA_HMAC_SECRET ? { webhookHmacSecret: env.WAHA_HMAC_SECRET } : {}),
             intervalMs: env.WATCHDOG_INTERVAL_MS,
+            webhookRepairIntervalMs: env.WEBHOOK_REPAIR_INTERVAL_MS,
             redriveMinAgeMs: env.WATCHDOG_REDRIVE_MIN_AGE_MS,
             redriveBatchSize: env.WATCHDOG_REDRIVE_BATCH_SIZE,
             redriveSpacingMs: env.WATCHDOG_REDRIVE_SPACING_MS,
@@ -291,6 +292,7 @@ export async function startWorker(
   };
 
   const workerLoop = (async () => {
+    let idlePollMs = env.QUEUE_POLL_INTERVAL_MS;
     while (!shuttingDown) {
       let claimed: JobRow[] = [];
       try {
@@ -304,7 +306,12 @@ export async function startWorker(
         void running.finally(() => inFlight.delete(running));
       }
       if (claimed.length === 0 || shuttingDown) {
-        await sleep(env.QUEUE_POLL_INTERVAL_MS);
+        await sleep(idlePollMs);
+        // Fila vazia não justifica uma consulta remota a cada 250 ms. O
+        // primeiro check continua rápido e o repouso chega no máximo a 5 s.
+        idlePollMs = Math.min(idlePollMs * 2, env.QUEUE_IDLE_POLL_MAX_INTERVAL_MS);
+      } else {
+        idlePollMs = env.QUEUE_POLL_INTERVAL_MS;
       }
     }
   })();

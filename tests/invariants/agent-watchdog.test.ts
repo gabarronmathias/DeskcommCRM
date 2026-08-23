@@ -51,6 +51,7 @@ function watchdogCfg(): WatchdogConfig {
     webhookBaseUrl: `http://127.0.0.1:${wahaPort}`,
     webhookHmacSecret: "0123456789abcdef",
     intervalMs: 1000,
+    webhookRepairIntervalMs: 60_000,
     redriveMinAgeMs: 0,
     redriveBatchSize: 10,
     redriveSpacingMs: 1,
@@ -163,6 +164,17 @@ describe("4A-2 — watchdog reconcilia o espelho e reenvia queued", () => {
     expect(rows[0]!.status).toBe("WORKING");
     expect(webhookPutCalls).toHaveLength(1);
     expect(webhookPutCalls[0]!.config.webhooks[0]!.events).toContain("message.any");
+  });
+
+  it("webhook já validado não é baixado e regravado a cada tick", async () => {
+    const state = new Map();
+    const antes = webhookPutCalls.length;
+
+    await reconcileSessions(pool, watchdogCfg(), log, state);
+    await reconcileSessions(pool, watchdogCfg(), log, state);
+
+    // O primeiro tick após boot valida; o segundo apenas reconcilia status.
+    expect(webhookPutCalls).toHaveLength(antes + 1);
   });
 
   it("redrive: a queued sai sent COM external_id (shape NOWEB parseado)", async () => {
