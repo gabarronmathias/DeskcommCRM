@@ -1,0 +1,63 @@
+# Operação temporária no computador do operador.
+#
+# Sobe WAHA + worker com nomes e volumes próprios, sem interferir na pilha
+# local existente. O cloudflared cria uma Quick Tunnel gratuita; a URL muda a
+# cada reinício e precisa ser atualizada em WAHA_API_BASE_URL na Vercel.
+#
+# Preparação (nunca versione os arquivos .env.local-*):
+#   vercel env pull .env.local-worker --environment=production --yes
+#   ./scripts/prepare-local-waha-env.ps1
+#
+# Subida:
+#   docker compose --env-file .env.local-waha -f docker-compose.local-prospecting.yml up -d --build
+
+services:
+  waha-local:
+    image: devlikeapro/waha:noweb
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3300:3000"
+    env_file:
+      - .env.local-waha
+    environment:
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      # O CRM é o único painel operacional; evita gerar credenciais de dashboard
+      # transitórias em logs locais.
+      WAHA_DASHBOARD_ENABLED: "false"
+    volumes:
+      - local-prospecting-waha-sessions:/app/.sessions
+      - local-prospecting-waha-media:/app/.media
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker-local:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file:
+      - .env.local-worker
+    environment:
+      # Dentro da rede Docker, o worker fala com o WAHA local, nunca pelo túnel.
+      WAHA_API_BASE_URL: http://waha-local:3000
+    depends_on:
+      waha-local:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8788:8787"
+
+  cloudflared-local:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --protocol http2 --url http://waha-local:3000
+    depends_on:
+      waha-local:
+        condition: service_healthy
+
+volumes:
+  local-prospecting-waha-sessions:
+  local-prospecting-waha-media:
