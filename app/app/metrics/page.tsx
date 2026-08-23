@@ -15,7 +15,7 @@ export default async function MetricsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Relatórios</h1>
         <p className="text-sm text-muted-foreground">
-          Delivery, receita gerada pela Sarah, funil e desempenho da operação.
+          Prospecção comercial da Sarah, funil e desempenho da operação.
         </p>
       </header>
 

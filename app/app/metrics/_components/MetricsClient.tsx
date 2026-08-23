@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { useAttendantMetrics, type AttendantMetric } from "@/hooks/metrics/useAttendantMetrics";
 import { AtritoPanel } from "./AtritoPanel";
-import { DeliveryReportPanel } from "./DeliveryReportPanel";
+import { ProspectingReportPanel } from "./ProspectingReportPanel";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -49,7 +49,8 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
   const team = useTeamMembers({ enabled: canCompare });
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
-  if (isError || !data) return <p className="text-sm text-destructive">Erro ao carregar métricas.</p>;
+  if (isError || !data)
+    return <p className="text-sm text-destructive">Erro ao carregar métricas.</p>;
 
   const metrics = data.data;
   const funnelTotal = metrics.funnel.reduce((acc, s) => acc + s.count, 0);
@@ -57,7 +58,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
-      <DeliveryReportPanel />
+      {canCompare ? <ProspectingReportPanel /> : null}
 
       {canCompare ? (
         <div className="flex items-center gap-3">
