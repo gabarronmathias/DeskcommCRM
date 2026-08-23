@@ -121,10 +121,11 @@ export async function POST(
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
 
-    const remote = (await waha.startSession(nomeSessao)) as { status?: string };
+    await waha.startSession(nomeSessao);
     // A chamada retorna ao browser somente depois do webhook estar salvo. Assim
     // o QR não é exibido antes de a sessão poder entregar os eventos inbound.
     await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
+    const remote = (await waha.startSession(nomeSessao)) as { status?: string };
     const nextStatus = remote.status ?? "STARTING";
 
     void audit({

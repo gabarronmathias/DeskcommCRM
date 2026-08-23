@@ -190,6 +190,15 @@ export async function POST(req: NextRequest): Promise<Response> {
       // O WAHA local começa vazio após uma migração. Criar/iniciar vem antes da
       // leitura do webhook: configurar primeiro devolvia 404 e impedia o QR.
       await ensureWahaSessionWebhook(sessionName, webhookUrl);
+      // O PUT de configuração do NOWEB recoloca a sessão em STARTING. Um start
+      // final conclui a transição e só então devolvemos o QR ao navegador.
+      try {
+        remote = (await waha.startSession(sessionName)) as { status?: string };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!message.includes("409") && !message.includes("422")) throw err;
+        remote = (await waha.getSessionQr(sessionName)) as { status?: string };
+      }
       return ok(
         { ...existing, ...patch, id: existing.id, waha_session_name: sessionName, status: remote.status ?? "STARTING" },
         { requestId, ...(schemaOutdated ? { meta: { schema_outdated: true } } : {}) },
@@ -225,6 +234,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // WORKING sem inbound é um falso positivo perigoso: toda sessão criada por
     // este app precisa sair do onboarding já com o webhook canônico gravado no WAHA.
     await ensureWahaSessionWebhook(sessionName, webhookUrl);
+    await waha.startSession(sessionName);
   } catch (err) {
     await supabase
       .from("channel_sessions")
