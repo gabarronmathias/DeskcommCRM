@@ -316,9 +316,16 @@ export async function dispatchQueueRow(db: SupabaseClient, row: QueueRow): Promi
       if (identityError)
         throw new Error(`prospecting_phone_identity_update: ${identityError.message}`);
       await recordPhoneVerification(db, row, "verified");
-    } catch {
+    } catch (error) {
       await recordPhoneVerification(db, row, "check_failed");
-      return hold(db, row, "waha_phone_check_failed");
+      const detail = error instanceof Error ? error.message.slice(0, 240) : "unknown";
+      if (isWahaReachoutTimelock(detail)) {
+        return hold(db, row, "waha_reachout_timelock", {
+          delayMs: holdDelayFromTimelock(null),
+          errorMessage: "O WhatsApp recusou temporariamente novas conversas (código 463).",
+        });
+      }
+      return hold(db, row, "waha_phone_check_failed", { errorMessage: detail });
     }
   }
 
