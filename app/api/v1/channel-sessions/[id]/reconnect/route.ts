@@ -1,9 +1,8 @@
 /**
  * POST /api/v1/channel-sessions/[id]/reconnect — reconecta um canal caído.
  *
- * O webhook da sessão é reaplicado antes de cada start. Assim `WORKING` não pode
- * significar "WhatsApp conectado, porém surdo para inbound" depois de uma
- * reconexão ou troca de número.
+ * O webhook da sessão é reaplicado em cada start. A sessão é criada/iniciada
+ * primeiro porque um WAHA novo não tem registro remoto para receber o PUT.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -122,10 +121,10 @@ export async function POST(
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
 
-    // O PUT de configuração acontece com a sessão parada, antes do start. Isso
-    // elimina a janela em que o QR poderia ser escaneado numa sessão sem inbound.
-    await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
     const remote = (await waha.startSession(nomeSessao)) as { status?: string };
+    // A chamada retorna ao browser somente depois do webhook estar salvo. Assim
+    // o QR não é exibido antes de a sessão poder entregar os eventos inbound.
+    await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
     const nextStatus = remote.status ?? "STARTING";
 
     void audit({

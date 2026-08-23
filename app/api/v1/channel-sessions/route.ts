@@ -176,7 +176,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     try {
-      await ensureWahaSessionWebhook(sessionName, webhookUrl);
       let remote: { status?: string };
       try {
         remote = (await waha.startSession(sessionName)) as { status?: string };
@@ -188,6 +187,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         if (!message.includes("409") && !message.includes("422")) throw err;
         remote = (await waha.getSessionQr(sessionName)) as { status?: string };
       }
+      // O WAHA local começa vazio após uma migração. Criar/iniciar vem antes da
+      // leitura do webhook: configurar primeiro devolvia 404 e impedia o QR.
+      await ensureWahaSessionWebhook(sessionName, webhookUrl);
       return ok(
         { ...existing, ...patch, id: existing.id, waha_session_name: sessionName, status: remote.status ?? "STARTING" },
         { requestId, ...(schemaOutdated ? { meta: { schema_outdated: true } } : {}) },
