@@ -20,6 +20,7 @@ export default async function AiHubPage() {
       group="ia"
       isPlatformAdmin={user.is_platform_admin}
       role={activeOrg?.role ?? null}
+      workspaceProfile={activeOrg?.workspace_profile}
       title="Agente de IA"
       subtitle="Tudo que define quem atende por você — e como acompanhar o que ele faz."
     />

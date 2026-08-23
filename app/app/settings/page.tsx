@@ -29,6 +29,7 @@ export default async function SettingsHubPage() {
       group="organizacao"
       isPlatformAdmin={user.is_platform_admin}
       role={activeOrg?.role ?? null}
+      workspaceProfile={activeOrg?.workspace_profile}
       title="Configurações"
       subtitle="Sua conta, os dados da empresa e quem tem acesso ao quê."
     />

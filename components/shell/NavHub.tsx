@@ -3,11 +3,13 @@ import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import type { Role } from "@/lib/auth/types";
 import { hubSections, type NavGroupId } from "@/lib/navigation/registry";
+import type { WorkspaceProfile } from "@/lib/workspace/profile";
 
 interface NavHubProps {
   group: NavGroupId;
   isPlatformAdmin: boolean;
   role: Role | null;
+  workspaceProfile?: WorkspaceProfile;
   title: string;
   subtitle: string;
 }
@@ -38,8 +40,8 @@ function slug(texto: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export function NavHub({ group, isPlatformAdmin, role, title, subtitle }: NavHubProps) {
-  const secoes = hubSections(group, isPlatformAdmin, role);
+export function NavHub({ group, isPlatformAdmin, role, workspaceProfile, title, subtitle }: NavHubProps) {
+  const secoes = hubSections(group, isPlatformAdmin, role, workspaceProfile);
 
   return (
     <div className="flex h-full flex-col gap-8 p-6">

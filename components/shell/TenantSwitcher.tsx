@@ -16,6 +16,10 @@ export function TenantSwitcher() {
   const active = useActiveOrg();
   const [isPending, startTransition] = useTransition();
 
+  // A operação comercial da GB é uma área independente: ela nunca oferece
+  // contas de outros clientes no cabeçalho, mesmo que um operador de suporte
+  // também tenha memberships administrativas em outra sessão.
+  if (active?.workspace_profile === "foodservice_prospecting") return null;
   if (user.organizations.length <= 1) return null;
 
   return (

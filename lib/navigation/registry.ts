@@ -1,6 +1,7 @@
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
+import { isDestinationAvailable, type WorkspaceProfile } from "@/lib/workspace/profile";
 import {
   Bell,
   BookOpen,
@@ -463,7 +464,13 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   },
 ];
 
-export function canSee(d: NavDestination, isPlatformAdmin: boolean, role: Role | null): boolean {
+export function canSee(
+  d: NavDestination,
+  isPlatformAdmin: boolean,
+  role: Role | null,
+  workspaceProfile?: WorkspaceProfile,
+): boolean {
+  if (!isDestinationAvailable(d.href, workspaceProfile)) return false;
   if (isPlatformAdmin) return true;
   if (!role) return false;
   return ROLE_RANK[role] >= ROLE_RANK[d.minRole ?? "viewer"];
@@ -472,11 +479,12 @@ export function canSee(d: NavDestination, isPlatformAdmin: boolean, role: Role |
 export function sidebarGroups(
   isPlatformAdmin: boolean,
   role: Role | null,
+  workspaceProfile?: WorkspaceProfile,
 ): Array<{ group: NavGroup; items: NavDestination[] }> {
   return NAV_GROUPS.map((group) => ({
     group,
     items: NAV_DESTINATIONS.filter(
-      (d) => d.group === group.id && d.sidebar && canSee(d, isPlatformAdmin, role),
+      (d) => d.group === group.id && d.sidebar && canSee(d, isPlatformAdmin, role, workspaceProfile),
     ),
   })).filter((g) => g.items.length > 0);
 }
@@ -485,10 +493,11 @@ export function hubSections(
   group: NavGroupId,
   isPlatformAdmin: boolean,
   role: Role | null,
+  workspaceProfile?: WorkspaceProfile,
 ): Array<{ section: string; items: NavDestination[] }> {
   const porSecao = new Map<string, NavDestination[]>();
   for (const d of NAV_DESTINATIONS) {
-    if (d.group !== group || !canSee(d, isPlatformAdmin, role)) continue;
+    if (d.group !== group || !canSee(d, isPlatformAdmin, role, workspaceProfile)) continue;
     const secao = d.section ?? "";
     const atual = porSecao.get(secao);
     if (atual) atual.push(d);
@@ -497,6 +506,10 @@ export function hubSections(
   return [...porSecao.entries()].map(([section, items]) => ({ section, items }));
 }
 
-export function searchable(isPlatformAdmin: boolean, role: Role | null): NavDestination[] {
-  return NAV_DESTINATIONS.filter((d) => canSee(d, isPlatformAdmin, role));
+export function searchable(
+  isPlatformAdmin: boolean,
+  role: Role | null,
+  workspaceProfile?: WorkspaceProfile,
+): NavDestination[] {
+  return NAV_DESTINATIONS.filter((d) => canSee(d, isPlatformAdmin, role, workspaceProfile));
 }

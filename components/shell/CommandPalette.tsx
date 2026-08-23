@@ -55,8 +55,8 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
   const [destacado, setDestacado] = useState(0);
 
   const visiveis = useMemo(
-    () => searchable(user.is_platform_admin, activeOrg?.role ?? null),
-    [user.is_platform_admin, activeOrg?.role],
+    () => searchable(user.is_platform_admin, activeOrg?.role ?? null, activeOrg?.workspace_profile),
+    [user.is_platform_admin, activeOrg?.role, activeOrg?.workspace_profile],
   );
 
   const resultados = useMemo(() => {

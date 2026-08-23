@@ -1,3 +1,5 @@
+import type { WorkspaceProfile } from "@/lib/workspace/profile";
+
 /**
  * Papéis dentro do tenant.
  *
@@ -49,6 +51,8 @@ export interface UserOrgMembership {
   organization_id: string;
   organization_name: string;
   role: Role;
+  /** Perfil de interface calculado no servidor a partir da organização. */
+  workspace_profile?: WorkspaceProfile;
 }
 
 export interface AuthUser {
@@ -92,4 +96,6 @@ export interface ActiveOrg {
    * GRAVADA chega ao menu hoje.
    */
   marca?: { readonly nome: string; readonly logoUrl?: string };
+  /** Recorte operacional desta organização; nunca é fonte de autorização. */
+  workspace_profile?: WorkspaceProfile;
 }

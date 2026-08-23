@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, exigeCadastroDeMfa } from "@/lib/auth/politica-mfa";
+import { workspaceProfileForOrganization } from "@/lib/workspace/profile";
 import type { AuthUser, Role, UserOrgMembership, ActiveOrg } from "./types";
 
 const ACTIVE_ORG_COOKIE = "active_org";
@@ -19,7 +20,7 @@ const ACTIVE_ORG_COOKIE = "active_org";
 interface RawMembershipRow {
   organization_id: string;
   role: string;
-  organizations: { display_name: string } | { display_name: string }[] | null;
+  organizations: { display_name: string; slug: string } | { display_name: string; slug: string }[] | null;
 }
 
 /**
@@ -53,7 +54,7 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   // Org memberships (only active = not revoked, accepted)
   const { data: rawMemberships, error: membErro } = await supabase
     .from("user_organizations")
-    .select("organization_id, role, organizations(display_name)")
+    .select("organization_id, role, organizations(display_name, slug)")
     .eq("user_id", user.id)
     .is("revoked_at", null);
 
@@ -92,11 +93,13 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   const rows = (rawMemberships ?? []) as RawMembershipRow[];
   const memberships: UserOrgMembership[] = rows.map((row) => {
     const orgs = row.organizations;
-    const name = Array.isArray(orgs) ? (orgs[0]?.display_name ?? "—") : (orgs?.display_name ?? "—");
+    const organization = Array.isArray(orgs) ? orgs[0] : orgs;
+    const name = organization?.display_name ?? "—";
     return {
       organization_id: row.organization_id,
       organization_name: name,
       role: row.role as Role,
+      workspace_profile: workspaceProfileForOrganization(organization?.slug),
     };
   });
 
@@ -127,12 +130,22 @@ export async function resolveActiveOrg(authUser: AuthUser): Promise<ActiveOrg | 
   if (cookieOrg) {
     const found = authUser.organizations.find((o) => o.organization_id === cookieOrg);
     if (found) {
-      return { orgId: found.organization_id, name: found.organization_name, role: found.role };
+      return {
+        orgId: found.organization_id,
+        name: found.organization_name,
+        role: found.role,
+        workspace_profile: found.workspace_profile,
+      };
     }
   }
   const first = authUser.organizations[0];
   if (!first) return null;
-  return { orgId: first.organization_id, name: first.organization_name, role: first.role };
+  return {
+    orgId: first.organization_id,
+    name: first.organization_name,
+    role: first.role,
+    workspace_profile: first.workspace_profile,
+  };
 }
 
 /**

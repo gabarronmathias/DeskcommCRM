@@ -27,7 +27,11 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const { user, activeOrg } = useAuth();
-  const todos = sidebarGroups(user.is_platform_admin, activeOrg?.role ?? null);
+  const todos = sidebarGroups(
+    user.is_platform_admin,
+    activeOrg?.role ?? null,
+    activeOrg?.workspace_profile,
+  );
   // Configurações sai da área que rola e vai para o rodapé fixo: medido em
   // 1280x768, ele caía fora da dobra mesmo em telas de 1080px.
   const grupos = todos.filter((g) => g.group.id !== GRUPO_NO_RODAPE);

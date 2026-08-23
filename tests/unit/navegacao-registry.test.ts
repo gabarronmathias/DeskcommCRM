@@ -151,4 +151,12 @@ describe("searchable", () => {
     const hrefs = searchable(AGENT.platform, AGENT.role).map((d) => d.href);
     expect(hrefs).not.toContain("/app/audit");
   });
+
+  it("remove pedidos e Nuvemshop do perfil comercial Foodservice", () => {
+    const hrefs = searchable(ADMIN.platform, ADMIN.role, "foodservice_prospecting").map((d) => d.href);
+    expect(hrefs).not.toContain("/app/orders");
+    expect(hrefs).not.toContain("/app/integrations/nuvemshop");
+    expect(hrefs).toContain("/app/ai/agents");
+    expect(hrefs).toContain("/app/inbox");
+  });
 });
