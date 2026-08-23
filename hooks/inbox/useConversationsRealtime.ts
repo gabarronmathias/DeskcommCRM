@@ -132,5 +132,23 @@ export function useConversationsRealtime(
     enabled: !!orgId,
   });
 
+  // A confirmação de entrega altera `messages.status`, não necessariamente a
+  // linha de `conversations`. Sem esta assinatura, a aba Entregues só mudaria
+  // ao recarregar a página — justamente a informação que o operador precisa
+  // acompanhar em tempo real durante uma prospecção.
+  useRealtimeChannel({
+    name: orgId ? `inbox-delivery-${orgId}` : "inbox-delivery-disabled",
+    postgresChanges: orgId
+      ? {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `organization_id=eq.${orgId}`,
+        }
+      : undefined,
+    onChange,
+    enabled: !!orgId,
+  });
+
   return query;
 }
