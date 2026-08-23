@@ -109,13 +109,12 @@ export function isWithinBusinessHours(config: ProspectingConfig, now = new Date(
   }).formatToParts(now);
   const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "-1");
   const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
-  // Foodservice operates Monday through Saturday. Delivery operations often
-  // run later on Friday, so keep the ordinary end hour for every other day
-  // with a narrowly scoped Friday override.
+  // Foodservice operates every day. Delivery operations often run later on
+  // Friday, so keep the ordinary end hour for every other day with a narrowly
+  // scoped Friday override.
   const fridayEnd = integer(process.env.PROSPECTING_FRIDAY_BUSINESS_HOUR_END, 19, 1, 24);
   const end = weekday === "Fri" ? Math.max(config.businessHourEnd, fridayEnd) : config.businessHourEnd;
   return (
-    weekday !== "Sun" &&
     hour >= config.businessHourStart &&
     hour < end
   );

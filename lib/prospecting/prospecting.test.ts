@@ -77,7 +77,7 @@ describe("prospecção foodservice", () => {
     process.env = old;
   });
 
-  it("respeita janela comercial de segunda a sábado", () => {
+  it("respeita janela comercial todos os dias", () => {
     const cfg = {
       ...loadProspectingConfig(),
       timezone: "America/Sao_Paulo",
@@ -87,7 +87,7 @@ describe("prospecção foodservice", () => {
     expect(isWithinBusinessHours(cfg, new Date("2026-08-21T15:00:00Z"))).toBe(true);
     expect(isWithinBusinessHours(cfg, new Date("2026-08-21T21:30:00Z"))).toBe(true);
     expect(isWithinBusinessHours(cfg, new Date("2026-08-22T15:00:00Z"))).toBe(true);
-    expect(isWithinBusinessHours(cfg, new Date("2026-08-23T15:00:00Z"))).toBe(false);
+    expect(isWithinBusinessHours(cfg, new Date("2026-08-23T15:00:00Z"))).toBe(true);
   });
 
   it("usa a identidade real devolvida pelo WhatsApp para número brasileiro", () => {
