@@ -127,6 +127,12 @@ export const CONVERSATION_TERMINAL_STATUSES = ["closed", "archived"] as const;
 export const listConversationsQuerySchema = z.object({
   status: conversationStatusSchema.optional(),
   /**
+   * Estado da ÚLTIMA mensagem outbound da conversa. `confirmed` só inclui
+   * delivered/read; `unconfirmed` reúne failed e os estados que ainda não
+   * receberam confirmação do aparelho do contato.
+   */
+  delivery: z.enum(["confirmed", "unconfirmed"]).optional(),
+  /**
    * Esconde as conversas terminais (fechada/arquivada).
    *
    * Existe porque "Minhas" filtrava SÓ por dono e `Fechar` não solta o dono

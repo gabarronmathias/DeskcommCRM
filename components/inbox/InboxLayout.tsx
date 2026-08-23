@@ -96,11 +96,12 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const filters: ConversationsFilters = useMemo(
     () => ({
       ...tabToFilter(filterValue.tab),
+      delivery: filterValue.delivery,
       search: filterValue.search || undefined,
       channel_session_id: filterValue.channel_session_id,
       tag: filterValue.tag,
     }),
-    [filterValue.tab, filterValue.search, filterValue.channel_session_id, filterValue.tag],
+    [filterValue.tab, filterValue.delivery, filterValue.search, filterValue.channel_session_id, filterValue.tag],
   );
 
   const clientFilter = useMemo(

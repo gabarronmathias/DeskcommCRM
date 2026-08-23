@@ -81,6 +81,12 @@ describe("listConversationsQuerySchema", () => {
     const r = listConversationsQuerySchema.safeParse({ limit: "200" });
     expect(r.success).toBe(false);
   });
+
+  it("aceita filtro de entrega confirmado e sem confirmação", () => {
+    expect(listConversationsQuerySchema.safeParse({ delivery: "confirmed" }).success).toBe(true);
+    expect(listConversationsQuerySchema.safeParse({ delivery: "unconfirmed" }).success).toBe(true);
+    expect(listConversationsQuerySchema.safeParse({ delivery: "sent" }).success).toBe(false);
+  });
 });
 
 describe("claimConversationSchema", () => {

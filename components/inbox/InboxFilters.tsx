@@ -41,6 +41,7 @@ export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): 
 
 export interface InboxFiltersValue {
   tab: InboxTab;
+  delivery?: "confirmed" | "unconfirmed";
   search: string;
   onlyUnread: boolean;
   channel_session_id?: string;
@@ -175,6 +176,30 @@ export function InboxFilters({ value, onChange }: Props) {
           })}
         </TabsList>
       </Tabs>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Entrega no WhatsApp</Label>
+        <Tabs
+          value={value.delivery ?? "all"}
+          onValueChange={(v) =>
+            onChange({
+              ...value,
+              delivery: v === "all" ? undefined : (v as "confirmed" | "unconfirmed"),
+            })
+          }
+        >
+          <TabsList className="grid h-8 w-full grid-cols-3">
+            <TabsTrigger value="all" className="text-[11px]">Todas</TabsTrigger>
+            <TabsTrigger value="confirmed" className="text-[11px]">Entregues</TabsTrigger>
+            <TabsTrigger value="unconfirmed" className="text-[11px]">Não entregues</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {value.delivery === "unconfirmed" && (
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Inclui falhas e mensagens ainda sem confirmação de entrega.
+          </p>
+        )}
+      </div>
 
       <div className="flex items-center justify-between">
         <Label htmlFor="only-unread" className="text-xs text-muted-foreground">

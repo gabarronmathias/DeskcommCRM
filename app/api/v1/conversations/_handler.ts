@@ -79,6 +79,49 @@ export interface ListConversationsResult {
   has_more: boolean;
 }
 
+type OutboundDeliveryRow = {
+  conversation_id: string;
+  status: string;
+};
+
+/**
+ * "Sent" no WAHA significa apenas que o servidor aceitou a mensagem. Para a
+ * operação comercial, entrega real é somente `delivered` ou `read`.
+ *
+ * A classificação é feita pela ÚLTIMA tentativa outbound da conversa: uma
+ * falha antiga não deve colocar em "Não entregues" uma conversa cuja tentativa
+ * mais recente foi lida. A consulta usa o client do usuário, portanto a RLS de
+ * mensagens continua sendo a fronteira de visibilidade.
+ */
+async function conversationIdsByLatestOutboundDelivery(
+  supabase: SB,
+  organizationId: string,
+  delivery: "confirmed" | "unconfirmed",
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("conversation_id, status")
+    .eq("organization_id", organizationId)
+    .eq("direction", "outbound")
+    .order("created_at", { ascending: false })
+    .limit(10_000);
+  if (error) throw new Error(`conversation_delivery_filter: ${error.message}`);
+
+  const latestByConversation = new Map<string, string>();
+  for (const message of (data ?? []) as OutboundDeliveryRow[]) {
+    if (!latestByConversation.has(message.conversation_id)) {
+      latestByConversation.set(message.conversation_id, message.status);
+    }
+  }
+
+  return [...latestByConversation]
+    .filter(([, status]) => {
+      const confirmed = status === "delivered" || status === "read";
+      return delivery === "confirmed" ? confirmed : !confirmed;
+    })
+    .map(([conversationId]) => conversationId);
+}
+
 export async function listConversationsHandler(
   supabase: SB,
   ctx: HandlerCtx,
@@ -92,6 +135,13 @@ export async function listConversationsHandler(
   const sortCol = isQueue ? "last_inbound_at" : "last_message_at";
   const asc = isQueue;
 
+  const deliveryIds = q.delivery
+    ? await conversationIdsByLatestOutboundDelivery(supabase, ctx.organization_id, q.delivery)
+    : null;
+  if (deliveryIds && deliveryIds.length === 0) {
+    return { conversations: [], cursor: null, has_more: false };
+  }
+
   let query = supabase
     .from("conversations")
     .select(SELECT_COLS)
@@ -101,6 +151,7 @@ export async function listConversationsHandler(
     .limit(q.limit + 1);
 
   if (q.status) query = query.eq("status", q.status);
+  if (deliveryIds) query = query.in("id", deliveryIds);
   // Depois do `status` de propósito: pedir um status terminal E `exclude_finished`
   // é contradição, e a resposta certa para uma contradição é lista vazia — não
   // um dos dois lados escolhido em silêncio.

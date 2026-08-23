@@ -35,6 +35,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const url = new URL(req.url);
   const qsParsed = listConversationsQuerySchema.safeParse({
     status: url.searchParams.get("status") ?? undefined,
+    delivery: url.searchParams.get("delivery") ?? undefined,
     exclude_finished: url.searchParams.get("exclude_finished") === "true" ? true : undefined,
     assigned_to: url.searchParams.get("assigned_to") ?? undefined,
     // O `tag` era o único param que o schema aceitava, o hook serializava e o
