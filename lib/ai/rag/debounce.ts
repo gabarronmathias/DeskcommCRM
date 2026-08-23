@@ -77,8 +77,18 @@ export async function acquireDebounce(key: string, ttlSec: number): Promise<bool
   }
 
   // SET NX EX — returns "OK" if set, null if key already exists
-  const result = await redis.set(key, "1", { nx: true, ex: ttlSec });
-  return result === "OK";
+  try {
+    const result = await redis.set(key, "1", { nx: true, ex: ttlSec });
+    return result === "OK";
+  } catch (err) {
+    // O RAG não pode travar o atendimento quando o Redis é opcional ou está
+    // temporariamente fora do ar. A contenção local preserva o fluxo para a
+    // instância atual; o log mantém a falha visível ao operador.
+    console.warn("[rag-debounce] Redis unavailable — using in-memory fallback", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return memAcquire(key, ttlSec);
+  }
 }
 
 /**
@@ -92,5 +102,12 @@ export async function releaseDebounce(key: string): Promise<void> {
     return;
   }
 
-  await redis.del(key);
+  try {
+    await redis.del(key);
+  } catch (err) {
+    console.warn("[rag-debounce] Redis release failed — releasing local fallback", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    memRelease(key);
+  }
 }

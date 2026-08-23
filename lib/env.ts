@@ -79,9 +79,11 @@ const schema = z.object({
   // assine — aí a verificação passa a ser obrigatória.
   WAHA_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional().default("false"),
 
-  // Upstash Redis
-  UPSTASH_REDIS_REST_URL: required("UPSTASH_REDIS_REST_URL"),
-  UPSTASH_REDIS_REST_TOKEN: required("UPSTASH_REDIS_REST_TOKEN"),
+  // Upstash Redis é um acelerador: rate limiting e debounce já têm fallback
+  // local. Torná-lo obrigatório derruba o CRM inteiro quando o serviço externo
+  // está indisponível, mesmo com WhatsApp e banco saudáveis.
+  UPSTASH_REDIS_REST_URL: z.string().optional().default(""),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional().default(""),
 
   // AI providers — env-gated. Worker no-ops with skip="ai_gateway_key_missing"
   // when AI_GATEWAY_API_KEY is absent, so production boot must not be fatal.
