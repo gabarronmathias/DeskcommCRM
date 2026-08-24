@@ -77,6 +77,12 @@ export interface WahaEnvelope {
   payload?: WahaPayload;
 }
 
+/** Evento que pode gerar um turno de conversa da Sarah após a ingestão. */
+export function isInboundMessageEvent(envelope: WahaEnvelope): boolean {
+  const event = envelope.event ?? "";
+  return (event === "message" || event === "message.any") && envelope.payload?.fromMe !== true;
+}
+
 export type ChatIdentity =
   | { kind: "phone"; phone: string; lid: null }
   | { kind: "lid"; phone: null; lid: string } // lid = somente dígitos

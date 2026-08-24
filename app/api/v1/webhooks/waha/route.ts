@@ -11,18 +11,20 @@
  * vivem no módulo compartilhado.
  */
 import { randomUUID } from "node:crypto";
-import type { NextRequest, NextResponse } from "next/server";
+import { after, type NextRequest, type NextResponse } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { dispatchWahaEvent, type WahaEnvelope } from "@/lib/waha/ingest";
+import { dispatchWahaEvent, isInboundMessageEvent, type WahaEnvelope } from "@/lib/waha/ingest";
 import { authenticateWahaWebhook } from "@/lib/waha/webhook-auth";
+import { runInboundTurnFallback } from "@/lib/agent-engine/worker/inbound-fallback";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
@@ -171,6 +173,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return fail("webhook_dispatch_failed", "temporary webhook processing failure", 500, {
       requestId,
     });
+  }
+
+  if (isInboundMessageEvent(envelope)) {
+    after(() =>
+      runInboundTurnFallback().catch((error: unknown) => {
+        logger.error("waha.webhook: fallback do turno inbound falhou", {
+          request_id: requestId,
+          channel_session_id: session.id,
+          error: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+        });
+      }),
+    );
   }
 
   return ok({ accepted: true }, { requestId });
