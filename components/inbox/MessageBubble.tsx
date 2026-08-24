@@ -1,8 +1,12 @@
 "use client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/api/client";
+import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
@@ -31,6 +35,15 @@ function AckIndicator({ status }: { status: string }) {
 }
 
 export function MessageBubble({ message, debugCitations }: Props) {
+  const queryClient = useQueryClient();
+  const retry = useMutation({
+    mutationFn: () => apiClient.post(`/api/v1/messages/${message.id}/retry`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["messages", message.conversation_id] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+    onError: showApiError,
+  });
   const isOutbound = message.direction === "outbound";
   const time = format(new Date(message.sent_at), "HH:mm", { locale: ptBR });
   const isFailed = message.status === "failed";
@@ -117,6 +130,17 @@ export function MessageBubble({ message, debugCitations }: Props) {
             <CitationButton citations={citations} messageId={message.id} />
           )}
           {isOutbound && !isFailed && <AckIndicator status={message.status} />}
+          {isOutbound && message.status === "queued" && !String(message.metadata?._optimistic ?? "") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-5 px-1.5 text-[10px] text-primary-foreground/90 hover:bg-primary-foreground/15 hover:text-primary-foreground"
+              onClick={() => retry.mutate()}
+              disabled={retry.isPending}
+            >
+              {retry.isPending ? "Enviando…" : "Tentar enviar"}
+            </Button>
+          )}
           {isFailed && (
             // Provider local: o painel do inbox não tem TooltipProvider ancestral e
             // este Tooltip só monta em mensagem failed — sem o provider, abrir uma

@@ -14,6 +14,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { audit } from "@/lib/audit";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
 import { dispatchProspectingCampaignOnConnection } from "@/lib/prospecting/auto-start";
+import { retryQueuedTextMessage } from "@/lib/messaging/retry-queued";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
@@ -807,6 +808,43 @@ async function handleSessionStatus(
   // webhook. A transição é atômica e o claim continua sendo a barreira de
   // concorrência da fila.
   if (becameWorking) {
+    // Primeiro liberamos o que um operador/agente JÁ tinha aprovado e ficou
+    // preso enquanto a sessão ainda dizia STOPPED. Não cria campanha nem uma
+    // linha nova: o retry usa o mesmo id e faz claim atômico. O recorte de 24h
+    // evita surpreender um contato com um rascunho operacional abandonado há
+    // dias depois de uma reconexão.
+    try {
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: candidates } = await admin
+        .from("messages")
+        .select("id, metadata")
+        .eq("organization_id", session.organization_id)
+        .eq("channel_session_id", session.id)
+        .eq("direction", "outbound")
+        .eq("status", "queued")
+        .eq("type", "text")
+        .gte("created_at", cutoff)
+        .order("created_at", { ascending: false })
+        .limit(8);
+      const ids = (candidates ?? [])
+        .filter((message) => {
+          const metadata = message.metadata as Record<string, unknown> | null;
+          return metadata?.queued_reason === "channel_session_not_working";
+        })
+        .slice(0, 2)
+        .map((message) => message.id as string);
+      for (const messageId of ids) {
+        await retryQueuedTextMessage(admin, {
+          organizationId: session.organization_id,
+          messageId,
+          source: "session_recovered",
+        });
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message.slice(0, 240) : "unknown";
+      console.error("[waha.ingest] queued message recovery failed", detail);
+    }
+
     try {
       const campaign = await dispatchProspectingCampaignOnConnection(admin, session.organization_id);
       console.info("[waha.ingest] prospecting connection campaign", {
