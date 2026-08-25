@@ -17,9 +17,14 @@
 import type { VercelConfig } from "@vercel/config/v1";
 
 const config: VercelConfig = {
-  // O scheduler persistente (Render/self-host) chama as rotas internas. Manter
-  // Vercel Cron vazio evita dois schedulers disputando o mesmo claim.
-  crons: [],
+  // A operação temporária usa o Vercel como scheduler: a execução diária
+  // reabre a fila de prospecção e processa os follow-ups D+2 sem depender de
+  // um daemon local com secrets de produção. 12:00 UTC = 09:00 em Brasília.
+  // O claim no banco mantém a rota idempotente caso uma reconexão do WhatsApp
+  // também dispare a campanha no mesmo dia.
+  crons: [
+    { path: "/api/v1/cron/prospecting-dispatch", schedule: "0 12 * * *" },
+  ],
   functions: {
     // EPIC-13 S-13.08: ToolLoopAgent runtime can issue multiple tool calls per
     // step. 300s max keeps Fluid Compute within bounds; the runtime's own
