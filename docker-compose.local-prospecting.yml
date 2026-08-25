@@ -1,11 +1,15 @@
 # Operação temporária no computador do operador.
 #
-# Sobe WAHA + worker com nomes e volumes próprios, sem interferir na pilha
-# local existente. O cloudflared cria uma Quick Tunnel gratuita; a URL muda a
-# cada reinício e precisa ser atualizada em WAHA_API_BASE_URL na Vercel.
+# Sobe somente o transporte WAHA com nomes e volumes próprios, sem interferir
+# na pilha local existente. O CRM no Vercel recebe os webhooks e executa o
+# turno inbound da Sarah com os segredos que já ficam protegidos lá. Não existe
+# worker local: duplicar secrets de produção no computador tornou o fluxo
+# frágil e não é necessário para atendimento em tempo real.
+#
+# O cloudflared cria uma Quick Tunnel gratuita; a URL muda a cada reinício e
+# precisa ser atualizada em WAHA_API_BASE_URL na Vercel.
 #
 # Preparação (nunca versione os arquivos .env.local-*):
-#   vercel env pull .env.local-worker --environment=production --yes
 #   ./scripts/prepare-local-waha-env.ps1
 #
 # Subida:
@@ -33,22 +37,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-  worker-local:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    restart: unless-stopped
-    env_file:
-      - .env.local-worker
-    environment:
-      # Dentro da rede Docker, o worker fala com o WAHA local, nunca pelo túnel.
-      WAHA_API_BASE_URL: http://waha-local:3000
-    depends_on:
-      waha-local:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:8788:8787"
 
   cloudflared-local:
     image: cloudflare/cloudflared:latest
