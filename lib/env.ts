@@ -84,6 +84,9 @@ const schema = z.object({
   // está indisponível, mesmo com WhatsApp e banco saudáveis.
   UPSTASH_REDIS_REST_URL: z.string().optional().default(""),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional().default(""),
+  // Nomes criados pela integração oficial Upstash na Vercel.
+  KV_REST_API_URL: z.string().optional().default(""),
+  KV_REST_API_TOKEN: z.string().optional().default(""),
 
   // AI providers — env-gated. Worker no-ops with skip="ai_gateway_key_missing"
   // when AI_GATEWAY_API_KEY is absent, so production boot must not be fatal.
@@ -226,7 +229,16 @@ if (!parsed.success) {
   );
 }
 
-export const env = parsed.data;
+// A integração Vercel/Upstash injeta KV_REST_API_*, enquanto as rotinas do CRM
+// usam historicamente UPSTASH_REDIS_REST_*. Unificamos os dois contratos aqui
+// para que todos os consumidores do Redis usem a configuração disponível.
+export const env = {
+  ...parsed.data,
+  UPSTASH_REDIS_REST_URL:
+    parsed.data.UPSTASH_REDIS_REST_URL || parsed.data.KV_REST_API_URL,
+  UPSTASH_REDIS_REST_TOKEN:
+    parsed.data.UPSTASH_REDIS_REST_TOKEN || parsed.data.KV_REST_API_TOKEN,
+};
 
 // Soft warning for env-gated AI keys (worker degrades gracefully but operators
 // should know when the bot is silent for config reasons).
