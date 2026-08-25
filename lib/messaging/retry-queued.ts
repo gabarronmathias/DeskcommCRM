@@ -106,7 +106,12 @@ export async function retryQueuedTextMessage(
       .eq("status", "sending");
   };
 
-  if (!conversation || conversation.contacts?.is_blocked || !conversation.channel_sessions) {
+  if (
+    !conversation ||
+    !conversation.contacts ||
+    conversation.contacts.is_blocked ||
+    !conversation.channel_sessions
+  ) {
     await requeue("retry_missing_conversation_or_contact");
     return { outcome: "not_sendable", messageId: existing.id, reason: "conversation_or_contact_unavailable" };
   }

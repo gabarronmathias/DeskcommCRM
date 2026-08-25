@@ -37,7 +37,7 @@ function AckIndicator({ status }: { status: string }) {
 export function MessageBubble({ message, debugCitations }: Props) {
   const queryClient = useQueryClient();
   const retry = useMutation({
-    mutationFn: () => apiClient.post(`/api/v1/messages/${message.id}/retry`),
+    mutationFn: () => apiClient.post(`/api/v1/messages/${message.id}/retry`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["messages", message.conversation_id] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
