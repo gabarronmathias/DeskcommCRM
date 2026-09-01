@@ -79,9 +79,11 @@ const schema = z.object({
   // assine — aí a verificação passa a ser obrigatória.
   WAHA_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional().default("false"),
 
-  // Upstash Redis
-  UPSTASH_REDIS_REST_URL: required("UPSTASH_REDIS_REST_URL"),
-  UPSTASH_REDIS_REST_TOKEN: required("UPSTASH_REDIS_REST_TOKEN"),
+  // Upstash Redis — opcional no boot. Os consumidores Redis já possuem fallback
+  // explícito e o health check reporta `degraded` quando a configuração não está
+  // disponível. Uma indisponibilidade de Redis não pode derrubar todo o middleware.
+  UPSTASH_REDIS_REST_URL: z.string().optional().default(""),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional().default(""),
 
   // AI providers — env-gated. Worker no-ops with skip="ai_gateway_key_missing"
   // when AI_GATEWAY_API_KEY is absent, so production boot must not be fatal.
@@ -225,6 +227,13 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN) {
+  console.warn(
+    "[env] Redis/Upstash não configurado — CRM continua disponível em modo degradado; " +
+      "rate limits e debounce Redis usam os fallbacks já definidos pelos consumidores.",
+  );
+}
 
 // Soft warning for env-gated AI keys (worker degrades gracefully but operators
 // should know when the bot is silent for config reasons).
