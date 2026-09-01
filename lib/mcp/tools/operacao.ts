@@ -251,7 +251,7 @@ export const crmRenderMessageTemplate: McpToolDefinition<typeof renderTemplateSh
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  requiresAdditionalScopes: ["templates:read"],
+  requiresAdditionalScopes: ["templates:read", "contacts:read", "leads:read"],
   handler: async (input, ctx) => {
     return preencherModeloDeMensagem(deps(ctx), {
       templateId: input.template_id,

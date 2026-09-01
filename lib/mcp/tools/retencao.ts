@@ -429,7 +429,7 @@ export const crmCloseDemand: McpToolDefinition<typeof encerrarShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["pipelines:write"],
+  requiresAdditionalScopes: ["leads:write", "pipelines:write"],
   handler: async (input, ctx) => {
     try {
       const { lead, jaEstava } = await encerraDemanda(

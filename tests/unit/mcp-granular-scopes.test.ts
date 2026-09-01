@@ -70,7 +70,7 @@ const READ_SCOPES_ESPERADOS: Record<string, readonly string[]> = {
   crm_list_stages: ["pipelines:read"],
   crm_list_tags: ["tags:read"],
   crm_list_message_templates: ["templates:read"],
-  crm_render_message_template: ["templates:read"],
+  crm_render_message_template: ["templates:read", "contacts:read", "leads:read"],
   crm_list_webhook_sources: ["webhooks:read"],
   crm_list_webhook_source_events: ["webhooks:read"],
   crm_list_automation_rules: ["automations:read"],
@@ -86,11 +86,11 @@ const WRITE_SCOPES_ESPERADOS: Record<string, readonly string[]> = {
   crm_propose_contact_field: ["contacts:write"],
   crm_create_lead: ["leads:write"],
   crm_update_lead: ["leads:write"],
-  crm_move_lead_stage: ["pipelines:write"],
+  crm_move_lead_stage: ["leads:write", "pipelines:write"],
   crm_send_whatsapp_message: ["messages:write"],
   crm_schedule_followup: ["followups:write"],
   crm_cancel_followup: ["followups:write"],
-  crm_close_demand: ["pipelines:write"],
+  crm_close_demand: ["leads:write", "pipelines:write"],
   crm_propose_reactivation: ["followups:write"],
   crm_create_stage: ["pipelines:write"],
   crm_update_stage: ["pipelines:write"],
@@ -202,6 +202,48 @@ describe("MCP granular scopes", () => {
       .map((t) => t.name);
 
     expect(autorizadas).toEqual([]);
+  });
+
+  it("render de template exige templates, contatos e leads por fail-safe", () => {
+    const tokenSoTemplates: McpAuthResult = {
+      ...TOKEN_HERMES_COMERCIAL,
+      scopes: ["mcp:read", "templates:read"],
+    };
+    const tokenTemplateComEntidades: McpAuthResult = {
+      ...TOKEN_HERMES_COMERCIAL,
+      scopes: ["mcp:read", "templates:read", "contacts:read", "leads:read"],
+    };
+
+    expect(() => ensureToolAuthorized(tokenSoTemplates, tool("crm_render_message_template"))).toThrow(
+      /Token missing required scope 'contacts:read'/,
+    );
+    expect(() => ensureToolAuthorized(tokenTemplateComEntidades, tool("crm_render_message_template"))).not.toThrow();
+    expect(() => ensureToolAuthorized(tokenSoTemplates, tool("crm_list_message_templates"))).not.toThrow();
+  });
+
+  it("mover stage e fechar demanda exigem leads:write e pipelines:write", () => {
+    const tokenSoLeadsWrite: McpAuthResult = {
+      ...TOKEN_HERMES_COMERCIAL,
+      scopes: ["mcp:write", "leads:write"],
+    };
+    const tokenSoPipelinesWrite: McpAuthResult = {
+      ...TOKEN_HERMES_COMERCIAL,
+      scopes: ["mcp:write", "pipelines:write"],
+    };
+    const tokenLeadsEPipelinesWrite: McpAuthResult = {
+      ...TOKEN_HERMES_COMERCIAL,
+      scopes: ["mcp:write", "leads:write", "pipelines:write"],
+    };
+
+    for (const nome of ["crm_move_lead_stage", "crm_close_demand"] as const) {
+      expect(() => ensureToolAuthorized(tokenSoLeadsWrite, tool(nome)), nome).toThrow(
+        /Token missing required scope 'pipelines:write'/,
+      );
+      expect(() => ensureToolAuthorized(tokenSoPipelinesWrite, tool(nome)), nome).toThrow(
+        /Token missing required scope 'leads:write'/,
+      );
+      expect(() => ensureToolAuthorized(tokenLeadsEPipelinesWrite, tool(nome)), nome).not.toThrow();
+    }
   });
 
   it("não executa handler nem escrita, e audita falha quando falta additional scope", async () => {

@@ -277,7 +277,7 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["pipelines:write"],
+  requiresAdditionalScopes: ["leads:write", "pipelines:write"],
   handler: async (input, ctx) => {
     const lead = await moveLeadHandler(
       ctx.supabase,
