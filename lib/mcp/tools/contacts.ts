@@ -31,6 +31,7 @@ export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["contacts:read"],
   handler: async (input, ctx) => {
     const result = await listContactsHandler(
       ctx.supabase,
@@ -75,6 +76,7 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["contacts:read"],
   handler: async (input, ctx) => {
     const contact = await getContactHandler(
       ctx.supabase,
@@ -142,6 +144,7 @@ export const crmProposeContactField: McpToolDefinition<typeof propostaShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["contacts:write"],
   handler: async (input, ctx) => {
     const r = await proporDadoDoContato(ctx.supabase, {
       organizationId: ctx.organizationId,

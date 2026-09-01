@@ -27,6 +27,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
+import { MCP_ADDITIONAL_SCOPES } from "@/lib/mcp/types";
 import { anunciarDestino, credenciaisSupabaseDeTeste } from "./lib/env-de-teste";
 
 // `process.env` VENCE o `.env.local` (ver scripts/lib/env-de-teste.ts).
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
       name: NOME,
       prefix,
       token_hash: `\\x${hash.toString("hex")}`,
-      scopes: ["mcp:read", "mcp:write", "actor:ai_agent", "role:manager"],
+      scopes: ["mcp:read", "mcp:write", "actor:ai_agent", "role:manager", ...MCP_ADDITIONAL_SCOPES],
       expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
     })
     .select("id")
