@@ -15,7 +15,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { auditMcpToolCall } from "./audit";
 import { ensureRole, ensureScope, type McpAuthResult } from "./auth";
 import { allTools } from "./tools";
-import type { McpContext } from "./types";
+import type { McpContext, McpToolDefinition } from "./types";
 
 const SERVER_NAME = "deskcomm-crm";
 const SERVER_VERSION = "0.1.0";
@@ -28,6 +28,83 @@ function summarizeResult(result: unknown): string | undefined {
   if (Array.isArray(r.messages)) return `${r.messages.length} messages`;
   if (typeof r.id === "string") return `id=${r.id}`;
   return undefined;
+}
+
+export function ensureToolAuthorized(auth: McpAuthResult, tool: McpToolDefinition): void {
+  ensureScope(auth.scopes, tool.requiresScope);
+  ensureRole(auth.role, tool.requiresRole);
+  for (const scope of tool.requiresAdditionalScopes ?? []) {
+    ensureScope(auth.scopes, scope);
+  }
+}
+
+interface InvokeMcpToolInput {
+  tool: McpToolDefinition;
+  auth: McpAuthResult;
+  requestId: string;
+  supabase: ReturnType<typeof createAdminClient>;
+  rawArgs: unknown;
+}
+
+export async function invokeMcpToolForRequest({
+  tool,
+  auth,
+  requestId,
+  supabase,
+  rawArgs,
+}: InvokeMcpToolInput): Promise<{
+  isError?: boolean;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}> {
+  const startedAt = Date.now();
+  const args = (rawArgs ?? {}) as Record<string, unknown>;
+  const ctx: McpContext = {
+    organizationId: auth.organizationId,
+    role: auth.role,
+    actor: auth.actor,
+    apiTokenId: auth.apiTokenId,
+    requestId,
+    supabase,
+  };
+
+  try {
+    ensureToolAuthorized(auth, tool);
+
+    const result = await tool.handler(args as never, ctx);
+    const durationMs = Date.now() - startedAt;
+
+    await auditMcpToolCall({
+      ctx,
+      toolName: tool.name,
+      args,
+      durationMs,
+      success: true,
+      resultSummary: summarizeResult(result),
+    });
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result as Record<string, unknown>,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown_error";
+    const durationMs = Date.now() - startedAt;
+
+    await auditMcpToolCall({
+      ctx,
+      toolName: tool.name,
+      args,
+      durationMs,
+      success: false,
+      errorMessage: message,
+    });
+
+    return {
+      isError: true,
+      content: [{ type: "text", text: message }],
+    };
+  }
 }
 
 export function createMcpServer(auth: McpAuthResult, requestId: string): McpServer {
@@ -45,57 +122,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
         description: tool.description,
         inputSchema: tool.inputSchema,
       },
-      async (rawArgs) => {
-        const startedAt = Date.now();
-        const args = (rawArgs ?? {}) as Record<string, unknown>;
-        const ctx: McpContext = {
-          organizationId: auth.organizationId,
-          role: auth.role,
-          actor: auth.actor,
-          apiTokenId: auth.apiTokenId,
-          requestId,
-          supabase,
-        };
-
-        try {
-          ensureScope(auth.scopes, tool.requiresScope);
-          ensureRole(auth.role, tool.requiresRole);
-
-          const result = await tool.handler(args as never, ctx);
-          const durationMs = Date.now() - startedAt;
-
-          await auditMcpToolCall({
-            ctx,
-            toolName: tool.name,
-            args,
-            durationMs,
-            success: true,
-            resultSummary: summarizeResult(result),
-          });
-
-          return {
-            content: [{ type: "text", text: JSON.stringify(result) }],
-            structuredContent: result as Record<string, unknown>,
-          };
-        } catch (err) {
-          const message = err instanceof Error ? err.message : "unknown_error";
-          const durationMs = Date.now() - startedAt;
-
-          await auditMcpToolCall({
-            ctx,
-            toolName: tool.name,
-            args,
-            durationMs,
-            success: false,
-            errorMessage: message,
-          });
-
-          return {
-            isError: true,
-            content: [{ type: "text", text: message }],
-          };
-        }
-      },
+      async (rawArgs) => invokeMcpToolForRequest({ tool, auth, requestId, supabase, rawArgs }),
     );
   }
 
