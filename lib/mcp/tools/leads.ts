@@ -88,6 +88,7 @@ export const crmListLeads: McpToolDefinition<typeof listInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["leads:read"],
   handler: async (input, ctx) => {
     const result = await listLeadsHandler(
       ctx.supabase,
@@ -130,6 +131,7 @@ export const crmGetLead: McpToolDefinition<typeof getInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["leads:read"],
   handler: async (input, ctx) => {
     const lead = await getLeadHandler(
       ctx.supabase,
@@ -180,6 +182,7 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["leads:write"],
   handler: async (input, ctx) => {
     const parsed = createLeadSchema.parse({
       pipeline_id: input.pipeline_id,
@@ -237,6 +240,7 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["leads:write"],
   handler: async (input, ctx) => {
     const { lead_id, ...rest } = input;
     const parsed = updateLeadSchema.parse(rest);
@@ -273,6 +277,7 @@ export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["pipelines:write"],
   handler: async (input, ctx) => {
     const lead = await moveLeadHandler(
       ctx.supabase,

@@ -20,7 +20,7 @@ import type { Tool } from 'ai';
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from '@/lib/ai/runtime/tools';
 import { mintEphemeralToken, revokeEphemeralToken } from '@/lib/ai/runtime/mcp_token';
 import type { McpAuthResult } from '@/lib/mcp/auth';
-import type { McpContext } from '@/lib/mcp/types';
+import { MCP_ADDITIONAL_SCOPES, type McpContext } from '@/lib/mcp/types';
 
 import type { Logger } from '../../obs/logger';
 import type { CrmEdgeConfig } from './mcp-client';
@@ -89,7 +89,7 @@ export async function buildMcpTurnTools(
     role: 'ai_operator',
     actor: ctx.actor,
     apiTokenId: ephemeral.id,
-    scopes: ['mcp:read', 'mcp:write', 'actor:ai_agent'],
+    scopes: ['mcp:read', 'mcp:write', 'actor:ai_agent', ...MCP_ADDITIONAL_SCOPES],
   };
   // O engine não usa o sinal de handoff da ponte (a tool está bloqueada) — dummy.
   const handoffSignal: RuntimeHandoffSignal = { triggered: false };
