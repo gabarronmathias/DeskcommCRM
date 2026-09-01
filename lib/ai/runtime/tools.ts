@@ -71,9 +71,6 @@ function wrapMcpTool(
       try {
         ensureScope(input.auth.scopes, def.requiresScope);
         ensureRole(input.auth.role, def.requiresRole);
-        for (const scope of def.requiresAdditionalScopes ?? []) {
-          ensureScope(input.auth.scopes, scope);
-        }
 
         // ── ESCOPO DE FUNIL (spec 17 passo 3) ────────────────────────────────
         //
@@ -158,7 +155,6 @@ function wrapMcpTool(
             tool_name: def.name,
             requires_role: def.requiresRole,
             requires_scope: def.requiresScope,
-            requires_additional_scopes: def.requiresAdditionalScopes ?? [],
             actor_role: input.auth.role,
             organization_id: input.ctx.organizationId,
             request_id: input.ctx.requestId,

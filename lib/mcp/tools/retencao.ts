@@ -121,7 +121,6 @@ export const crmScheduleFollowup: McpToolDefinition<typeof agendarShape> = {
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["followups:write"],
   handler: async (input, ctx) => {
     // ⚠️ UM RELÓGIO SÓ para decidir E para ensinar. O modelo NÃO SABE QUE DIA É
     // HOJE — medido num turno real: pedido "daqui a três dias", ele mandou
@@ -262,7 +261,6 @@ export const crmCancelFollowup: McpToolDefinition<typeof cancelarShape> = {
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["followups:write"],
   handler: async (input, ctx) => {
     const resultado = await cancelaRetornoNoCrm(
       {
@@ -334,7 +332,6 @@ export const crmListFollowups: McpToolDefinition<typeof listarShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  requiresAdditionalScopes: ["followups:read"],
   handler: async (input, ctx) => {
     const resultado = await listaRetornosNoCrm(
       { admin: ctx.supabase, orgId: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
@@ -396,7 +393,6 @@ export const crmListAtRiskLeads: McpToolDefinition<typeof radarShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  requiresAdditionalScopes: ["lead_risk:read"],
   handler: async (input, ctx) => {
     const radar = await carregaRadarDeRisco(ctx.supabase, {
       organizationId: ctx.organizationId,
@@ -429,7 +425,6 @@ export const crmCloseDemand: McpToolDefinition<typeof encerrarShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["leads:write", "pipelines:write"],
   handler: async (input, ctx) => {
     try {
       const { lead, jaEstava } = await encerraDemanda(
@@ -478,7 +473,6 @@ export const crmProposeReactivation: McpToolDefinition<typeof reativacaoShape> =
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["followups:write"],
   handler: async (input, ctx) => {
     const { data: lead, error } = await ctx.supabase
       .from("crm_leads")

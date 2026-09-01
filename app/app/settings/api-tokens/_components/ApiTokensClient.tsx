@@ -39,40 +39,20 @@ import {
  * escondia.
  */
 const SCOPES: { id: string; label: string }[] = [
-  { id: "mcp:read", label: "Agentes de IA podem chamar tools MCP de leitura (exige escopos do domínio)" },
-  { id: "mcp:write", label: "Agentes de IA podem chamar tools MCP de escrita (exige escopos do domínio)" },
-  // Opcional e sensível: eleva o token acima do default `agent`.
-  // Não usar para integrações comerciais limitadas; prefira escopos granulares.
-  { id: "role:manager", label: "Tratar o token como gerente (necessário p/ configuração)" },
+  { id: "mcp:read", label: "Agentes de IA podem LER o CRM (MCP)" },
+  { id: "mcp:write", label: "Agentes de IA podem AGIR no CRM (MCP)" },
+  // Sem isto o token nasce como 'agent' e as ferramentas de nível gerente
+  // (criar lead, atribuir conversa) respondem "Role 'agent' insufficient".
+  // O papel viaja junto dos escopos (ver lib/mcp/auth.ts) e também não
+  // aparecia em lugar nenhum da interface.
+  { id: "role:manager", label: "Tratar o token como gerente (necessário p/ criar e atribuir)" },
   { id: "contacts:read", label: "Ler contatos" },
   { id: "contacts:write", label: "Criar e editar contatos" },
   { id: "leads:read", label: "Ler leads" },
-  { id: "lead_risk:read", label: "Ler radar de leads em risco" },
   { id: "leads:write", label: "Criar e editar leads" },
-  { id: "messages:read", label: "Ler conversas e histórico de mensagens" },
+  { id: "messages:read", label: "Ler mensagens" },
   { id: "messages:write", label: "Enviar mensagens" },
   { id: "audit:read", label: "Ler o log de auditoria" },
-  { id: "pipelines:read", label: "Ler pipelines e stages" },
-  { id: "followups:read", label: "Ler follow-ups" },
-  { id: "automations:read", label: "Ler automações" },
-  { id: "webhooks:read", label: "Ler webhooks e eventos" },
-  { id: "team:read", label: "Ler membros da equipe" },
-  { id: "knowledge:read", label: "Ler acervo de conhecimento" },
-  { id: "org_memory:read", label: "Ler memória organizacional" },
-  { id: "privacy:read", label: "Ler pedidos de privacidade/LGPD" },
-  { id: "orders:read", label: "Ler pedidos" },
-  { id: "products:read", label: "Ler produtos" },
-  { id: "tags:read", label: "Ler tags" },
-  { id: "templates:read", label: "Ler respostas prontas/templates" },
-  { id: "queue:read", label: "Ler status da fila" },
-  { id: "handoff:read", label: "Ler casos humanos e atendentes" },
-  { id: "followups:write", label: "Agendar/cancelar follow-ups" },
-  { id: "automations:write", label: "Ativar/desativar automações" },
-  { id: "webhooks:write", label: "Criar/ativar webhooks" },
-  { id: "pipelines:write", label: "Alterar pipelines/stages" },
-  { id: "handoff:write", label: "Fazer handoff/atribuição de atendimento" },
-  { id: "tags:write", label: "Alterar tags" },
-  { id: "org_memory:write", label: "Alterar memória organizacional" },
 ];
 
 export function ApiTokensClient() {

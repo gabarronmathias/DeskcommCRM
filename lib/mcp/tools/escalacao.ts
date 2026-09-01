@@ -69,7 +69,6 @@ export const crmListAvailableAttendants: McpToolDefinition<typeof atendentesInpu
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  requiresAdditionalScopes: ["handoff:read"],
   handler: async (input, ctx) => {
     const agora = new Date();
     const roster = await carregarRosterDeAtendimento(ctx.supabase, ctx.organizationId);
@@ -116,7 +115,6 @@ export const crmListHumanCases: McpToolDefinition<typeof listaChamadosInputShape
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  requiresAdditionalScopes: ["handoff:read"],
   handler: async (input, ctx) => {
     const { chamados, abertos } = await listarChamados(ctx.supabase, ctx.organizationId, {
       estado: input.state,
@@ -144,7 +142,6 @@ export const crmGetHumanCase: McpToolDefinition<typeof chamadoInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  requiresAdditionalScopes: ["handoff:read"],
   handler: async (input, ctx) => {
     const chamado = await lerChamado(ctx.supabase, ctx.organizationId, input.case_id);
     if (!chamado) throw new Error("case_not_found");
@@ -185,7 +182,6 @@ export const crmAddCaseNote: McpToolDefinition<typeof notaInputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["handoff:write"],
   handler: async (input, ctx) => {
     const registrado = await registrarNotaDoAgente(
       getRequestPool(),
@@ -236,7 +232,6 @@ export const crmCloseHumanCase: McpToolDefinition<typeof encerrarInputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["handoff:write"],
   handler: async (input, ctx) => {
     const encerrado = await encerrarChamadoPeloAgente(
       getRequestPool(),
@@ -298,7 +293,6 @@ export const crmResumeAiAttendance: McpToolDefinition<typeof retomarInputShape> 
    */
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["handoff:write"],
   handler: async (input, ctx) => {
     // REGRA DURA 2, dita em voz alta: quem devolve o atendimento é uma PESSOA.
     // O cliente pediu para falar com gente; o agente desfazer a própria passagem

@@ -32,7 +32,6 @@ export const crmListContactOrders: McpToolDefinition<typeof pedidosInputShape> =
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  requiresAdditionalScopes: ["orders:read"],
   handler: async (input, ctx) => {
     const { data, error } = await ctx.supabase
       .from("orders")
@@ -77,7 +76,6 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
-  requiresAdditionalScopes: ["products:read"],
   handler: async (input, ctx) => {
     let q = ctx.supabase
       .from("nuvemshop_products")

@@ -47,7 +47,6 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
   category: "handoff",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  requiresAdditionalScopes: ["handoff:write"],
   handler: async (input, ctx) => {
     // Conversation must belong to org (defense in depth — service role bypassa RLS).
     const { data: conv, error: convErr } = await ctx.supabase
