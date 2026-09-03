@@ -68,16 +68,15 @@ async function validateAthosCorrelation(connection: AthosConnection, event: Atho
   const admin = createAdminClient();
   const { data: launch, error } = await admin
     .from("athos_sandbox_launches")
-    .select("crm_contact_id, expires_at, store_ref")
+    .select("crm_contact_id, store_ref")
     .eq("launch_id", launchId)
     .eq("connection_id", connection.id)
     .eq("store_ref", connection.store_ref)
     .maybeSingle();
 
+  // launch expiry protects context retrieval only. Events may legitimately
+  // arrive later as an order moves through preparing/delivery/completed.
   if (error || !launch) throw new Error("athos_launch_not_found");
-  if (new Date(launch.expires_at as string).getTime() <= Date.now()) {
-    throw new Error("athos_launch_expired");
-  }
 
   const explicitContactId = event.correlation?.crm_contact_id ?? null;
   if (explicitContactId && explicitContactId !== launch.crm_contact_id) {
