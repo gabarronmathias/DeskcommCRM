@@ -28,11 +28,6 @@ async function main(): Promise<void> {
   const admin = createAdminClient();
 
   const credentials = generateAthosCredentials();
-  const encrypted = await admin.rpc("fn_encrypt_oauth", { plaintext: credentials.hmacSecret });
-  if (encrypted.error || !encrypted.data) {
-    throw encrypted.error ?? new Error("HMAC secret encryption failed");
-  }
-
   const bearerExpiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
   const connectionWrite = await admin
     .from("athos_sandbox_connections")
@@ -42,7 +37,6 @@ async function main(): Promise<void> {
         store_ref: storeRef,
         menu_url: menuUrl,
         bearer_hash: hashBearerToken(credentials.bearer),
-        hmac_secret_encrypted: encrypted.data,
         scopes: ["partner:athos", "athos:launch:read", "athos:events:write"],
         active: true,
         bearer_expires_at: bearerExpiresAt,
@@ -65,8 +59,8 @@ async function main(): Promise<void> {
     storeRef,
   });
 
-  // Bearer and HMAC are shown exactly once so they can be handed to Athos.
-  // Only their hash/encrypted form remains in Supabase.
+  // Bearer and derived HMAC are shown exactly once so they can be handed to Athos.
+  // Supabase persists only SHA-256(bearer), never a reversible partner secret.
   process.stdout.write(
     `${JSON.stringify(
       {
