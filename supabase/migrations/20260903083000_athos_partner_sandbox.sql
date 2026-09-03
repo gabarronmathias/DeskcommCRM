@@ -13,7 +13,6 @@ create table if not exists public.athos_sandbox_connections (
   store_ref text not null unique check (length(store_ref) between 1 and 160),
   menu_url text not null check (menu_url ~ '^https://'),
   bearer_hash text not null unique check (bearer_hash ~ '^[a-f0-9]{64}$'),
-  hmac_secret_encrypted bytea not null,
   scopes text[] not null default array['partner:athos','athos:launch:read','athos:events:write']::text[],
   active boolean not null default true,
   bearer_expires_at timestamptz not null default (now() + interval '90 days'),
