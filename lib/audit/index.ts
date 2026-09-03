@@ -31,8 +31,15 @@ export function isServiceRoleConfigured(): boolean {
   return key.length > 0 && !key.startsWith("PLACEHOLDER");
 }
 
+type AthosAuditAction =
+  | "athos.launch_read"
+  | "athos.webhook_received"
+  | "athos.webhook_invalid_signature"
+  | "athos.webhook_processed"
+  | "athos.webhook_processing_failed";
+
 interface AuditEntry {
-  action: AuditAction;
+  action: AuditAction | AthosAuditAction;
   actorUserId?: string | null;
   actorApiTokenId?: string | null;
   organizationId?: string | null;
