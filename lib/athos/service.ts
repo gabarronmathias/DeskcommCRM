@@ -12,7 +12,6 @@ export interface AthosConnection {
   store_ref: string;
   menu_url: string;
   bearer_hash: string;
-  hmac_secret_encrypted: string;
   scopes: string[];
   active: boolean;
   bearer_expires_at: string;
@@ -20,7 +19,7 @@ export interface AthosConnection {
 }
 
 export type AthosAuthResult =
-  | { ok: true; connection: AthosConnection }
+  | { ok: true; connection: AthosConnection; bearerToken: string }
   | { ok: false; status: 401 | 403; code: string; message: string };
 
 export async function authenticateAthosPartner(
@@ -37,7 +36,7 @@ export async function authenticateAthosPartner(
   const { data, error } = await admin
     .from("athos_sandbox_connections")
     .select(
-      "id, environment, store_ref, menu_url, bearer_hash, hmac_secret_encrypted, scopes, active, bearer_expires_at, revoked_at",
+      "id, environment, store_ref, menu_url, bearer_hash, scopes, active, bearer_expires_at, revoked_at",
     )
     .eq("bearer_hash", bearerHash)
     .eq("environment", "sandbox")
@@ -59,22 +58,7 @@ export async function authenticateAthosPartner(
     return { ok: false, status: 403, code: "forbidden", message: "scope_missing" };
   }
 
-  return { ok: true, connection };
-}
-
-export async function decryptAthosHmacSecret(connection: AthosConnection): Promise<string | null> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc("fn_decrypt_oauth", {
-    ciphertext: connection.hmac_secret_encrypted,
-  });
-  if (error || !data) {
-    logger.error("[athos.sandbox.crypto] HMAC secret decrypt failed", {
-      connectionId: connection.id,
-      errorCode: error?.code,
-    });
-    return null;
-  }
-  return data as string;
+  return { ok: true, connection, bearerToken: token };
 }
 
 async function validateAthosCorrelation(connection: AthosConnection, event: AthosEvent): Promise<void> {
