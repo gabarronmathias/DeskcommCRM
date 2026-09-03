@@ -90,10 +90,24 @@ export function hashBearerToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
+/**
+ * Sandbox-only credential derivation.
+ *
+ * We intentionally persist only bearer_hash. The HMAC secret is derived from the
+ * bearer presented on the authenticated request, so no reversible partner secret
+ * exists at rest in Supabase. Production must use independent encrypted secrets.
+ */
+export function deriveAthosSandboxHmacSecret(bearerToken: string): string {
+  return createHash("sha256")
+    .update(`deskcomm-athos-sandbox-v1:${bearerToken}`, "utf8")
+    .digest("hex");
+}
+
 export function generateAthosCredentials(): { bearer: string; hmacSecret: string } {
+  const bearer = `dsk_${randomBytes(32).toString("base64url")}`;
   return {
-    bearer: `dsk_${randomBytes(32).toString("base64url")}`,
-    hmacSecret: randomBytes(32).toString("base64url"),
+    bearer,
+    hmacSecret: deriveAthosSandboxHmacSecret(bearer),
   };
 }
 
