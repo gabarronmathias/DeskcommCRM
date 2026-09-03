@@ -165,8 +165,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     action: "athos.webhook_received",
     organizationId: auth.connection.organization_id,
     resourceType: "athos_webhook",
-    resourceId: event.event_id,
-    metadata: { event_type: event.event_type, store_ref: event.store_ref },
+    resourceId: receipt.id as string,
+    metadata: { event_id: event.event_id, event_type: event.event_type, store_ref: event.store_ref },
   });
 
   // Next.js after() keeps the projection outside the response path while still
