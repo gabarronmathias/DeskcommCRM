@@ -198,8 +198,8 @@ export async function processAthosEvent(
       action: "athos.webhook_processing_failed",
       organizationId: connection.organization_id,
       resourceType: "athos_webhook",
-      resourceId: event.event_id,
-      metadata: { event_type: event.event_type, error: message },
+      resourceId: receiptId,
+      metadata: { event_id: event.event_id, event_type: event.event_type, error: message },
     });
   }
 }
