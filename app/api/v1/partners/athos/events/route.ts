@@ -5,12 +5,12 @@ import { fail, ok } from "@/lib/api/wrappers";
 import {
   ATHOS_RATE_LIMIT_PER_MINUTE,
   athosEventSchema,
+  deriveAthosSandboxHmacSecret,
   isFreshAthosTimestamp,
   verifyAthosSignature,
 } from "@/lib/athos/contract";
 import {
   authenticateAthosPartner,
-  decryptAthosHmacSecret,
   processAthosEvent,
 } from "@/lib/athos/service";
 import { logger } from "@/lib/logger";
@@ -32,11 +32,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const rawBody = await req.text();
-  const secret = await decryptAthosHmacSecret(auth.connection);
-  if (!secret) {
-    return fail("internal_error", "partner_secret_unavailable", 500, { requestId });
-  }
-
+  const secret = deriveAthosSandboxHmacSecret(auth.bearerToken);
   const signature = req.headers.get("x-athos-signature");
   if (!verifyAthosSignature(timestamp, rawBody, signature, secret)) {
     logger.warn("[athos.sandbox.events] invalid signature", {
