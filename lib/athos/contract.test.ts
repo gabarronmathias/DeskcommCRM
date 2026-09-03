@@ -52,8 +52,10 @@ describe("Athos partner contract", () => {
   });
 
   it("rejects unsupported order statuses", () => {
-    const invalid = structuredClone(validEvent) as Record<string, any>;
-    invalid.order.status = "unknown";
+    const invalid = {
+      ...validEvent,
+      order: { ...validEvent.order, status: "unknown" },
+    };
     expect(athosEventSchema.safeParse(invalid).success).toBe(false);
   });
 
