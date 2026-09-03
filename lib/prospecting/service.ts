@@ -213,9 +213,13 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
     ...(prospect.source === "google_places" ? {
       google_place_id: prospect.placeId,
       google_maps_url: prospect.mapsUrl,
-    } : {
+    } : prospect.source === "openstreetmap" ? {
       attribution: "© OpenStreetMap contributors",
       source_license: "ODbL-1.0",
+    } : {
+      // manual_curated: leads importados de planilha/CSV curado.
+      // Sem attribution externa, sem license ODbL: o dado é nosso.
+      curated_origin: "csv",
     }),
     publicly_listed_business_phone: true,
     legal_basis: "legitimate_interest_b2b",

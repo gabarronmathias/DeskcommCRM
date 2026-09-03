@@ -38,7 +38,7 @@ interface GooglePlaceRaw {
 }
 
 export interface PublicBusinessProspect {
-  source: "google_places" | "openstreetmap";
+  source: "google_places" | "openstreetmap" | "manual_curated";
   sourceId: string;
   sourceUrl: string | null;
   placeId: string;
