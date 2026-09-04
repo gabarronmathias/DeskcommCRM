@@ -403,10 +403,12 @@ export async function dispatchQueueRow(db: SupabaseClient, row: QueueRow): Promi
 export async function claimOne(
   db: SupabaseClient,
   organizationId: string,
+  campaign: string | null = null,
 ): Promise<QueueRow | null> {
   const { data, error } = await db.rpc("fn_claim_prospecting_outbound", {
     p_org: organizationId,
     p_limit: 1,
+    p_campaign: campaign,
   });
   if (error) throw new Error(`prospecting_claim: ${error.message}`);
   return ((data ?? [])[0] as QueueRow | undefined) ?? null;

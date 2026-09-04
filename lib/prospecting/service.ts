@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { PublicBusinessProspect } from "./google-places";
 import {
+  activeCampaign,
   NEW_STAGE_NAME,
   OPENING_MESSAGE,
   TARGET_ORG_SLUG,
@@ -206,6 +207,10 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
   const domain = domainOf(prospect.website);
   const tags = ["prospeccao", "foodservice", segmentTag(prospect.category)];
   const customFields = fields(prospect, phone, domain);
+  // A campanha ATIVA é o discriminador de claim na fila outbound. Manual_curated
+  // = dado nosso (CSV curado), sem ODbL; OSM legado tem campanha de arquivo
+  // (marcada por migration/route separada) e fica fora do claim da campanha atual.
+  const campaign = activeCampaign();
   const sourceMetadata = {
     source: prospect.source,
     source_id: prospect.sourceId,
@@ -225,6 +230,7 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
     legal_basis: "legitimate_interest_b2b",
     business_status: prospect.businessStatus,
     captured_at: new Date().toISOString(),
+    campaign,
   };
 
   const existing = await findExisting(db, ctx, prospect, phone, domain);
@@ -293,6 +299,7 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
       source_id: prospect.sourceId,
       ...(prospect.source === "google_places" ? { google_place_id: prospect.placeId } : {}),
       prospecting: true,
+      campaign,
     },
   }).select("id").single();
   if (conversationError || !conversation) throw new Error(`prospecting_conversation_insert: ${conversationError?.message ?? "no_row"}`);
@@ -306,7 +313,14 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
     kind: "opening",
     message_body: OPENING_MESSAGE(prospect.companyName),
     idempotency_key: `opening:${prospect.source}:${prospect.sourceId}`,
-    metadata: { source: prospect.source, source_id: prospect.sourceId, company: prospect.companyName, category: prospect.category, city: prospect.city },
+    metadata: {
+      source: prospect.source,
+      source_id: prospect.sourceId,
+      company: prospect.companyName,
+      category: prospect.category,
+      city: prospect.city,
+      campaign,
+    },
   }).select("id").single();
   if (queueError || !queued) throw new Error(`prospecting_queue_insert: ${queueError?.message ?? "no_row"}`);
 

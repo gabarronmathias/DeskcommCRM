@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { isWithinBusinessHours, loadProspectingConfig } from "./config";
+import { activeCampaign, isWithinBusinessHours, loadProspectingConfig } from "./config";
 import { claimOne, dispatchQueueRow, type DispatchResult } from "./dispatch";
 import { targetOrganizationId } from "./service";
 
@@ -44,7 +44,7 @@ export async function dispatchProspectingOnConnection(
     return { outcome: "skipped", reason: "daily_limit_reached" };
   }
 
-  const row = await claimOne(db, organizationId);
+  const row = await claimOne(db, organizationId, activeCampaign() || null);
   if (!row) return { outcome: "skipped", reason: "queue_empty" };
   return dispatchQueueRow(db, row);
 }

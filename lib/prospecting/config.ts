@@ -4,6 +4,31 @@ export const NEW_STAGE_NAME = "Novo Lead";
 export const SARAH_STAGE_NAME = "Sarah Atendendo";
 export const FOLLOWUP_FLOW_NAME = "Follow-up prospecção 48h";
 
+/**
+ * ID permanente da campanha curada da Gabarron & Mathias. Usado em
+ * `metadata.campaign` da fila outbound para que:
+ *   - o claim da RPC filtre rows dessa campanha (excluindo o legado OSM
+ *     arquivado com `metadata.campaign = "gb-osm-archive-2026-08"`);
+ *   - o dry-run do cron mostre só o que DEVE ser enviado;
+ *   - os relatórios segreguem produção por campanha sem hardcode de empresa.
+ *
+ * Sobrescrevível por env `PROSPECTING_CAMPAIGN` em produção; default congelado
+ * no código (mesmo do app em self-host).
+ */
+export const CAMPAIGN_GB_FOODSERVICE_SJC_2026_09 = "gb-foodservice-sjc-2026-09";
+export const CAMPAIGN_GB_OSM_ARCHIVE_2026_08 = "gb-osm-archive-2026-08";
+
+/**
+ * Campanha ATIVA do dispatcher oficial. Default = GB foodservice SJC 2026-09.
+ * Para reativar uma campanha legada, setar `PROSPECTING_CAMPAIGN=""` (string
+ * vazia = claim cego, comportamento legado) ou um outro id.
+ */
+export function activeCampaign(): string {
+  const raw = process.env.PROSPECTING_CAMPAIGN;
+  if (raw === undefined) return CAMPAIGN_GB_FOODSERVICE_SJC_2026_09;
+  return raw.trim();
+}
+
 export const OPENING_MESSAGE = (company: string) =>
   `Olá! Tudo bem?\nSou a Sarah, da Gabarron & Mathias.\n\nVi a ${company} e queria me apresentar: Somos especialistas em atendimento para delivery e ajudamos negócios de alimentação a vender mais, recuperar oportunidades e trazer clientes de volta pelo WhatsApp.\n\nComo vocês organizam o atendimento por aí hoje?`;
 
