@@ -72,6 +72,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   try {
     const waha = getWahaClient();
+    if (!waha) {
+      return fail("waha_not_configured", "WAHA_API_BASE_URL/KEY ausentes em producao", 503, { requestId });
+    }
     const result = await waha.checkPhoneExists(session, normalized);
     return ok(
       {
