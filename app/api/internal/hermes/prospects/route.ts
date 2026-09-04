@@ -100,12 +100,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     // importProspect faz TUDO: dedupe, contact, lead, conversation, queue
     // row + idempotency_key + metadata.campaign. O Hermes não duplica nada.
-    // O `campaign` do prospect sobrescreve a ativa — é o ponto de entrada
-    // para campanhas de teste/integracao (ex.: gb-hermes-integration-test)
-    // sem alterar o env `PROSPECTING_CAMPAIGN` em produção.
-    const result = await importProspect(supabase, parsed.data.prospect, {
-      campaign: parsed.data.prospect.campaign,
-    });
+    // O `campaign` vem no payload mas NÃO faz parte de PublicBusinessProspect
+    // (que é o tipo de importProspect). Destruturamos para passar como
+    // ImportProspectOptions, e nunca misturar no lead/campaign payload.
+    const { campaign, ...prospect } = parsed.data.prospect;
+    const result = await importProspect(supabase, prospect, { campaign });
     return ok(
       {
         outcome: result.outcome,
