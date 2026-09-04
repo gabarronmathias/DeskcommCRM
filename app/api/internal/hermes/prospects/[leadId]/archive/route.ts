@@ -53,8 +53,8 @@ export async function POST(
     return fail("forbidden", "HERMES_API_TOKEN ausente ou invalido.", 401, { requestId });
   }
   const leadId = params.leadId;
-  if (!leadId || !/^[0-9a-f-]{36}$/i.test(leadId)) {
-    return fail("invalid_lead_id", "leadId deve ser UUID", 400, { requestId });
+  if (!leadId || !/^[0-9a-f-]{32,40}$/i.test(leadId)) {
+    return fail("invalid_lead_id", `leadId deve ser UUID (got: ${leadId?.length} chars)`, 400, { requestId });
   }
 
   const admin = createAdminClient();
