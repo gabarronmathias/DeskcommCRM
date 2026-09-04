@@ -40,8 +40,6 @@ import fs from "node:fs";
 
 loadEnvConfig(process.cwd());
 
-import { parse } from "csv-parse/sync";
-
 import type { PublicBusinessProspect } from "../lib/prospecting/google-places";
 import {
   activeCampaign,
@@ -79,7 +77,7 @@ function toProspect(row: CsvRow, campaign: string): PublicBusinessProspect {
     state: extractState(row.Cidade),
     phoneRaw,
     website: row["Site / Instagram"]?.trim() || null,
-    address: row.Endereço?.trim() || null,
+    address: row.Endereço?.trim() || "",
     neighborhood: null,
     placeId: "",
     mapsUrl: null,
@@ -96,6 +94,60 @@ function toProspect(row: CsvRow, campaign: string): PublicBusinessProspect {
 function extractState(_city: string): string {
   // Heurística simples para o CSV SJC/Jacareí: tudo SP.
   return "SP";
+}
+
+/**
+ * Parser CSV mínimo (semicolon-separated, RFC 4180 com aspas duplas). O
+ * CSV do GB tem 14 colunas fixas; não há campos com aspas escapadas além
+ * de aspas duplas literais. Mantido local para não depender do pacote
+ * `csv-parse` (que não está em dependencies).
+ */
+function parseCsvText(text: string): CsvRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
+  if (lines.length === 0) return [];
+  const headers = parseCsvLine(lines[0]!);
+  const rows: CsvRow[] = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const cells = parseCsvLine(lines[i]!);
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => {
+      row[h] = (cells[idx] ?? "").trim();
+    });
+    rows.push(row as unknown as CsvRow);
+  }
+  return rows;
+}
+
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === ";") {
+        out.push(cur);
+        cur = "";
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else {
+        cur += ch;
+      }
+    }
+  }
+  out.push(cur);
+  return out;
 }
 
 async function main(): Promise<void> {
@@ -116,7 +168,7 @@ async function main(): Promise<void> {
   const db = createAdminClient();
 
   const raw = fs.readFileSync(csvPath, "utf8");
-  const rows = parse(raw, { columns: true, skip_empty_lines: true, delimiter: ";" }) as CsvRow[];
+  const rows = parseCsvText(raw);
   console.log(
     `[import-curated-leads] csv=${csvPath} linhas=${rows.length} limit=${limit} campaign=${campaign}`,
   );

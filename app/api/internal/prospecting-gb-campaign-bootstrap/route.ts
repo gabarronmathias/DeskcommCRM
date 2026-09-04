@@ -39,7 +39,6 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { type NextRequest } from "next/server";
-import { parse as parseCsv } from "csv-parse/sync";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
@@ -132,7 +131,7 @@ function toProspect(row: CsvRow, campaign: string) {
     state: extractState(row.Cidade),
     phoneRaw,
     website: row["Site / Instagram"]?.trim() || null,
-    address: row.Endereço?.trim() || null,
+    address: row.Endereço?.trim() || "",
     neighborhood: null,
     placeId: "",
     mapsUrl: null,
@@ -187,7 +186,7 @@ async function importCurated(
   // a rota roda no filesystem do serverless. A solução mais simples é o caller
   // (esta rota temporária) embutir o CSV.
   const csvText = EMBEDDED_CSV;
-  const rows = parseCsv(csvText, { columns: true, skip_empty_lines: true, delimiter: ";" }) as CsvRow[];
+  const rows = parseCsvText(csvText) as CsvRow[];
 
   const { importProspect } = await import("@/lib/prospecting/service");
   let created = 0;
@@ -244,6 +243,60 @@ Hamburgueria 480 Graus;São José dos Campos;Hamburgueria;A;(12) 99250-6831;Conf
 Garage 88 Burger;São José dos Campos;Hamburgueria;A;(12) 98868-0088;Confirmado;Rodovia Monteiro Lobato, 1234;;Pedido direto no WhatsApp;Pendente;Novo — não contatado;Validar no CRM e abordar;https://fasty.food/catalogo/sp/sao-jose-dos-campos/r/garage-88-burger/;2026-09-03 00:00:00
 forastera.sjc;São José dos Campos;Pizzaria;A;(12) 99213-1713;Confirmado;Jardim Aquarius;;Pedido direto no WhatsApp;Pendente;Novo — não contatado;Validar no CRM e abordar;https://fasty.food/catalogo/sp/sao-jose-dos-campos/r/forastera-sjc/;2026-09-03 00:00:00
 Pizzaria São Paulo;Caçapava;Pizzaria;A;(12) 3652-1234;Confirmado;Av. Brasil, 100 - Centro;;Pedidos por WhatsApp;Pendente;Novo — não contatado;Validar no CRM e abordar;https://fasty.food/catalogo/sp/cacapava/r/pizzaria-sao-paulo/;2026-09-03 00:00:00`;
+
+/**
+ * Parser CSV mínimo (semicolon-separated, RFC 4180 com aspas duplas). O
+ * CSV do GB tem 14 colunas fixas; não há campos com aspas escapadas além
+ * de aspas duplas literais. Mantido local para não depender do pacote
+ * `csv-parse` (que não está em dependencies).
+ */
+function parseCsvText(text: string): CsvRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
+  if (lines.length === 0) return [];
+  const headers = parseCsvLine(lines[0]!);
+  const rows: CsvRow[] = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const cells = parseCsvLine(lines[i]!);
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => {
+      row[h] = (cells[idx] ?? "").trim();
+    });
+    rows.push(row as unknown as CsvRow);
+  }
+  return rows;
+}
+
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === ";") {
+        out.push(cur);
+        cur = "";
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else {
+        cur += ch;
+      }
+    }
+  }
+  out.push(cur);
+  return out;
+}
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
