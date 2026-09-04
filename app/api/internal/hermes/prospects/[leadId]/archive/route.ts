@@ -46,13 +46,14 @@ function isAuthorized(request: Request): boolean {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { leadId: string } },
+  { params }: { params: Promise<{ leadId: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   if (!isAuthorized(req)) {
     return fail("forbidden", "HERMES_API_TOKEN ausente ou invalido.", 401, { requestId });
   }
-  const leadId = params.leadId;
+  const { leadId: rawLeadId } = await params;
+  const leadId = rawLeadId;
   if (!leadId || !/^[0-9a-f-]{32,40}$/i.test(leadId)) {
     return fail("invalid_lead_id", `leadId deve ser UUID (got: ${leadId?.length} chars)`, 400, { requestId });
   }
