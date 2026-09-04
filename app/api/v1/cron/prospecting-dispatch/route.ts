@@ -11,7 +11,6 @@ import { targetOrganizationId } from "@/lib/prospecting/service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
-export const revalidate = 0;
 
 async function handle(request: NextRequest): Promise<Response> {
   const requestId = randomUUID();
