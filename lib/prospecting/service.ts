@@ -200,7 +200,21 @@ function fields(prospect: PublicBusinessProspect, phone: string, domain: string 
   };
 }
 
-export async function importProspect(db: SupabaseClient, prospect: PublicBusinessProspect): Promise<ImportedProspect> {
+export interface ImportProspectOptions {
+  /**
+   * Override da campanha. Se NÃO fornecido, usa `activeCampaign()`.
+   * Importante para clientes máquina-a-máquina (Hermes, integrações
+   * de BI) que precisam importar prospect para uma campanha diferente
+   * da ativa, em ambiente de teste/integração.
+   */
+  campaign?: string;
+}
+
+export async function importProspect(
+  db: SupabaseClient,
+  prospect: PublicBusinessProspect,
+  options: ImportProspectOptions = {},
+): Promise<ImportedProspect> {
   const phone = normalizeBrazilianCommercialPhone(prospect.phoneRaw);
   if (!phone) return { outcome: "invalid", company: prospect.companyName, phone: null, category: prospect.category, city: prospect.city, reason: "invalid_phone" };
   const ctx = await loadTargetContext(db);
@@ -210,7 +224,10 @@ export async function importProspect(db: SupabaseClient, prospect: PublicBusines
   // A campanha ATIVA é o discriminador de claim na fila outbound. Manual_curated
   // = dado nosso (CSV curado), sem ODbL; OSM legado tem campanha de arquivo
   // (marcada por migration/route separada) e fica fora do claim da campanha atual.
-  const campaign = activeCampaign();
+  // Override por opção: permite que integrações (Hermes, BI, testes) usem uma
+  // campanha diferente sem mudar o env. Vazio = cai na ativa.
+  const requested = options.campaign?.trim();
+  const campaign = requested && requested.length > 0 ? requested : activeCampaign();
   const sourceMetadata = {
     source: prospect.source,
     source_id: prospect.sourceId,
