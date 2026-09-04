@@ -46,7 +46,7 @@ vi.mock("@/lib/supabase/admin", () => ({
  */
 const sessionRow = {
   provider: "waha",
-  waha_session_name: "default",
+  waha_session_name: "test-session",
   meta_phone_number_id: null,
   zernio_account_id: null,
 };

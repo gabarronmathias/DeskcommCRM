@@ -18,14 +18,20 @@
  *
  * ─── A ORDEM é a regra, não um detalhe de implementação ─────────────────────
  *
- * Os três rodam em sequência e a sequência carrega significado:
+ * Os efeitos rodam em sequência e a sequência carrega significado:
  *
- *   1. opt-out  — grava `is_blocked` ANTES do lead;
- *   2. lead     — `garantirLeadDaConversa` RELÊ o contato e recusa criar card
- *                 para bloqueado. Inverter 1 e 2 faz quem acabou de pedir para
- *                 sair virar oportunidade nova no funil;
- *   3. despacho — o turno do agente resolve o lead ativo do contato. Emitir
- *                 antes do passo 2 faria o primeiro turno rodar sem lead.
+ *   1. opt-out        — grava `is_blocked` ANTES do lead;
+ *   2. lead           — `garantirLeadDaConversa` RELÊ o contato e recusa criar
+ *                       card para bloqueado. Inverter 1 e 2 faz quem acabou de
+ *                       pedir para sair virar oportunidade nova no funil;
+ *   3. autoresponder  — classifica se a inbound é automática (whatsapp business
+ *                       welcome / bot). Se for, GRAVA a evidência em
+ *                       messages.metadata E SAI — sem despacho do agente,
+ *                       sem mexer em last_reply_at, sem cancelar follow-up;
+ *   4. despacho       — o turno do agente resolve o lead ativo do contato.
+ *                       Emitir antes do passo 2 faria o primeiro turno rodar
+ *                       sem lead. Emitir sem o passo 3 fez a Paizzani ser
+ *                       respondida como se fosse humana.
  *
  * Trocar a ordem não quebra teste de tipo nem derruba nada em runtime: quebra
  * em silêncio, semanas depois, num card que não devia existir. Por isso está
@@ -39,6 +45,7 @@
  * dentro, com log, e o seguinte roda mesmo assim.
  */
 import { audit } from "@/lib/audit";
+import { classificarRespostaAutomatica } from "@/lib/channels/autoresponder";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 import { logger } from "@/lib/logger";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -120,7 +127,7 @@ export interface EntradaDeMensagem {
 }
 
 /**
- * Roda os três efeitos, em ordem, para uma mensagem de ENTRADA recém-gravada.
+ * Roda os efeitos, em ordem, para uma mensagem de ENTRADA recém-gravada.
  *
  * Só para `inbound`: um envio nosso (ou feito do celular do operador) não pede
  * para sair, não abre demanda e não acorda o agente.
@@ -131,6 +138,11 @@ export async function aplicarEfeitosPosEntrada(
 ): Promise<void> {
   await aplicarOptOut(admin, entrada);
   await abrirDemanda(admin, entrada);
+  // Passo 3 é um FILTRO: se a mensagem é autoresposta, persistimos a
+  // evidência e saímos. O despacho do agente (passo 4) NÃO roda.
+  // Mensagem fica gravada em `messages` normalmente — a regra é que
+  // autoresposta NÃO conta como reply comercial.
+  if (await classificarComoAutoresposta(admin, entrada)) return;
   await pedirDespachoDoAgente(admin, entrada);
 }
 
@@ -217,7 +229,114 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
 }
 
 /**
- * 3 · Acorda o agente.
+ * 3 · Filtro de autoresposta (whatsapp business welcome / bot comercial).
+ *
+ * Insere passo entre o `abrirDemanda` e o `pedirDespachoDoAgente` (que vira
+ * passo 4). A classificação é feita pelo `classificarRespostaAutomatica` (em
+ * `./autoresponder.ts`), baseada em sinais COMBINADOS — não em regex de
+ * palavras-chave. Threshold 3 (calibrado contra o exemplo real da Paizzani
+ * e os casos negativos do brief).
+ *
+ * QUANDO a mensagem é autoresposta:
+ *   - persiste `metadata.automated_reply = true` (com score e reasons) em
+ *     `messages` — auditoria, sem mexer no histórico de inbound;
+ *   - NÃO atualiza `last_reply_at` em `crm_leads.custom_fields` (porque o
+ *     autor não é uma pessoa interessada);
+ *   - NÃO cancela follow-up nem agenda nova (porque não houve reply real);
+ *   - NÃO chama `ai_agent.dispatch_requested` (Sarah fica em silêncio);
+ *   - RETORNA true, e o chamador pula o passo de despacho.
+ *
+ * QUANDO é humana: a função devolve false e a cadeia segue normal.
+ *
+ * Falha aqui NUNCA derruba a ingestão (a mensagem JÁ está gravada). Erro
+ * de classificação é logado e a mensagem é tratada como humana — caminho
+ * de pior caso seguro, não pior caso silencioso.
+ */
+async function classificarComoAutoresposta(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<boolean> {
+  if (!entrada.messageId || !entrada.texto) return false;
+  let msDesdeUltimoOutbound: number | null = null;
+  try {
+    const { data: lastOutbound } = await admin
+      .from("messages")
+      .select("sent_at")
+      .eq("organization_id", entrada.organizationId)
+      .eq("conversation_id", entrada.conversationId)
+      .eq("direction", "outbound")
+      .order("sent_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastOutbound?.sent_at) {
+      const t = Date.parse(String(lastOutbound.sent_at));
+      if (Number.isFinite(t)) msDesdeUltimoOutbound = Date.now() - t;
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: falha ao medir timing do último outbound (trata como humano)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "unknown",
+    });
+  }
+
+  const cls = classificarRespostaAutomatica(entrada.texto, { msDesdeUltimoOutbound });
+
+  if (!cls.isAutoresposta) {
+    logger.info("pos-entrada: inbound classificada como humana", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      message_id: entrada.messageId,
+      score: cls.score,
+      threshold: cls.threshold,
+    });
+    return false;
+  }
+
+  // Persiste a evidência em messages.metadata, sem mexer em outros campos.
+  try {
+    const { error } = await admin
+      .from("messages")
+      .update({
+        metadata: {
+          automated_reply: true,
+          autoresponder_score: cls.score,
+          autoresponder_threshold: cls.threshold,
+          autoresponder_signals: cls.sinais
+            .filter((s) => s.contribuiu)
+            .map((s) => ({ code: s.codigo, detail: s.detalhe })),
+        },
+      })
+      .eq("id", entrada.messageId);
+    if (error) {
+      logger.warn("pos-entrada: persistir autoresponder metadata falhou (a inbound segue na fila)", {
+        organization_id: entrada.organizationId,
+        message_id: entrada.messageId,
+        detail: error.message.slice(0, 160),
+      });
+    } else {
+      logger.info("pos-entrada: inbound classificada como autoresposta — agente NÃO acorda", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        message_id: entrada.messageId,
+        score: cls.score,
+        threshold: cls.threshold,
+        sinais: cls.sinais.filter((s) => s.contribuiu).map((s) => s.codigo),
+      });
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: persistir autoresponder metadata explodiu (a inbound segue na fila)", {
+      organization_id: entrada.organizationId,
+      message_id: entrada.messageId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "unknown",
+    });
+  }
+
+  return true;
+}
+
+/**
+ * 4 · Acorda o agente.
  *
  * Emitir o evento NÃO faz o assistente responder: o consumidor só abre turno se
  * a organização tiver versão publicada apontando para esta sessão. Sem versão
