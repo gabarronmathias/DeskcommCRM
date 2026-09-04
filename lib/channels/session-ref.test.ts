@@ -13,10 +13,13 @@ describe("resolveSessionRef — fail closed em placeholders", () => {
     expect(r).toBe("sarah-gb-sjc");
   });
 
-  it("cenario 9a: WAHA com waha_session_name='default' LANÇA (fail closed)", () => {
-    expect(() =>
-      resolveSessionRef({ provider: "waha", waha_session_name: "default" }),
-    ).toThrow(ChannelSessionUnresolvedError);
+  it("cenario 8b: WAHA com waha_session_name='default' (nome real da sessao legacy da GB) NAO LANCA", () => {
+    // O nome "default" e o nome REAL de uma sessao WAHA Plus pre-criada da
+    // org gabarron-mathias (confirmado via GET /api/sessions em 2026-09-04:
+    // status=WORKING, me_id=5512988008808@c.us, me_pushname=Sarah).
+    // Tratar como placeholder quebraria o envio de Sarah em silencio.
+    const r = resolveSessionRef({ provider: "waha", waha_session_name: "default" });
+    expect(r).toBe("default");
   });
 
   it("cenario 9b: WAHA com waha_session_name vazia LANÇA", () => {
@@ -29,6 +32,18 @@ describe("resolveSessionRef — fail closed em placeholders", () => {
     expect(() => resolveSessionRef({ provider: "waha", waha_session_name: "   " })).toThrow(
       ChannelSessionUnresolvedError,
     );
+  });
+
+  it("cenario 9c-extra: WAHA com waha_session_name='null' (sentinela de debug) LANÇA", () => {
+    expect(() => resolveSessionRef({ provider: "waha", waha_session_name: "null" })).toThrow(
+      ChannelSessionUnresolvedError,
+    );
+  });
+
+  it("cenario 9c-extra-2: WAHA com waha_session_name='undefined' (sentinela) LANÇA", () => {
+    expect(() =>
+      resolveSessionRef({ provider: "waha", waha_session_name: "undefined" }),
+    ).toThrow(ChannelSessionUnresolvedError);
   });
 
   it("cenario 9d: Meta com meta_phone_number_id vazio NÃO LANÇA (Meta tem fallback de env)", () => {
@@ -47,16 +62,15 @@ describe("resolveSessionRef — fail closed em placeholders", () => {
 
   it("cenario 9f: Erro carrega provider e attemptedRef para diagnóstico", () => {
     try {
-      resolveSessionRef({ provider: "waha", waha_session_name: "DEFAULT" });
+      resolveSessionRef({ provider: "waha", waha_session_name: "" });
       expect.fail("deveria ter lançado");
     } catch (err) {
       expect(err).toBeInstanceOf(ChannelSessionUnresolvedError);
       const e = err as ChannelSessionUnresolvedError;
       expect(e.provider).toBe("waha");
-      expect(e.attemptedRef).toBe("DEFAULT");
+      expect(e.attemptedRef).toBe("");
       expect(e.message).toContain("channel_session_unresolved");
       expect(e.message).toContain("waha");
-      expect(e.message).toContain("DEFAULT");
     }
   });
 

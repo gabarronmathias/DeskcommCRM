@@ -26,18 +26,20 @@ export const CHANNEL_SESSION_REF_COLUMNS =
 
 /**
  * Valores do sessionRef que SÃO placeholders óbvios — nunca devem chegar à
- * rede. Bug do 2026-09-04: WAHA retornou `Session "default" does not exist`
- * porque o `c.channel_sessions.waha_session_name` tinha sido gravado como
- * `"default"` em algum caminho. A correção tem DOIS lados:
+ * rede. Fica SÓ string vazia / whitespace / sentinelas ("null"/"undefined"
+ * como string, p.ex. de debug). O nome "default" **NÃO** está aqui porque
+ * é o nome REAL de uma sessão WAHA Plus legada da org gabarron-mathias
+ * (ver commit 65da2d09 — investigação 2026-09-04): a WAHA Plus pré-criou
+ * a sessão com esse nome e o CRM espelha. Tratar "default" como placeholder
+ * faria Sarah ficar muda mesmo com a sessão WORKING.
+ *
+ * A correção tem DOIS lados:
  *   1. Garantir que a sessão resolve para o id REAL (este arquivo: fail
- *      closed em `resolveSessionRef`).
- *   2. Impedir que a conversa seja criada/atualizada com um placeholder —
- *      isso é tratado pelos chamadores (ingest) que têm o nome real do
- *      WAHA que recebeu o webhook.
+ *      closed em vazios/sentinelas).
+ *   2. Impedir que a conversa seja criada/atualizada com vazio/sentinela —
+ *      tratado pelos chamadores (ingest) que têm o nome real do WAHA.
  */
 const SESSION_REF_PLACEHOLDERS = new Set([
-  "default",
-  "DEFAULT",
   "",
   " ",
   "null",
