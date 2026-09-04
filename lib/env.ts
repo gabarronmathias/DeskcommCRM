@@ -47,6 +47,12 @@ const schema = z.object({
   INTERNAL_SECRET: required("INTERNAL_SECRET"),
   /** Optional dedicated secret for cron endpoints (S-06.07 onwards). */
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
+  /**
+   * Token de máquina-a-máquina para o Hermes (operador comercial B2B da GB).
+   * Rotacionar a cada 90 dias. Opcional: rotas `/api/internal/hermes/*`
+   * devolvem 401 se a env estiver ausente ou o bearer não bater.
+   */
+  HERMES_API_TOKEN: z.string().optional().default(""),
 
   // Encryption keys (pgcrypto)
   CPF_ENCRYPTION_KEY: required("CPF_ENCRYPTION_KEY"),
