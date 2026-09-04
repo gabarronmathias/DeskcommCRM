@@ -81,7 +81,7 @@ function toProspect(row: CsvRow, campaign: string): PublicBusinessProspect {
     website: row["Site / Instagram"]?.trim() || null,
     address: row.Endereço?.trim() || null,
     neighborhood: null,
-    placeId: null,
+    placeId: "",
     mapsUrl: null,
     sourceUrl: row["Fonte pública"]?.trim() || null,
     businessStatus: "OPERATIONAL",

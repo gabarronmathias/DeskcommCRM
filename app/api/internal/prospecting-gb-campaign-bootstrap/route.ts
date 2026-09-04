@@ -39,6 +39,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { type NextRequest } from "next/server";
+import { parse as parseCsv } from "csv-parse/sync";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
@@ -133,7 +134,7 @@ function toProspect(row: CsvRow, campaign: string) {
     website: row["Site / Instagram"]?.trim() || null,
     address: row.Endereço?.trim() || null,
     neighborhood: null,
-    placeId: null,
+    placeId: "",
     mapsUrl: null,
     sourceUrl: row["Fonte pública"]?.trim() || null,
     businessStatus: "OPERATIONAL" as const,
@@ -186,8 +187,7 @@ async function importCurated(
   // a rota roda no filesystem do serverless. A solução mais simples é o caller
   // (esta rota temporária) embutir o CSV.
   const csvText = EMBEDDED_CSV;
-  const { parse } = await import("csv-parse/sync");
-  const rows = parse(csvText, { columns: true, skip_empty_lines: true, delimiter: ";" }) as CsvRow[];
+  const rows = parseCsv(csvText, { columns: true, skip_empty_lines: true, delimiter: ";" }) as CsvRow[];
 
   const { importProspect } = await import("@/lib/prospecting/service");
   let created = 0;
