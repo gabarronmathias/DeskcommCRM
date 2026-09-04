@@ -15,6 +15,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { resolveChannelSessionName } from "@/lib/channels/channel-sessions-naming";
 import { reactivateChannelSession } from "@/lib/channels/reactivate";
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
@@ -127,22 +128,16 @@ export async function POST(req: NextRequest): Promise<Response> {
       })
     | null;
   // Onboarding gera SEMPRE um nome novo a partir do id da organização
-  // (`org_<8hex>`) — nunca um placeholder. Mesmo que o WAHA tenha uma
-  // sessão "default" pré-criada, este código não a importa como
-  // `waha_session_name` (causa raiz investigada 2026-09-04 — o nome
-  // "default" da org gabarron-mathias veio do WAHA Plus bootstrap, não
-  // do CRM; o espelhamento aconteceu em versão anterior do onboarding).
-  //
-  // A regex `PLACEHOLDER_RX` rejeita explicitamente: vazio, whitespace,
-  // sentinelas de debug ("null"/"undefined") e os literais "default"/
-  // "DEFAULT" — NUNCA devem ser nomes novos gerados por código.
-  const PLACEHOLDER_RX = /^(?:\s*|default|DEFAULT|null|undefined)$/i;
-  const candidateFromExisting = existing?.waha_session_name ?? null;
-  const newSessionName = `org_${activeOrg.orgId.slice(0, 8)}`;
-  const sessionName =
-    candidateFromExisting && !PLACEHOLDER_RX.test(candidateFromExisting)
-      ? candidateFromExisting
-      : newSessionName;
+  // (`org_<8hex>`) — nunca um placeholder. A função
+  // `resolveChannelSessionName` (em `lib/channels/channel-sessions-naming.ts`)
+  // centraliza a decisão e tem testes unit. Ver investigação 2026-09-04:
+  // o nome "default" da org gabarron-mathias veio do WAHA Plus bootstrap;
+  // o espelhamento aconteceu em versão anterior do onboarding, e
+  // código novo não pode persistir esses valores.
+  const sessionName = resolveChannelSessionName(
+    existing?.waha_session_name ?? null,
+    activeOrg.orgId,
+  );
   const webhookPathToken = existing?.webhook_path_token ?? randomUUID().replace(/-/g, "");
   const webhookUrl = canonicalWahaWebhookUrl(req.url, webhookPathToken);
 
