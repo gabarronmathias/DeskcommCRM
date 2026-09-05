@@ -348,6 +348,15 @@ export const NAV_DESTINATIONS: NavDestination[] = [
 
   // ---- Análise — olhar o sistema funcionando ----
   {
+    href: "/app/command-center",
+    label: "Command Center",
+    description: "Central de operação 24/7: Hermes, fila, Sarah WhatsApp, alertas e controles.",
+    icon: Gauge,
+    group: "analise",
+    sidebar: true,
+    minRole: "manager",
+  },
+  {
     href: "/app/metrics",
     label: "Relatórios",
     description: "Delivery, receita gerada pela Sarah, funil e desempenho da operação.",
