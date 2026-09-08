@@ -199,7 +199,7 @@ begin
     contact_id = excluded.contact_id,
     status = excluded.status,
     total_cents = excluded.total_cents,
-    currency = excluded.currencx.excluded.currency,
+    currency = excluded.currency,
     fulfillment_status = excluded.fulfillment_status,
     payload = excluded.payload,
     ordered_at = excluded.ordered_at,
