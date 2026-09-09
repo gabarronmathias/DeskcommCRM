@@ -1,4 +1,15 @@
 # CLAUDE.md — DeskcommCRM
+## Sarah: Inteligência Comercial
+Sarah é o motor de inteligência comercial para foodservice no DeskcommCRM. Ela não é um chatbot simples, mas um agente que atua em:
+1. Atendimento inteligente;
+2. Venda e aumento de ticket (upsell/cross-sell);
+3. Follow-up ativo;
+4. Recuperação de oportunidades/pedidos abandonados;
+5. Reativação de clientes inativos;
+6. Gestão de campanhas e relacionamento.
+
+---
+
 
 > Instruções pra futuras sessões Claude trabalhando neste repo. Leitura obrigatória antes de qualquer task de código.
 

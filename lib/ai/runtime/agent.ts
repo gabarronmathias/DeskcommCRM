@@ -34,7 +34,7 @@ import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import type { McpAuthResult } from "@/lib/mcp/auth";
-import type { McpContext } from "@/lib/mcp/types";
+import { MCP_ADDITIONAL_SCOPES, type McpContext } from "@/lib/mcp/types";
 import { computeCostCents } from "./cost";
 import { finalizeRun } from "./finalize";
 import { sendFinalResponse } from "./finalize";
@@ -419,6 +419,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         "actor:ai_agent",
         `agent_run:${run.id}`,
         "role:ai_operator",
+        ...MCP_ADDITIONAL_SCOPES,
       ],
     };
     const ctx: McpContext = {

@@ -46,6 +46,7 @@ export const crmSearchKnowledge: McpToolDefinition<typeof buscarInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["knowledge:read"],
   handler: async (input, ctx) => {
     const agentId =
       input.assistente_id ?? (ctx.actor.type === "ai_agent" ? ctx.actor.id : undefined);
@@ -103,6 +104,7 @@ export const crmListKnowledgeSources: McpToolDefinition<typeof listarMateriaisIn
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["knowledge:read"],
   handler: async (input, ctx) => {
     let q = ctx.supabase
       .from("ai_knowledge_sources")
@@ -140,6 +142,7 @@ export const crmListImprovementProposals: McpToolDefinition<typeof propostasInpu
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["knowledge:read"],
   handler: async (input, ctx) => {
     const { data, error } = await ctx.supabase
       .from("flywheel_distiller_proposals")
@@ -170,6 +173,7 @@ export const crmGetOrgMemory: McpToolDefinition<typeof lerMemoriaInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["org_memory:read"],
   handler: async (input, ctx) => {
     const { data, error } = await ctx.supabase
       .from("org_memory_entries")
@@ -201,6 +205,7 @@ export const crmSaveOrgMemory: McpToolDefinition<typeof gravarMemoriaInputShape>
   // pode ter mais poder que uma pessoa do mesmo papel.
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["org_memory:write"],
   handler: async (input, ctx) => {
     const { data, error } = await ctx.supabase
       .from("org_memory_entries")

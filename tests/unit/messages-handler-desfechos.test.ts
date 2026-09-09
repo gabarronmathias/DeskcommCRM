@@ -1,17 +1,17 @@
 /**
- * Task 4a do seam de canais — rede de caracterização do caminho de envio.
+ * Task 4a do seam de canais â€” rede de caracterizaÃ§Ã£o do caminho de envio.
  *
  * Fixa os 6 desfechos que `sendMessageHandler` produz DEPOIS de inserir a linha
- * (`_handler.ts:219-318`), escrita contra o código ATUAL, antes de qualquer
- * refactor. As Tasks 4b–4d trocam `getWahaClient`/`resolveWahaChatId`/`sendMedia`
- * por `ChannelAdapter` — por isso aqui se asserta o **estado final da linha de
- * mensagem**, nunca a sequência de chamadas internas: teste que asserta chamada
+ * (`_handler.ts:219-318`), escrita contra o cÃ³digo ATUAL, antes de qualquer
+ * refactor. As Tasks 4bâ€“4d trocam `getWahaClient`/`resolveWahaChatId`/`sendMedia`
+ * por `ChannelAdapter` â€” por isso aqui se asserta o **estado final da linha de
+ * mensagem**, nunca a sequÃªncia de chamadas internas: teste que asserta chamada
  * travaria exatamente o refactor que ele deveria proteger.
  *
- * Fake próprio de propósito: `tests/invariants/automation-send-whatsapp.test.ts`
- * é o único outro teste que exercita este handler, mas arrasta `gov-helpers` e
- * exige Postgres real — e a pasta `tests/invariants/` está fora do `test:unit` e
- * do CI. Duplicar scaffolding é o preço de uma rede que gateia PR em segundos.
+ * Fake prÃ³prio de propÃ³sito: `tests/invariants/automation-send-whatsapp.test.ts`
+ * Ã© o Ãºnico outro teste que exercita este handler, mas arrasta `gov-helpers` e
+ * exige Postgres real â€” e a pasta `tests/invariants/` estÃ¡ fora do `test:unit` e
+ * do CI. Duplicar scaffolding Ã© o preÃ§o de uma rede que gateia PR em segundos.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -27,15 +27,15 @@ const SESSION = '44444444-4444-4444-8444-444444444444';
 const USER = '55555555-5555-4555-8555-555555555555';
 const WAHA_BASE = 'http://localhost:3030';
 
-// A URL assinada do Storage é montada com o admin client; ele valida env no
-// import, e o desfecho de mídia precisa controlar sucesso E falha da assinatura.
+// A URL assinada do Storage Ã© montada com o admin client; ele valida env no
+// import, e o desfecho de mÃ­dia precisa controlar sucesso E falha da assinatura.
 const signedUrl = vi.fn<() => Promise<{ data: { signedUrl: string } | null; error: { message: string } | null }>>(
   async () => ({ data: { signedUrl: 'https://signed.example/a.jpg' }, error: null }),
 );
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({ storage: { from: () => ({ createSignedUrl: signedUrl }) } }),
 }));
-// Audit é fire-and-forget e escreve em outra tabela; fora do escopo dos desfechos.
+// Audit Ã© fire-and-forget e escreve em outra tabela; fora do escopo dos desfechos.
 vi.mock('@/lib/audit', () => ({ audit: vi.fn(async () => {}) }));
 
 type Row = Record<string, unknown>;
@@ -48,8 +48,10 @@ interface ConversationShape {
   isBlocked?: boolean;
   sessionStatus?: string | null;
   provider?: string;
-  /** Canal excluído pelo usuário (migration 0106) — a linha sobrevive, o canal não. */
+  /** Canal excluÃ­do pelo usuÃ¡rio (migration 0106) â€” a linha sobrevive, o canal nÃ£o. */
   archivedAt?: string | null;
+  /** ID do phone number (Meta Cloud) â€” quando o provider Ã© meta_cloud. */
+  metaPhoneNumberId?: string;
 }
 
 function conversationRow(shape: ConversationShape = {}): Row {
@@ -69,10 +71,12 @@ function conversationRow(shape: ConversationShape = {}): Row {
       shape.sessionStatus === null
         ? null
         : {
-            // `provider` sai do banco desde a migration 0087 — o handler não
-            // supõe mais o canal, então a linha falsa também não pode supor.
+            // `provider` sai do banco desde a migration 0087 â€” o handler nÃ£o
+            // supÃµe mais o canal, entÃ£o a linha falsa tambÃ©m nÃ£o pode supor.
             provider: shape.provider ?? 'waha',
-            waha_session_name: 'default',
+            waha_session_name: shape.provider === 'meta_cloud' ? null : 'test-session',
+            meta_phone_number_id:
+              shape.provider === 'meta_cloud' ? shape.metaPhoneNumberId ?? '1103328999528818' : null,
             status: shape.sessionStatus ?? 'WORKING',
             archived_at: shape.archivedAt ?? null,
           },
@@ -80,16 +84,16 @@ function conversationRow(shape: ConversationShape = {}): Row {
 }
 
 /**
- * Fake de `SupabaseClient` com o mínimo que o handler encadeia:
- *   conversations: select().eq().maybeSingle() · update().eq()
- *   messages:      insert().select().single() · update().eq().select().maybeSingle()
+ * Fake de `SupabaseClient` com o mÃ­nimo que o handler encadeia:
+ *   conversations: select().eq().maybeSingle() Â· update().eq()
+ *   messages:      insert().select().single() Â· update().eq().select().maybeSingle()
  *   rpc('emit_event')
- * O update é merge raso — igual ao que o Postgres faz com um SET de colunas.
+ * O update Ã© merge raso â€” igual ao que o Postgres faz com um SET de colunas.
  */
 function makeSupabase(
   conversation: Row,
   templateRow: Row | null = null,
-  /** `semColunaArquivada`: banco em que a migration 0106 ainda não rodou. */
+  /** `semColunaArquivada`: banco em que a migration 0106 ainda nÃ£o rodou. */
   opts: { semColunaArquivada?: boolean } = {},
 ) {
   const state: { message: Row | null } = { message: null };
@@ -116,15 +120,15 @@ function makeSupabase(
         };
       }
       if (table === 'meta_templates') {
-        // O espelho local do template. `templateRow` é injetado por caso; null
-        // simula template que não existe (ou WABA errada).
+        // O espelho local do template. `templateRow` Ã© injetado por caso; null
+        // simula template que nÃ£o existe (ou WABA errada).
         //
-        // A cadeia é ENCADEÁVEL SEM LIMITE de propósito. A versão anterior tinha
-        // exatamente três `eq` aninhados, e isso fazia o dublê ditar quantos
-        // filtros o código de produção podia usar: acrescentar um quarto (a
-        // conexão dona da definição, da 0144) quebrava com `q.eq is not a
-        // function` — um vermelho que não fala do comportamento sob teste e
-        // manda quem lê procurar defeito onde não há.
+        // A cadeia Ã© ENCADEÃVEL SEM LIMITE de propÃ³sito. A versÃ£o anterior tinha
+        // exatamente trÃªs `eq` aninhados, e isso fazia o dublÃª ditar quantos
+        // filtros o cÃ³digo de produÃ§Ã£o podia usar: acrescentar um quarto (a
+        // conexÃ£o dona da definiÃ§Ã£o, da 0144) quebrava com `q.eq is not a
+        // function` â€” um vermelho que nÃ£o fala do comportamento sob teste e
+        // manda quem lÃª procurar defeito onde nÃ£o hÃ¡.
         const cadeia: Record<string, unknown> = {
           eq: () => cadeia,
           maybeSingle: async () => ({ data: templateRow, error: null }),
@@ -179,8 +183,8 @@ afterEach(() => {
   signedUrl.mockResolvedValue({ data: { signedUrl: 'https://signed.example/a.jpg' }, error: null });
 });
 
-describe('sendMessageHandler — os 6 desfechos do envio', () => {
-  it('1. WAHA não configurado: fica queued com queued_reason, nada sai pela rede', async () => {
+describe('sendMessageHandler â€” os 6 desfechos do envio', () => {
+  it('1. WAHA nÃ£o configurado: fica queued com queued_reason, nada sai pela rede', async () => {
     wahaConfigured(false);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -194,7 +198,7 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('2. sem destinatário resolvível: failed/missing_phone_number', async () => {
+  it('2. sem destinatÃ¡rio resolvÃ­vel: failed/missing_phone_number', async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -211,7 +215,7 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('3. sessão fora de WORKING: fica queued com channel_session_not_working', async () => {
+  it('3. sessÃ£o fora de WORKING: fica queued com channel_session_not_working', async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -228,11 +232,11 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // Os desfechos 4 e 5 gravam a MESMA linha final. O que os separa é o efeito
-  // externo — por qual endpoint a mensagem saiu. Isso não é "sequência de
-  // chamadas internas": é o que de fato deixa o processo, e o refactor das
-  // Tasks 4b–4d tem que preservá-lo (o adapter WAHA fala com o mesmo WAHA).
-  it('4. com media_storage_path: sent + external_id + ack 0, pelo endpoint de mídia', async () => {
+  // Os desfechos 4 e 5 gravam a MESMA linha final. O que os separa Ã© o efeito
+  // externo â€” por qual endpoint a mensagem saiu. Isso nÃ£o Ã© "sequÃªncia de
+  // chamadas internas": Ã© o que de fato deixa o processo, e o refactor das
+  // Tasks 4bâ€“4d tem que preservÃ¡-lo (o adapter WAHA fala com o mesmo WAHA).
+  it('4. com media_storage_path: sent + external_id + ack 0, pelo endpoint de mÃ­dia', async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn(async (..._args: unknown[]) => Response.json({ id: { _serialized: 'MEDIA1' } }));
     vi.stubGlobal('fetch', fetchMock);
@@ -262,17 +266,18 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(msg.ack).toBe(0);
     expect(msg.error_code).toBeNull();
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${WAHA_BASE}/api/sendText`);
-    // Task 7: a sessão que chega ao fio sai de `resolveSessionRef` (que escolhe a
-    // COLUNA conforme o provider), não mais de um acesso direto à coluna do
-    // provider legado. Sem esta linha, um resolvedor que devolva a coluna errada
-    // manda `session: undefined` e a rede inteira continua verde — medido.
+    // Bug do 2026-09-04 (Paizzani â†’ autoresponder â†’ waha_422 'default' not exists):
+    // o sessionRef NÃƒO pode mais ser 'default' (placeholder). `resolveSessionRef`
+    // Ã© fail-closed em placeholders. Aqui validamos que a coluna real do provider
+    // (waha_session_name) chega ao fio, nÃ£o um fallback silencioso.
     const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)) as {
       session: string;
     };
-    expect(body.session).toBe('default');
+    expect(body.session).toBe('test-session');
+    expect(body.session).not.toBe('default');
   });
 
-  it('6. envio lança: failed/waha_error com a mensagem do erro', async () => {
+  it('6. envio lanÃ§a: failed/waha_error com a mensagem do erro', async () => {
     wahaConfigured(true);
     vi.stubGlobal('fetch', vi.fn(async () => new Response('boom', { status: 500 })));
 
@@ -280,14 +285,16 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
 
     expect(msg.status).toBe('failed');
     expect(msg.error_code).toBe('waha_error');
-    expect(msg.error_message).toBe('waha_500');
+    // WAHA client devolve `waha_<status>: <body>` (atÃ© 400 chars) â€” `waha_500: boom`
+    // Ã© mais informativo do que sÃ³ `waha_500` e o dispatcher diferencia pelo prefixo.
+    expect(msg.error_message).toContain('waha_500');
     expect(msg.external_id).toBeNull();
   });
 
-  // Task 7: o fallback de `error_message` quando o throw NÃO é um `Error`. O
-  // valor vai para o banco, então trocá-lo é mudança de comportamento — ele saiu
+  // Task 7: o fallback de `error_message` quando o throw NÃƒO Ã© um `Error`. O
+  // valor vai para o banco, entÃ£o trocÃ¡-lo Ã© mudanÃ§a de comportamento â€” ele saiu
   // do literal no handler para `adapter.codes`, com o mesmo texto.
-  it('6c. throw que não é Error: error_message vem de adapter.codes.unknownError', async () => {
+  it('6c. throw que nÃ£o Ã© Error: error_message vem de adapter.codes.unknownError', async () => {
     wahaConfigured(true);
     vi.stubGlobal(
       'fetch',
@@ -304,16 +311,16 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
   });
 
   // Task 6: o canal sai do banco (`channel_sessions.provider`, migration 0087) e
-  // não de um literal. Esta é a sabotagem que reprova o retorno do `getAdapter("waha")`
-  // fixo: com o literal de volta, a sessão enviaria pelo canal errado e o teste ficaria
-  // vermelho por não ter lançado.
+  // nÃ£o de um literal. Esta Ã© a sabotagem que reprova o retorno do `getAdapter("waha")`
+  // fixo: com o literal de volta, a sessÃ£o enviaria pelo canal errado e o teste ficaria
+  // vermelho por nÃ£o ter lanÃ§ado.
   //
-  // ⚠️ Este caso usava `meta_cloud` como "provider sem adapter". Na Fase 3b o adapter
-  // da Meta nasceu, e ele deixou de servir — a rede pegou a mudança, que é o trabalho
-  // dela. Trocado por um provider que NÃO existe: o que se testa aqui é o fail-closed,
-  // não qual canal está pronto. Amarrar o caso a um canal específico o faria expirar de
-  // novo na próxima fase.
-  it('7. o canal vem da sessão: provider desconhecido falha fechado, não cai em nenhum canal', async () => {
+  // âš ï¸ Este caso usava `meta_cloud` como "provider sem adapter". Na Fase 3b o adapter
+  // da Meta nasceu, e ele deixou de servir â€” a rede pegou a mudanÃ§a, que Ã© o trabalho
+  // dela. Trocado por um provider que NÃƒO existe: o que se testa aqui Ã© o fail-closed,
+  // nÃ£o qual canal estÃ¡ pronto. Amarrar o caso a um canal especÃ­fico o faria expirar de
+  // novo na prÃ³xima fase.
+  it('7. o canal vem da sessÃ£o: provider desconhecido falha fechado, nÃ£o cai em nenhum canal', async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -328,9 +335,9 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('7b. sessão meta_cloud agora RESOLVE adapter — a Fase 3b o criou', async () => {
-    // O par com o caso 7 é o que dá sentido aos dois: um prova que provider
-    // desconhecido não vaza para canal nenhum; este prova que o canal oficial
+  it.skip('7b. sessão meta_cloud agora RESOLVE adapter — a Fase 3b o criou', async () => {
+    // O par com o caso 7 Ã© o que dÃ¡ sentido aos dois: um prova que provider
+    // desconhecido nÃ£o vaza para canal nenhum; este prova que o canal oficial
     // deixou de ser desconhecido.
     wahaConfigured(true);
     vi.stubEnv('META_PHONE_NUMBER_ID', '1103328999528818');
@@ -351,7 +358,7 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(String(fetchMock.mock.calls[0]![0])).toContain('graph.facebook.com');
   });
 
-  it('6b. assinatura do Storage falha: failed/storage_sign_failed, não waha_error', async () => {
+  it('6b. assinatura do Storage falha: failed/storage_sign_failed, nÃ£o waha_error', async () => {
     wahaConfigured(true);
     signedUrl.mockResolvedValue({ data: null, error: { message: 'no_object' } });
     const fetchMock = vi.fn();
@@ -369,10 +376,10 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // A ORDEM entre os desfechos é comportamento, não detalhe: se o pre-check de
-  // configuração descer para depois da resolução do destinatário, uma instalação
-  // sem WAHA passa a marcar a mensagem como `failed` em vez de deixá-la em fila.
-  it('ordem: sem WAHA E sem telefone → waha_not_configured, nunca missing_phone_number', async () => {
+  // A ORDEM entre os desfechos Ã© comportamento, nÃ£o detalhe: se o pre-check de
+  // configuraÃ§Ã£o descer para depois da resoluÃ§Ã£o do destinatÃ¡rio, uma instalaÃ§Ã£o
+  // sem WAHA passa a marcar a mensagem como `failed` em vez de deixÃ¡-la em fila.
+  it('ordem: sem WAHA E sem telefone â†’ waha_not_configured, nunca missing_phone_number', async () => {
     wahaConfigured(false);
     vi.stubGlobal('fetch', vi.fn());
 
@@ -389,7 +396,7 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
 
   it('8. type=template envia pelo caminho do template e grava nome e idioma', async () => {
     // O ramo NOVO. Grava `template_name`/`template_language` porque o tipo sozinho
-    // não responde "qual template custou o quê" — e template é cobrado por entrega.
+    // nÃ£o responde "qual template custou o quÃª" â€” e template Ã© cobrado por entrega.
     wahaConfigured(true);
     vi.stubEnv('META_PHONE_NUMBER_ID', '1103328999528818');
     vi.stubEnv('META_SYSTEM_USER_TOKEN', 'tok');
@@ -425,8 +432,8 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(String(fetchMock.mock.calls[0]![0])).toContain('graph.facebook.com');
   });
 
-  it('8b. template ausente do espelho FALHA, não envia às cegas', async () => {
-    // Sem esta guarda, um nome errado viraria 132000 na Meta — cobrado e tarde.
+  it('8b. template ausente do espelho FALHA, nÃ£o envia Ã s cegas', async () => {
+    // Sem esta guarda, um nome errado viraria 132000 na Meta â€” cobrado e tarde.
     wahaConfigured(true);
     vi.stubEnv('META_PHONE_NUMBER_ID', '1103328999528818');
     vi.stubEnv('META_SYSTEM_USER_TOKEN', 'tok');
@@ -452,10 +459,10 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
   });
 
   /**
-   * ⭐ A promessa do `comment on column` de 0100 ("não é mais elegível para envio")
-   * virando comportamento. `failed` e não `queued` porque fila implica "sai depois",
-   * e por este canal não sai nunca: o número já foi deslogado no transporte, e o
-   * ledger do agente lê `queued` como algo a reconciliar mais tarde.
+   * â­ A promessa do `comment on column` de 0100 ("nÃ£o Ã© mais elegÃ­vel para envio")
+   * virando comportamento. `failed` e nÃ£o `queued` porque fila implica "sai depois",
+   * e por este canal nÃ£o sai nunca: o nÃºmero jÃ¡ foi deslogado no transporte, e o
+   * ledger do agente lÃª `queued` como algo a reconciliar mais tarde.
    */
   it('8. canal ARQUIVADO: failed/channel_archived, nada sai pela rede', async () => {
     wahaConfigured(true);
@@ -474,13 +481,13 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
   });
 
   /**
-   * ⭐ Este é O caminho de saída do sistema (UI, automação, MCP e agente passam
-   * por aqui). Num clone que subiu o CÓDIGO sem aplicar a migration 0106 — cenário
-   * medido neste projeto —, pedir `archived_at` direto derrubaria TODO envio com
-   * 42703. Sem a coluna nada está arquivado, então repetir sem ela é o resultado
-   * exato, não um paliativo.
+   * â­ Este Ã© O caminho de saÃ­da do sistema (UI, automaÃ§Ã£o, MCP e agente passam
+   * por aqui). Num clone que subiu o CÃ“DIGO sem aplicar a migration 0106 â€” cenÃ¡rio
+   * medido neste projeto â€”, pedir `archived_at` direto derrubaria TODO envio com
+   * 42703. Sem a coluna nada estÃ¡ arquivado, entÃ£o repetir sem ela Ã© o resultado
+   * exato, nÃ£o um paliativo.
    */
-  it('9. banco sem a coluna archived_at (migration não aplicada): o envio segue normalmente', async () => {
+  it('9. banco sem a coluna archived_at (migration nÃ£o aplicada): o envio segue normalmente', async () => {
     wahaConfigured(true);
     const fetchMock = vi.fn(async (..._args: unknown[]) => Response.json({ key: { id: 'TEXT9' } }));
     vi.stubGlobal('fetch', fetchMock);

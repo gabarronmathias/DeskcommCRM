@@ -18,14 +18,20 @@
  *
  * ─── A ORDEM é a regra, não um detalhe de implementação ─────────────────────
  *
- * Os três rodam em sequência e a sequência carrega significado:
+ * Os efeitos rodam em sequência e a sequência carrega significado:
  *
- *   1. opt-out  — grava `is_blocked` ANTES do lead;
- *   2. lead     — `garantirLeadDaConversa` RELÊ o contato e recusa criar card
- *                 para bloqueado. Inverter 1 e 2 faz quem acabou de pedir para
- *                 sair virar oportunidade nova no funil;
- *   3. despacho — o turno do agente resolve o lead ativo do contato. Emitir
- *                 antes do passo 2 faria o primeiro turno rodar sem lead.
+ *   1. opt-out        — grava `is_blocked` ANTES do lead;
+ *   2. lead           — `garantirLeadDaConversa` RELÊ o contato e recusa criar
+ *                       card para bloqueado. Inverter 1 e 2 faz quem acabou de
+ *                       pedir para sair virar oportunidade nova no funil;
+ *   3. autoresponder  — classifica se a inbound é automática (whatsapp business
+ *                       welcome / bot). Se for, GRAVA a evidência em
+ *                       messages.metadata E SAI — sem despacho do agente,
+ *                       sem mexer em last_reply_at, sem cancelar follow-up;
+ *   4. despacho       — o turno do agente resolve o lead ativo do contato.
+ *                       Emitir antes do passo 2 faria o primeiro turno rodar
+ *                       sem lead. Emitir sem o passo 3 fez a Paizzani ser
+ *                       respondida como se fosse humana.
  *
  * Trocar a ordem não quebra teste de tipo nem derruba nada em runtime: quebra
  * em silêncio, semanas depois, num card que não devia existir. Por isso está
@@ -39,8 +45,10 @@
  * dentro, com log, e o seguinte roda mesmo assim.
  */
 import { audit } from "@/lib/audit";
+import { classificarRespostaAutomatica } from "@/lib/channels/autoresponder";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 import { logger } from "@/lib/logger";
+import { OPENING_MESSAGE } from "@/lib/prospecting/config";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -120,10 +128,18 @@ export interface EntradaDeMensagem {
 }
 
 /**
- * Roda os três efeitos, em ordem, para uma mensagem de ENTRADA recém-gravada.
+ * Roda os efeitos, em ordem, para uma mensagem de ENTRADA recém-gravada.
  *
  * Só para `inbound`: um envio nosso (ou feito do celular do operador) não pede
  * para sair, não abre demanda e não acorda o agente.
+ *
+ * ─── SARAH PROATIVA (background follow-up pós-autoresposta) ───────────────────
+ *
+ * Se a inbound for HUMANA, cancela qualquer `sarah_proativa` que estivesse
+ * agendada para esse contato (resposta real chegou antes do tempo, não há
+ * por que repetir a abertura). Se a inbound for AUTORESPOSTA, a row da
+ * `sarah_proativa` é agendada DENTRO do classificador (passo 3) — não aqui
+ * — para casar exatamente com o caso em que ela nasceu.
  */
 export async function aplicarEfeitosPosEntrada(
   admin: Admin,
@@ -131,6 +147,17 @@ export async function aplicarEfeitosPosEntrada(
 ): Promise<void> {
   await aplicarOptOut(admin, entrada);
   await abrirDemanda(admin, entrada);
+  // Passo 3 é um FILTRO: se a mensagem é autoresposta, persistimos a
+  // evidência, agendamos `sarah_proativa` (se aplicável) e saímos. Se for
+  // humana, cancelamos qualquer `sarah_proativa` pendente (a resposta real
+  // já chegou, não há por que repetir a abertura). O despacho do agente
+  // (passo 4) NÃO roda para autoresposta.
+  const isAutoresposta = await classificarComoAutoresposta(admin, entrada);
+  if (isAutoresposta) {
+    await agendarSarahProativa(admin, entrada);
+    return;
+  }
+  await cancelarSarahProativa(admin, entrada);
   await pedirDespachoDoAgente(admin, entrada);
 }
 
@@ -217,7 +244,114 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
 }
 
 /**
- * 3 · Acorda o agente.
+ * 3 · Filtro de autoresposta (whatsapp business welcome / bot comercial).
+ *
+ * Insere passo entre o `abrirDemanda` e o `pedirDespachoDoAgente` (que vira
+ * passo 4). A classificação é feita pelo `classificarRespostaAutomatica` (em
+ * `./autoresponder.ts`), baseada em sinais COMBINADOS — não em regex de
+ * palavras-chave. Threshold 3 (calibrado contra o exemplo real da Paizzani
+ * e os casos negativos do brief).
+ *
+ * QUANDO a mensagem é autoresposta:
+ *   - persiste `metadata.automated_reply = true` (com score e reasons) em
+ *     `messages` — auditoria, sem mexer no histórico de inbound;
+ *   - NÃO atualiza `last_reply_at` em `crm_leads.custom_fields` (porque o
+ *     autor não é uma pessoa interessada);
+ *   - NÃO cancela follow-up nem agenda nova (porque não houve reply real);
+ *   - NÃO chama `ai_agent.dispatch_requested` (Sarah fica em silêncio);
+ *   - RETORNA true, e o chamador pula o passo de despacho.
+ *
+ * QUANDO é humana: a função devolve false e a cadeia segue normal.
+ *
+ * Falha aqui NUNCA derruba a ingestão (a mensagem JÁ está gravada). Erro
+ * de classificação é logado e a mensagem é tratada como humana — caminho
+ * de pior caso seguro, não pior caso silencioso.
+ */
+async function classificarComoAutoresposta(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<boolean> {
+  if (!entrada.messageId || !entrada.texto) return false;
+  let msDesdeUltimoOutbound: number | null = null;
+  try {
+    const { data: lastOutbound } = await admin
+      .from("messages")
+      .select("sent_at")
+      .eq("organization_id", entrada.organizationId)
+      .eq("conversation_id", entrada.conversationId)
+      .eq("direction", "outbound")
+      .order("sent_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastOutbound?.sent_at) {
+      const t = Date.parse(String(lastOutbound.sent_at));
+      if (Number.isFinite(t)) msDesdeUltimoOutbound = Date.now() - t;
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: falha ao medir timing do último outbound (trata como humano)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "unknown",
+    });
+  }
+
+  const cls = classificarRespostaAutomatica(entrada.texto, { msDesdeUltimoOutbound });
+
+  if (!cls.isAutoresposta) {
+    logger.info("pos-entrada: inbound classificada como humana", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      message_id: entrada.messageId,
+      score: cls.score,
+      threshold: cls.threshold,
+    });
+    return false;
+  }
+
+  // Persiste a evidência em messages.metadata, sem mexer em outros campos.
+  try {
+    const { error } = await admin
+      .from("messages")
+      .update({
+        metadata: {
+          automated_reply: true,
+          autoresponder_score: cls.score,
+          autoresponder_threshold: cls.threshold,
+          autoresponder_signals: cls.sinais
+            .filter((s) => s.contribuiu)
+            .map((s) => ({ code: s.codigo, detail: s.detalhe })),
+        },
+      })
+      .eq("id", entrada.messageId);
+    if (error) {
+      logger.warn("pos-entrada: persistir autoresponder metadata falhou (a inbound segue na fila)", {
+        organization_id: entrada.organizationId,
+        message_id: entrada.messageId,
+        detail: error.message.slice(0, 160),
+      });
+    } else {
+      logger.info("pos-entrada: inbound classificada como autoresposta — agente NÃO acorda", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        message_id: entrada.messageId,
+        score: cls.score,
+        threshold: cls.threshold,
+        sinais: cls.sinais.filter((s) => s.contribuiu).map((s) => s.codigo),
+      });
+    }
+  } catch (err) {
+    logger.warn("pos-entrada: persistir autoresponder metadata explodiu (a inbound segue na fila)", {
+      organization_id: entrada.organizationId,
+      message_id: entrada.messageId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "unknown",
+    });
+  }
+
+  return true;
+}
+
+/**
+ * 4 · Acorda o agente.
  *
  * Emitir o evento NÃO faz o assistente responder: o consumidor só abre turno se
  * a organização tiver versão publicada apontando para esta sessão. Sem versão
@@ -251,6 +385,184 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
       organization_id: entrada.organizationId,
       message_id: entrada.messageId,
       origem: entrada.origem,
+      detail: error.message.slice(0, 160),
+    });
+  }
+}
+
+/**
+ * ─── SARAH PROATIVA ───────────────────────────────────────────────────────────
+ *
+ * Quando a única resposta que veio de um lead foi a autoresposta institucional
+ * do WhatsApp Business dele ("Olá, bem-vindo à Padaria X. Como podemos
+ * ajudar?"), a Sarah corretamente NÃO responde (classificador S1-S9). Mas se
+ * ela ficar em silêncio, o lead esfria: ele leu a abertura da G&M, viu o
+ * autoresposta automático dele voltar, e não há próxima mensagem.
+ *
+ * A solução é agendar, com a CADEIRA DA SARAH (e não como um bot novo), uma
+ * nova abertura pra daqui `PROSPECTING_SARAH_PROATIVA_MINUTES` minutos. Se o
+ * lead humano responder antes do tempo, a row é cancelada em
+ * `cancelarSarahProativa` (chamado no início de `aplicarEfeitosPosEntrada`).
+ *
+ * A row é `kind=opening` (re-abertura) com `metadata.sarah_proativa=true`.
+ * O trigger `fn_cancel_prospecting_followup_on_inbound` SÓ cancela kind=followup,
+ * portanto esta row só é cancelada explicitamente aqui — proposital: a
+ * cadência de prospecção usa opening/followup; a "sarah_proativa" é uma
+ * exceção rastreada e removida só via código.
+ *
+ * On-curve:
+ *   - só agenda se a inbound foi autoresposta (chamado no classificador);
+ *   - só agenda se o lead JÁ tem fila de prospecção ativa (faz parte da
+ *     campanha `gb-foodservice-sjc-2026-09` ou outro canônico);
+ *   - não agenda se já existe uma sarah_proativa pendente pra esse contato
+ *     (idempotente: re-entradas da mesma autoresposta não empilham);
+ *   - falha de DB nunca derruba o pos-entrada (try/catch com warn).
+ */
+const DEFAULT_SARAH_PROATIVA_MINUTES = 5;
+function sarahProativaMinutes(): number {
+  const raw = process.env.PROSPECTING_SARAH_PROATIVA_MINUTES;
+  if (!raw) return DEFAULT_SARAH_PROATIVA_MINUTES;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1 || n > 60) return DEFAULT_SARAH_PROATIVA_MINUTES;
+  return n;
+}
+
+async function agendarSarahProativa(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<void> {
+  // 1) Lead ativo do contato (precisa pra montar a queue row)
+  const { data: lead, error: leadErr } = await admin
+    .from("crm_leads")
+    .select("id, title, source, custom_fields")
+    .eq("organization_id", entrada.organizationId)
+    .eq("contact_id", entrada.contactId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (leadErr || !lead) {
+    logger.debug("pos-entrada: sarah_proativa sem lead ativo, ignora", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      detail: leadErr?.message?.slice(0, 160),
+    });
+    return;
+  }
+  const campaign = String((lead.custom_fields as Record<string, unknown> | null)?.campaign ?? "gb-foodservice-sjc-2026-09");
+  // 2) Channel session default (sarah proativa não muda de sessão)
+  const { data: session, error: sessionErr } = await admin
+    .from("channel_sessions")
+    .select("id")
+    .eq("organization_id", entrada.organizationId)
+    .eq("provider", "waha")
+    .eq("status", "WORKING")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (sessionErr || !session) {
+    logger.debug("pos-entrada: sarah_proativa sem sessao WAHA WORKING, ignora", {
+      organization_id: entrada.organizationId,
+      detail: sessionErr?.message?.slice(0, 160),
+    });
+    return;
+  }
+  // 3) Idempotência: já existe sarah_proativa pendente pra esse contato?
+  const { data: existing, error: existErr } = await admin
+    .from("prospecting_outbound_queue")
+    .select("id")
+    .eq("organization_id", entrada.organizationId)
+    .eq("contact_id", entrada.contactId)
+    .eq("status", "pending")
+    .contains("metadata", { sarah_proativa: true })
+    .limit(1)
+    .maybeSingle();
+  if (existErr) {
+    logger.warn("pos-entrada: sarah_proativa verificar duplicata falhou (segue tentando)", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      detail: existErr.message.slice(0, 160),
+    });
+  }
+  if (existing) {
+    logger.debug("pos-entrada: sarah_proativa ja agendada, mantem a original", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      queue_id: existing.id,
+    });
+    return;
+  }
+  // 4) Montar e inserir
+  const minutes = sarahProativaMinutes();
+  const scheduledFor = new Date(Date.now() + minutes * 60_000).toISOString();
+  const idempotencyKey = `sarah_proativa:${entrada.contactId}:${entrada.messageId ?? scheduledFor}`;
+  const { error: insertErr } = await admin.from("prospecting_outbound_queue").insert({
+    organization_id: entrada.organizationId,
+    lead_id: lead.id,
+    contact_id: entrada.contactId,
+    conversation_id: entrada.conversationId,
+    channel_session_id: session.id,
+    kind: "opening",
+    flow_name: "Sarah proativa pós-autoresposta",
+    // O dispatcher usa `row.message_body` direto, sem fallback. Por isso
+    // preenchemos aqui com a abertura canônica (mesma da D0) — assim a
+    // re-abertura pós-autoresposta é indistinguível visualmente da primeira.
+    message_body: OPENING_MESSAGE(String(lead.title ?? "")),
+    status: "pending",
+    scheduled_for: scheduledFor,
+    idempotency_key: idempotencyKey,
+    metadata: {
+      campaign,
+      company: lead.title,
+      sarah_proativa: true,
+      sarah_proativa_trigger_message_id: entrada.messageId,
+      sarah_proativa_minutes: minutes,
+    },
+  });
+  if (insertErr) {
+    logger.warn("pos-entrada: agendar sarah_proativa falhou (a inbound segue na fila)", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
+      detail: insertErr.message.slice(0, 160),
+    });
+    return;
+  }
+  logger.info("pos-entrada: sarah_proativa agendada", {
+    organization_id: entrada.organizationId,
+    contact_id: entrada.contactId,
+    lead_id: lead.id,
+    minutes,
+    scheduled_for: scheduledFor,
+  });
+}
+
+/**
+ * Cancela a `sarah_proativa` agendada pra esse contato, se houver.
+ *
+ * É chamada em `aplicarEfeitosPosEntrada` SOMENTE quando a inbound foi
+ * classificada como humana (passo 3 devolveu `false`). Nesse caso, o lead
+ * respondeu de verdade e a abertura proativa deixa de fazer sentido — a
+ * Sarah já vai responder pelo despacho normal do agente.
+ */
+async function cancelarSarahProativa(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<void> {
+  const { error } = await admin
+    .from("prospecting_outbound_queue")
+    .update({
+      status: "cancelled",
+      error_code: "sarah_proativa_superseded",
+      error_message: "inbound humana cancelou a sarah_proativa pendente",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("organization_id", entrada.organizationId)
+    .eq("contact_id", entrada.contactId)
+    .eq("status", "pending")
+    .contains("metadata", { sarah_proativa: true });
+  if (error) {
+    logger.warn("pos-entrada: cancelar sarah_proativa falhou (sarah pode re-disparar; tratado em agendar)", {
+      organization_id: entrada.organizationId,
+      contact_id: entrada.contactId,
       detail: error.message.slice(0, 160),
     });
   }

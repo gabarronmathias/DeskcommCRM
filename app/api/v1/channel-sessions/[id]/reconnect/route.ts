@@ -121,10 +121,40 @@ export async function POST(
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
 
-    await waha.startSession(nomeSessao);
-    // A chamada retorna ao browser somente depois do webhook estar salvo. Assim
-    // o QR não é exibido antes de a sessão poder entregar os eventos inbound.
-    await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
+<<<<<<< HEAD
+    // O caminho normal configura o webhook com a sessão parada antes do start.
+    // Em uma migração para um WAHA novo, porém, o banco pode conhecer a sessão
+    // enquanto o transporte ainda não a criou. Nesse caso o read do webhook
+    // responde 404. Criamos a sessão uma vez, paramos imediatamente, aplicamos
+    // o webhook e então iniciamos de novo — preservando a mesma garantia de que
+    // nenhum QR fica disponível sem inbound configurado.
+    try {
+      await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
+    } catch (webhookErr) {
+      const message = webhookErr instanceof Error ? webhookErr.message : String(webhookErr);
+      if (!message.includes("waha_webhook_read_404")) throw webhookErr;
+      await waha.startSession(nomeSessao);
+      await waha.stopSession(nomeSessao);
+      await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
+    }
+=======
+    // O caminho normal configura o webhook com a sessão parada antes do start.
+    // Em uma migração para um WAHA novo, porém, o banco pode conhecer a sessão
+    // enquanto o transporte ainda não a criou. Nesse caso o read do webhook
+    // responde 404. Criamos a sessão uma vez, paramos imediatamente, aplicamos
+    // o webhook e então iniciamos de novo — preservando a mesma garantia de que
+    // nenhum QR fica disponível sem inbound configurado.
+    try {
+      await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
+    } catch (webhookErr) {
+      const message = webhookErr instanceof Error ? webhookErr.message : String(webhookErr);
+      if (!message.includes("waha_webhook_read_404")) throw webhookErr;
+      await waha.startSession(nomeSessao);
+      await waha.stopSession(nomeSessao);
+      await ensureWahaSessionWebhook(nomeSessao, webhookUrl);
+    }
+
+>>>>>>> origin/main
     const remote = (await waha.startSession(nomeSessao)) as { status?: string };
     const nextStatus = remote.status ?? "STARTING";
 

@@ -1,0 +1,13 @@
+# Recursos untracked (locais) que NÃO devem ir para o build da Vercel.
+# Esses arquivos existem localmente em 2026-09-03 mas o fluxo Git não os envia.
+# O .vercelignore é uma rede de segurança caso o Vercel CLI faça fallback
+# para o diretório local em algum cenário.
+Data/
+scripts/claude-foodservice.ps1
+scripts/prospecting-import-csv.ts
+lib/mcp/stdio-bridge.ts
+MINIMAX_HANDOFF.md
+.env*.local
+.env.tmp*
+.env.production.test
+.git/exclude-staging/

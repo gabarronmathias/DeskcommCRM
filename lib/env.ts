@@ -47,6 +47,12 @@ const schema = z.object({
   INTERNAL_SECRET: required("INTERNAL_SECRET"),
   /** Optional dedicated secret for cron endpoints (S-06.07 onwards). */
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
+  /**
+   * Token de máquina-a-máquina para o Hermes (operador comercial B2B da GB).
+   * Rotacionar a cada 90 dias. Opcional: rotas `/api/internal/hermes/*`
+   * devolvem 401 se a env estiver ausente ou o bearer não bater.
+   */
+  HERMES_API_TOKEN: z.string().optional().default(""),
 
   // Encryption keys (pgcrypto)
   CPF_ENCRYPTION_KEY: required("CPF_ENCRYPTION_KEY"),
@@ -79,12 +85,13 @@ const schema = z.object({
   // assine — aí a verificação passa a ser obrigatória.
   WAHA_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional().default("false"),
 
-  // Upstash Redis é um acelerador: rate limiting e debounce já têm fallback
-  // local. Torná-lo obrigatório derruba o CRM inteiro quando o serviço externo
-  // está indisponível, mesmo com WhatsApp e banco saudáveis.
+  // Upstash Redis — opcional no boot. Os consumidores Redis já possuem fallback
+  // explícito e o health check reporta `degraded` quando a configuração não está
+  // disponível. Aceitar AMBOS os nomes (`UPSTASH_REDIS_REST_*` direto, e
+  // `KV_REST_API_*` da integração oficial Upstash na Vercel) mantém os dois
+  // caminhos de provisionamento funcionando na mesma instalação.
   UPSTASH_REDIS_REST_URL: z.string().optional().default(""),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional().default(""),
-  // Nomes criados pela integração oficial Upstash na Vercel.
   KV_REST_API_URL: z.string().optional().default(""),
   KV_REST_API_TOKEN: z.string().optional().default(""),
 
@@ -239,6 +246,13 @@ export const env = {
   UPSTASH_REDIS_REST_TOKEN:
     parsed.data.UPSTASH_REDIS_REST_TOKEN || parsed.data.KV_REST_API_TOKEN,
 };
+
+if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN) {
+  console.warn(
+    "[env] Redis/Upstash não configurado — CRM continua disponível em modo degradado; " +
+      "rate limits e debounce Redis usam os fallbacks já definidos pelos consumidores.",
+  );
+}
 
 // Soft warning for env-gated AI keys (worker degrades gracefully but operators
 // should know when the bot is silent for config reasons).

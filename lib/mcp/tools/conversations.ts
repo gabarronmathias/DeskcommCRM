@@ -37,6 +37,7 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["messages:read"],
   handler: async (input, ctx) => {
     const result = await listConversationsHandler(
       ctx.supabase,
@@ -100,6 +101,7 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["messages:read"],
   handler: async (input, ctx) => {
     const conv = await getConversationHandler(
       ctx.supabase,
@@ -153,6 +155,7 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["messages:read"],
   handler: async (input, ctx) => {
     const result = await listMessagesHandler(
       ctx.supabase,

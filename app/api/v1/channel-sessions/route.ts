@@ -15,6 +15,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { resolveChannelSessionName } from "@/lib/channels/channel-sessions-naming";
 import { reactivateChannelSession } from "@/lib/channels/reactivate";
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
@@ -126,7 +127,17 @@ export async function POST(req: NextRequest): Promise<Response> {
         status?: string | null;
       })
     | null;
-  const sessionName = existing?.waha_session_name ?? `org_${activeOrg.orgId.slice(0, 8)}`;
+  // Onboarding gera SEMPRE um nome novo a partir do id da organização
+  // (`org_<8hex>`) — nunca um placeholder. A função
+  // `resolveChannelSessionName` (em `lib/channels/channel-sessions-naming.ts`)
+  // centraliza a decisão e tem testes unit. Ver investigação 2026-09-04:
+  // o nome "default" da org gabarron-mathias veio do WAHA Plus bootstrap;
+  // o espelhamento aconteceu em versão anterior do onboarding, e
+  // código novo não pode persistir esses valores.
+  const sessionName = resolveChannelSessionName(
+    existing?.waha_session_name ?? null,
+    activeOrg.orgId,
+  );
   const webhookPathToken = existing?.webhook_path_token ?? randomUUID().replace(/-/g, "");
   const webhookUrl = canonicalWahaWebhookUrl(req.url, webhookPathToken);
 

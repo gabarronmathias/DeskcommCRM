@@ -43,6 +43,8 @@ let sequencia: string[] = [];
 let updateErro: { message: string } | null = null;
 let rpcErro: { message: string } | null = null;
 let ultimoUpdate: Record<string, unknown> | null = null;
+/** Todos os updates disparados, na ordem, com a tabela e o payload. */
+let updates: Array<{ tabela: string; payload: Record<string, unknown> }> = [];
 let ultimaRpc: Record<string, unknown> | null = null;
 
 /** Imita o builder do PostgREST: encadeável, o efeito acontece no `await`. */
@@ -68,7 +70,29 @@ const admin = {
     return {
       update(payload: Record<string, unknown>) {
         ultimoUpdate = payload;
+        updates.push({ tabela, payload });
         return cadeia(`update:${tabela}`);
+      },
+      // encadeia chamadas intermediárias (select, eq, etc) até um thenable
+      select: () => cadeia(`select:${tabela}`),
+      eq: () => cadeia(`eq:${tabela}`),
+      order: () => cadeia(`order:${tabela}`),
+      limit: () => cadeia(`limit:${tabela}`),
+      maybeSingle: () =>
+        new Proxy({}, {
+          get(_t, prop) {
+            if (prop === "then") {
+              return (resolve: (v: unknown) => void) => {
+                sequencia.push(`maybeSingle:${tabela}`);
+                return Promise.resolve({ data: null, error: null }).then(resolve);
+              };
+            }
+            return () => admin.from(tabela);
+          },
+        }),
+      insert: (payload: Record<string, unknown>) => {
+        updates.push({ tabela, payload });
+        return cadeia(`insert:${tabela}`);
       },
     };
   },
@@ -101,6 +125,7 @@ beforeEach(() => {
   updateErro = null;
   rpcErro = null;
   ultimoUpdate = null;
+  updates = [];
   ultimaRpc = null;
   audit.mockClear();
   garantirLeadDaConversa.mockClear();
@@ -144,8 +169,16 @@ describe("a ordem dos três efeitos", () => {
 
 describe("opt-out", () => {
   it("bloqueia o contato quando a mensagem pede para sair", async () => {
-    await rodar({ texto: "quero PARAR de receber" });
-    expect(ultimoUpdate).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
+    await rodar({ texto: "STOP" });
+    // O update de opt-out em `contacts` (is_blocked=true) precisa estar na lista
+    // — pode não ser mais o ÚLTIMO update porque a `sarah_proativa` introduz
+    // um update subsequente em `prospecting_outbound_queue` quando a inbound
+    // é classificada como humana. Aqui checamos pela presença.
+    const optOutUpdate = updates.find((u) => u.tabela === "contacts");
+    if (!optOutUpdate) {
+      throw new Error("No contacts update found. updates=" + JSON.stringify(updates));
+    }
+    expect(optOutUpdate.payload).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
   });
 
   it("NÃO bloqueia quem só escreveu uma palavra parecida", async () => {

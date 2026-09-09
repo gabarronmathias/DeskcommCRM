@@ -43,6 +43,7 @@ export const crmSendWhatsappMessage: McpToolDefinition<typeof inputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["messages:write"],
   handler: async (input, ctx) => {
     const parsed = sendMessageSchema.parse({
       conversation_id: input.conversation_id,

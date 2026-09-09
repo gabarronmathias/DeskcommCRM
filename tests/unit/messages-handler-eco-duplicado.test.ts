@@ -60,7 +60,7 @@ function conversationRow(): Row {
     is_group: false,
     group_chat_id: null,
     contacts: { phone_number: '+5531999998888', wa_identity: null, is_blocked: false },
-    channel_sessions: { provider: 'waha', waha_session_name: 'default', status: 'WORKING' },
+    channel_sessions: { provider: 'waha', waha_session_name: 'test-session', status: 'WORKING' },
   };
 }
 

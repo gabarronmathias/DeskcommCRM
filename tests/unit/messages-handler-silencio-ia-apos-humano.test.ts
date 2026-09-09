@@ -43,7 +43,7 @@ function conversationRow(botSilencedUntil: string | null): Row {
     group_chat_id: null,
     bot_silenced_until: botSilencedUntil,
     contacts: { phone_number: '+5531999998888', wa_identity: null, is_blocked: false },
-    channel_sessions: { provider: 'waha', waha_session_name: 'default', status: 'WORKING' },
+    channel_sessions: { provider: 'waha', waha_session_name: 'test-session', status: 'WORKING' },
   };
 }
 

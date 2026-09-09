@@ -62,6 +62,7 @@ export const crmAssignConversation: McpToolDefinition<typeof assignInputShape> =
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["handoff:write"],
   handler: async (input, ctx) => {
     const parsed = assignObject.parse(input);
 
@@ -181,6 +182,7 @@ export const crmManageTags: McpToolDefinition<typeof tagsInputShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["tags:write"],
   handler: async (input, ctx) => {
     const addTags = (input.add ?? []).map((t) => conversationTagSchema.parse(t));
     const removeTags = new Set((input.remove ?? []).map((t) => conversationTagSchema.parse(t)));
@@ -243,6 +245,7 @@ export const crmGetQueueStatus: McpToolDefinition<typeof queueInputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["queue:read"],
   handler: async (_input, ctx) => {
     return getQueueStatus(ctx.supabase, ctx.organizationId, new Date());
   },

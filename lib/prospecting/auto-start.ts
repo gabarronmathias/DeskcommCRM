@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { isWithinBusinessHours, loadProspectingConfig } from "./config";
+import { activeCampaign, isWithinBusinessHours, loadProspectingConfig } from "./config";
 import { claimOne, dispatchQueueRow, type DispatchResult } from "./dispatch";
 import { targetOrganizationId } from "./service";
 
@@ -30,6 +30,16 @@ export async function dispatchProspectingOnConnection(
   if (config.dryRun) return { outcome: "skipped", reason: "dry_run" };
   if (!isWithinBusinessHours(config)) return { outcome: "skipped", reason: "outside_business_hours" };
 
+  // GB Command Center: pausado via UI? emergency_stop? entao no-op.
+  const { data: cc } = await db
+    .from("command_center_state")
+    .select("prospecting_paused, outbound_paused, emergency_stop")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (cc?.emergency_stop) return { outcome: "skipped", reason: "command_center_emergency_stop" };
+  if (cc?.prospecting_paused) return { outcome: "skipped", reason: "command_center_prospecting_paused" };
+  if (cc?.outbound_paused) return { outcome: "skipped", reason: "command_center_outbound_paused" };
+
   const target = await targetOrganizationId(db);
   if (target !== organizationId) return { outcome: "skipped", reason: "organization_not_target" };
 
@@ -44,7 +54,7 @@ export async function dispatchProspectingOnConnection(
     return { outcome: "skipped", reason: "daily_limit_reached" };
   }
 
-  const row = await claimOne(db, organizationId);
+  const row = await claimOne(db, organizationId, activeCampaign() || null);
   if (!row) return { outcome: "skipped", reason: "queue_empty" };
   return dispatchQueueRow(db, row);
 }

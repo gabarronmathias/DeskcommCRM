@@ -81,6 +81,7 @@ export const crmListStages: McpToolDefinition<typeof listStagesShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["pipelines:read"],
   handler: async (input, ctx) => {
     const etapas = await lerFunil(ctx.supabase, ctx.organizationId, input.pipeline_id);
     if (!etapas) {
@@ -105,6 +106,7 @@ export const crmCreateStage: McpToolDefinition<typeof createStageShape> = {
   category: "write",
   requiresRole: "manager",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["pipelines:write"],
   handler: async (input, ctx) => {
     const { stageId, funil } = await criarEtapa(deps(ctx), {
       pipelineId: input.pipeline_id,
@@ -135,6 +137,7 @@ export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
   category: "write",
   requiresRole: "manager",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["pipelines:write"],
   handler: async (input, ctx) => {
     const pedido: Parameters<typeof atualizarEtapa>[1]["pedido"] = {};
     if (input.name !== undefined) pedido.name = input.name;
@@ -176,6 +179,7 @@ export const crmArchiveStage: McpToolDefinition<typeof archiveStageShape> = {
   category: "write",
   requiresRole: "manager",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["pipelines:write"],
   handler: async (input, ctx) => {
     const { funil, negociosMovidos } = await arquivarEtapa(deps(ctx), {
       pipelineId: input.pipeline_id,
@@ -204,6 +208,7 @@ export const crmListTags: McpToolDefinition<typeof listTagsShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["tags:read"],
   handler: async (input, ctx) => {
     return { marcadores: await listarMarcadores(deps(ctx), { limite: input.limit }) };
   },
@@ -224,6 +229,7 @@ export const crmListMessageTemplates: McpToolDefinition<typeof listTemplatesShap
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["templates:read"],
   handler: async (_input, ctx) => {
     return { modelos: await listarModelosDeMensagem(deps(ctx)) };
   },
@@ -245,6 +251,7 @@ export const crmRenderMessageTemplate: McpToolDefinition<typeof renderTemplateSh
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["templates:read", "contacts:read", "leads:read"],
   handler: async (input, ctx) => {
     return preencherModeloDeMensagem(deps(ctx), {
       templateId: input.template_id,
@@ -271,6 +278,7 @@ export const crmListWebhookSources: McpToolDefinition<typeof listSourcesShape> =
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["webhooks:read"],
   handler: async (input, ctx) => {
     return { entradas: await listarEntradasAutomaticas(deps(ctx), { apenasAtivas: input.only_active }) };
   },
@@ -291,6 +299,7 @@ export const crmListWebhookSourceEvents: McpToolDefinition<typeof sourceEventsSh
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["webhooks:read"],
   handler: async (input, ctx) => {
     return {
       recebimentos: await recebimentosDaEntrada(deps(ctx), {
@@ -320,6 +329,7 @@ export const crmCreateWebhookSource: McpToolDefinition<typeof createSourceShape>
   category: "write",
   requiresRole: "manager",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["webhooks:write"],
   handler: async (input, ctx) => {
     // Segredo nunca fica em claro no banco (migration 0041). Sem chave de cifra
     // configurada, RECUSA em vez de degradar para plaintext — mesma decisão da rota.
@@ -360,6 +370,7 @@ export const crmSetWebhookSourceActive: McpToolDefinition<typeof setSourceActive
   category: "write",
   requiresRole: "manager",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["webhooks:write"],
   handler: async (input, ctx) => {
     return definirEntradaAtiva(deps(ctx), { id: input.source_id, ativa: input.is_active });
   },
@@ -383,6 +394,7 @@ export const crmListAutomationRules: McpToolDefinition<typeof listRulesShape> = 
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["automations:read"],
   handler: async (input, ctx) => {
     return { regras: await listarRegrasAutomaticas(deps(ctx), { apenasAtivas: input.only_active }) };
   },
@@ -404,6 +416,7 @@ export const crmListAutomationRuns: McpToolDefinition<typeof listRunsShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["automations:read"],
   handler: async (input, ctx) => {
     return {
       execucoes: await execucoesDasRegras(deps(ctx), {
@@ -431,6 +444,7 @@ export const crmSetAutomationRuleActive: McpToolDefinition<typeof setRuleActiveS
   category: "write",
   requiresRole: "manager",
   requiresScope: "mcp:write",
+  requiresAdditionalScopes: ["automations:write"],
   handler: async (input, ctx) => {
     return definirRegraAtiva(deps(ctx), { id: input.rule_id, ativa: input.is_active });
   },
@@ -452,6 +466,7 @@ export const crmListTeamMembers: McpToolDefinition<typeof listTeamShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["team:read"],
   handler: async (_input, ctx) => {
     return { time: await listarTime(deps(ctx)) };
   },

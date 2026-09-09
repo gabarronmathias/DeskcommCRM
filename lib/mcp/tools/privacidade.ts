@@ -37,6 +37,7 @@ export const crmListPrivacyRequests: McpToolDefinition<typeof inputShape> = {
   category: "read",
   requiresRole: "agent",
   requiresScope: "mcp:read",
+  requiresAdditionalScopes: ["privacy:read"],
   handler: async (input, ctx) => {
     let q = ctx.supabase
       .from("lgpd_requests")

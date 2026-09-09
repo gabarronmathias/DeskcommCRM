@@ -16,6 +16,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { MCP_ADDITIONAL_SCOPES } from "@/lib/mcp/types";
 
 export const EPHEMERAL_TOKEN_TTL_SEC = 300;
 
@@ -116,6 +117,7 @@ export async function mintEphemeralToken(
         "actor:ai_agent",
         `agent_run:${input.runId}`,
         "role:ai_operator",
+        ...MCP_ADDITIONAL_SCOPES,
       ],
       expires_at: expiresAt,
     })

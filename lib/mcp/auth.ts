@@ -5,10 +5,10 @@
  * (`dsk_<prefix>_<secret>`) e hashado SHA256 e batido contra `token_hash`.
  * Nunca logamos plaintext (Sentry beforeSend strip ja cobre `authorization`).
  *
- * Atributos extras (actor_type, agent_run_id, role) ficam em `scopes`
+ * Atributos extras (agent_run_id, role) ficam em `scopes`
  * como tokens convencionais, sem migration:
  *   `role:manager`     -> role override (default `agent`)
- *   `actor:ai_agent`   -> marca actor_type (default `user`)
+ *   `actor:ai_agent`   -> marcador legado; bearer MCP já atua como `ai_agent`
  *   `agent_run:<uuid>` -> vincula tool_call ao run (Spec 10)
  *   `mcp:read`         -> habilita read tools desta wave
  *   `mcp:write`        -> habilita write tools (S-13.04)
@@ -57,14 +57,17 @@ function scopesRole(scopes: string[]): Role {
 }
 
 function deriveActor(scopes: string[], tokenId: string): Actor {
-  const isAiAgent = scopes.includes("actor:ai_agent");
   const role = scopesRole(scopes);
-  if (isAiAgent) {
-    const runScope = scopes.find((s) => s.startsWith("agent_run:"));
-    const runId = runScope ? runScope.slice("agent_run:".length) : tokenId;
-    return { type: "ai_agent", id: runId, role, api_token_id: tokenId };
-  }
-  return { type: "user", id: tokenId, role };
+  const runScope = scopes.find((s) => s.startsWith("agent_run:"));
+  const runId = runScope ? runScope.slice("agent_run:".length) : tokenId;
+
+  // O bearer autenticado neste módulo existe exclusivamente no endpoint MCP.
+  // `tokenId` referencia `api_tokens`, NÃO `auth.users`. Marcá-lo como `user`
+  // fazia handlers compartilhados persistirem esse UUID em FKs de usuário
+  // (ex.: messages.sent_by_user_id), causando violação de chave estrangeira.
+  // Tokens MCP externos são atores de IA; autoria humana só entra nos handlers
+  // pela sessão autenticada dos endpoints REST/UI.
+  return { type: "ai_agent", id: runId, role, api_token_id: tokenId };
 }
 
 export function extractBearer(authHeader: string | null): string | null {
