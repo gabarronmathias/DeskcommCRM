@@ -40,22 +40,15 @@ export function generateMetadata(): Metadata {
       "Centralize o atendimento por WhatsApp num funil só. Agentes de IA resolvem o que dá pra resolver e passam para o time humano o que importa — com tudo registrado. Multi-tenant, LGPD-nativo, feito para operações brasileiras.",
     applicationName: name,
     authors: [{ name }],
-    keywords: [
-      "CRM",
-      "atendimento",
-      "WhatsApp",
-      "IA conversacional",
-      "LGPD",
-      "multi-tenant",
-    ],
+    keywords: ["CRM", "atendimento", "WhatsApp", "IA conversacional", "LGPD", "multi-tenant"],
     robots: { index: false, follow: false },
   };
 }
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf9f6" },
-    { media: "(prefers-color-scheme: dark)", color: "#161510" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f1e8" },
+    { media: "(prefers-color-scheme: dark)", color: "#07111c" },
   ],
 };
 
@@ -63,9 +56,7 @@ export const viewport: Viewport = {
 // portanto seguro. Lê localStorage + prefers-color-scheme antes do primeiro paint.
 const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('deskcomm-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(s==='dark'||s==='light')?s:((s==='system'||!s)&&d?'dark':'light');document.documentElement.setAttribute('data-theme',r);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="pt-BR"
@@ -81,12 +72,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-bg font-sans text-text antialiased">
         <Providers>
           <ThemeProvider>{children}</ThemeProvider>
-          <Toaster
-            position="top-right"
-            richColors
-            closeButton
-            duration={4000}
-          />
+          <Toaster position="top-right" richColors closeButton duration={4000} />
         </Providers>
       </body>
     </html>

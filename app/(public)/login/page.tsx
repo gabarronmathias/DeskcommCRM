@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/LoginForm";
-import { branding } from "@/lib/branding";
 
 export const metadata = { title: "Entrar" };
 
@@ -14,8 +13,13 @@ export default async function LoginPage({
   return (
     <div className="space-y-6">
       <div className="space-y-1.5 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Entrar</h1>
-        <p className="text-sm text-muted-foreground">{branding().name}</p>
+        <p className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-primary">
+          Acesso seguro
+        </p>
+        <h1 className="text-3xl font-bold tracking-tight">Acesse a Central de Comando</h1>
+        <p className="text-sm leading-6 text-muted-foreground">
+          Acompanhe atendimento, vendas e operação em um só lugar.
+        </p>
       </div>
       {reset === "success" && (
         <div
@@ -30,8 +34,7 @@ export default async function LoginPage({
           className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
-          Link inválido ou expirado. Peça um novo em Recuperar senha ou refaça o
-          cadastro.
+          Link inválido ou expirado. Peça um novo em Recuperar senha ou refaça o cadastro.
         </div>
       )}
       {error === "provisionamento" && (
@@ -39,8 +42,8 @@ export default async function LoginPage({
           className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
-          Sua conta foi confirmada, mas houve um erro ao preparar seu ambiente.
-          Tente entrar novamente em instantes.
+          Sua conta foi confirmada, mas houve um erro ao preparar seu ambiente. Tente entrar
+          novamente em instantes.
         </div>
       )}
       <LoginForm next={next} />
@@ -55,10 +58,7 @@ export default async function LoginPage({
         </p>
         <p className="text-muted-foreground">
           Não tem conta?{" "}
-          <Link
-            href="/signup"
-            className="font-medium text-foreground underline underline-offset-4"
-          >
+          <Link href="/signup" className="font-medium text-foreground underline underline-offset-4">
             Criar conta
           </Link>
         </p>

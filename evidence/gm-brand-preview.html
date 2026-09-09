@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prévia — CRM Gabarron & Mathias</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root { color-scheme: light; font-family: "Segoe UI", Arial, sans-serif; }
+      body { margin: 0; background: #f5f1e8; color: #102235; }
+      .app { min-height: 100vh; display: grid; grid-template-columns: 240px 1fr; }
+      aside {
+        position: fixed; inset: 0 auto 0 0; width: 240px; padding-bottom: 18px;
+        color: #edf2f5; border-right: 1px solid rgba(216,177,94,.22);
+        background: radial-gradient(circle at 10% -10%,rgba(216,177,94,.15),transparent 420px),linear-gradient(180deg,#0b2034,#071522 56%,#050e18);
+        display: flex; flex-direction: column;
+      }
+      .brand { height: 80px; padding: 12px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(216,177,94,.18); }
+      .brand img { width: 49px; height: 49px; object-fit: contain; filter: drop-shadow(0 4px 10px rgba(0,0,0,.28)); }
+      .brand strong { display: block; color: #fff9ea; font: 16px/1.05 Georgia,serif; }
+      .brand small,.group-title,.command,.kicker { font: 500 8px/1.2 Consolas,monospace; text-transform: uppercase; letter-spacing: .16em; }
+      .brand small { display: block; margin-top: 6px; color: #d8b15e; }
+      nav { flex: 1; padding: 8px; overflow: hidden; }
+      .group { margin-top: 8px; }
+      .group-title { padding: 7px 12px 5px; color: rgba(216,177,94,.72); }
+      .item { height: 35px; padding: 0 11px; display: flex; align-items: center; gap: 11px; border-radius: 7px; color: rgba(226,235,241,.72); font-size: 13px; }
+      .item b { width: 17px; color: rgba(216,177,94,.85); font-weight: 400; text-align: center; }
+      .item.active { color: #071522; background: linear-gradient(105deg,#d8b15e,#efcd7e); box-shadow: 0 8px 18px rgba(5,14,24,.22); font-weight: 700; }
+      .item.active b { color: #071522; }
+      .footer { margin: auto 8px 0; padding: 13px 11px 0; border-top: 1px solid rgba(216,177,94,.18); color: rgba(226,235,241,.62); font-size: 12px; }
+      .content { grid-column: 2; min-width: 0; }
+      header { height: 64px; position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; border-bottom: 1px solid rgba(155,103,29,.2); background: rgba(255,253,250,.94); }
+      .head-left { display: flex; align-items: center; gap: 13px; }
+      .command { color: #7b8792; }
+      .rule { width: 1px; height: 17px; background: #c1872c; }
+      .tenant { font-size: 14px; font-weight: 650; }
+      .search { width: 330px; padding: 9px 14px; border: 1px solid #ded4c1; border-radius: 8px; background: #fffdfa; color: #7b8792; font-size: 12px; }
+      .user { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #102235; color: #f8dc8d; font-weight: 700; }
+      main { min-height: calc(100vh - 64px); padding: 28px; background: linear-gradient(rgba(16,34,53,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(16,34,53,.025) 1px,transparent 1px),#f5f1e8; background-size: 32px 32px; }
+      .kicker { color: #9b671d; }
+      h1 { margin: 8px 0 6px; font-size: 34px; letter-spacing: -.035em; }
+      .intro { margin: 0; color: #52616f; font-size: 14px; }
+      .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-top: 24px; }
+      .card { padding: 18px; border: 1px solid #ded4c1; border-radius: 10px; background: rgba(255,253,250,.94); box-shadow: 0 8px 26px rgba(7,24,42,.055); }
+      .card small { color: #7b8792; font: 500 9px Consolas,monospace; letter-spacing: .12em; text-transform: uppercase; }
+      .metric { margin-top: 9px; font-size: 25px; font-weight: 750; }
+      .metric.gold { color: #9b671d; }
+      .workspace { display: grid; grid-template-columns: 310px 1fr 300px; gap: 14px; margin-top: 14px; min-height: 485px; }
+      .pane { border: 1px solid #ded4c1; border-radius: 10px; background: rgba(255,253,250,.95); overflow: hidden; }
+      .pane-title { height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #ded4c1; font-size: 13px; font-weight: 750; }
+      .badge { padding: 4px 8px; border-radius: 99px; background: #fdf0c7; color: #754b17; font: 600 9px Consolas,monospace; }
+      .conversation { padding: 13px 14px; border-bottom: 1px solid #eee7da; }
+      .conversation.active { border-left: 3px solid #c1872c; background: #fff9e8; }
+      .conversation strong { font-size: 13px; }
+      .conversation p { margin: 5px 0 0; color: #52616f; font-size: 11px; }
+      .chat { padding: 18px; background: #fbf8f1; }
+      .bubble { max-width: 75%; margin: 10px 0; padding: 11px 13px; border-radius: 10px; background: #fffdfa; border: 1px solid #ded4c1; font-size: 12px; line-height: 1.45; }
+      .bubble.out { margin-left: auto; color: #071522; background: #f8dc8d; border-color: #efc25d; }
+      .side-data { padding: 16px; }
+      .side-data h3 { margin: 0 0 16px; font-size: 13px; }
+      .field { padding: 11px 0; border-bottom: 1px solid #eee7da; }
+      .field span { display: block; color: #7b8792; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; }
+      .field b { display: block; margin-top: 5px; font-size: 12px; }
+      @media(max-width:1000px){.stats{grid-template-columns:repeat(2,1fr)}.workspace{grid-template-columns:280px 1fr}.workspace .pane:last-child{display:none}.search{display:none}}
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside>
+        <div class="brand"><img src="../public/brand/gm-shield.webp" alt="" /><div><strong>CRM Gabarron<br />& Mathias</strong><small>Central de comando</small></div></div>
+        <nav>
+          <div class="group"><div class="group-title">Operação</div><div class="item active"><b>▣</b>Inbox</div><div class="item"><b>◷</b>Radar</div><div class="item"><b>⌁</b>Conexões</div></div>
+          <div class="group"><div class="group-title">Relacionamento</div><div class="item"><b>◇</b>Kanban</div><div class="item"><b>◎</b>Contatos</div><div class="item"><b>◌</b>Equipe</div><div class="item"><b>⌁</b>Desempenho</div></div>
+          <div class="group"><div class="group-title">Inteligência</div><div class="item"><b>✦</b>Agentes IA</div><div class="item"><b>⇢</b>Roteadores</div><div class="item"><b>↻</b>Follow-ups</div><div class="item"><b>◈</b>Memória da IA</div></div>
+          <div class="group"><div class="group-title">Governança</div><div class="item"><b>⚙</b>Configurações</div></div>
+        </nav>
+        <div class="footer">‹ &nbsp; Recolher</div>
+      </aside>
+      <div class="content">
+        <header><div class="head-left"><span class="command">Central de comando</span><span class="rule"></span><span class="tenant">Athos Piloto — Tortas do Calmon</span></div><div class="search">⌕ &nbsp; Buscar contato, conversa ou pedido</div><div class="user">GM</div></header>
+        <main>
+          <div class="kicker">Operação em tempo real</div><h1>Inbox de relacionamento</h1><p class="intro">Conversas, vendas e contexto operacional reunidos numa única visão.</p>
+          <div class="stats"><div class="card"><small>Conversas abertas</small><div class="metric">18</div></div><div class="card"><small>Atendidas pela Sarah</small><div class="metric gold">76%</div></div><div class="card"><small>Tempo de primeira resposta</small><div class="metric">18s</div></div><div class="card"><small>Pedidos em andamento</small><div class="metric">12</div></div></div>
+          <div class="workspace">
+            <section class="pane"><div class="pane-title">Conversas <span class="badge">18 abertas</span></div><div class="conversation active"><strong>Mariana Souza</strong><p>Quero incluir uma porção no pedido…</p></div><div class="conversation"><strong>Paulo Oliveira</strong><p>O meu pedido já saiu?</p></div><div class="conversation"><strong>Renata Martins</strong><p>Vocês entregam no Jardim das…</p></div><div class="conversation"><strong>José Carlos</strong><p>Quero repetir o último pedido.</p></div></section>
+            <section class="pane"><div class="pane-title">Mariana Souza <span class="badge">Sarah atendendo</span></div><div class="chat"><div class="bubble">Olá! Quero pedir o combo de hoje.</div><div class="bubble out">Perfeito, Mariana. O combo está disponível. Quer acrescentar nossa porção de fritas para acompanhar?</div><div class="bubble">Pode adicionar. Vou retirar no balcão.</div><div class="bubble out">Ótimo. Vou registrar o pedido no cardápio Athos e já trago a confirmação aqui.</div></div></section>
+            <section class="pane"><div class="pane-title">Contexto do cliente</div><div class="side-data"><h3>Histórico de relacionamento</h3><div class="field"><span>Cliente desde</span><b>14 de agosto</b></div><div class="field"><span>Pedidos</span><b>6 pedidos · R$ 342</b></div><div class="field"><span>Preferência</span><b>Retirada no balcão</b></div><div class="field"><span>Último contato</span><b>Hoje, 18:42</b></div></div></section>
+          </div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

@@ -16,7 +16,14 @@ export function TenantSwitcher() {
   const active = useActiveOrg();
   const [isPending, startTransition] = useTransition();
 
-  if (user.organizations.length <= 1) return null;
+  if (user.organizations.length <= 1) {
+    return (
+      <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
+        <Storefront size={16} weight="duotone" className="shrink-0 text-primary" aria-hidden />
+        <span className="max-w-[220px] truncate">{active?.name ?? "Organização"}</span>
+      </div>
+    );
+  }
 
   return (
     <DropdownMenu>
@@ -31,11 +38,17 @@ export function TenantSwitcher() {
         {user.organizations.map((org) => (
           <DropdownMenuItem
             key={org.organization_id}
-            onClick={() => startTransition(async () => { await setActiveOrg(org.organization_id); })}
+            onClick={() =>
+              startTransition(async () => {
+                await setActiveOrg(org.organization_id);
+              })
+            }
             className="flex items-center justify-between"
           >
             <span className="truncate">{org.organization_name}</span>
-            {active?.orgId === org.organization_id && <span className="text-xs text-muted-foreground">✓</span>}
+            {active?.orgId === org.organization_id && (
+              <span className="text-xs text-muted-foreground">✓</span>
+            )}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

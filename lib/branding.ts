@@ -16,7 +16,8 @@
  * runtime em vez de lida do bundle.
  */
 
-export const DEFAULT_APP_NAME = "DeskcommCRM";
+export const DEFAULT_APP_NAME = "CRM Gabarron & Mathias";
+export const DEFAULT_APP_LOGO_URL = "/brand/gm-shield.webp";
 
 export type Branding = {
   /** Nome exibido na interface e nos títulos de página. */
