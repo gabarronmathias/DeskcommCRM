@@ -26,6 +26,7 @@ const dispatchPayloadSchema = z
     contact_id: z.string().uuid(),
     channel_session_id: z.string().uuid(),
     inbound_message_id: z.string().uuid(),
+    correlation_id: z.string().uuid().optional(),
   })
   .passthrough();
 
@@ -171,6 +172,7 @@ async function processEvent(
       channel_session_id: p.channel_session_id,
       inbound_message_id: p.inbound_message_id,
       crm_event_id: event.id,
+      ...(p.correlation_id !== undefined ? { correlation_id: p.correlation_id } : {}),
     },
     ...(runAfter !== undefined ? { runAfter } : {}),
   });

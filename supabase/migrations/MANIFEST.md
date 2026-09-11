@@ -87,6 +87,7 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260726000000` | `0085_intent_router` | Épico Harness (F3): `ai_routers` (1 ativo por channel_session, config classifier_model/sticky/min_confidence, fallback_agent_id), `ai_router_members` (agente + intenção declarada + exemplos), `ai_router_decisions` (telemetria append-only sem PII); `conversations` ganha `active_ai_agent_id`/`active_intent`/`active_agent_set_at` (stickiness). Triggers de audit + updated_at nas editáveis. RLS `tenant_isolation_*_all`. NNNN=0085 — verificado em TODAS as refs (locais + origin): branch atual tem 0067-0069, `main` tem 0070-0084; 0085 é o primeiro livre em ambas as linhas. `database.types.ts` regenerado. |
 | `20260727000000` | `0086_knowledge_searches` | Telemetria de busca de conhecimento (hits, top_score, threshold) — leitor é o Painel de Evolução da Fase 4. Sem PII. |
 | `20260729000000` | `0092_stage_names_acentos` | Acentos nas etapas padrão do funil: o seed criava "Em separacao" e "Pos-venda" sem acento, e esses nomes aparecem no quadro principal. Corrige o seed e cura instalações existentes (só onde o nome padrão está intacto). |
+| `20260911200000` | `0093_waha_event_idempotency` | WAHA retry seguro: eventos de ingestão passam a aceitar `source_event_key` estável, com índice único por organização/tipo e `emit_event` idempotente, evitando novo turno quando o webhook é reenviado depois de uma falha. |
 
 ## Reproducibility
 

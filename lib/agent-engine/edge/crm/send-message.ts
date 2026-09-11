@@ -70,6 +70,7 @@ export interface SendMessageInput {
   seq: number;
   conversationId: string;
   body: string;
+  correlationId?: string;
 }
 
 /** Fallback do ator ai_agent quando não há agente publicado (cfg.agentActorId). */
@@ -120,7 +121,10 @@ export async function sendTurnMessage(
         conversation_id: input.conversationId,
         type: 'text',
         body: input.body,
-        metadata: { idempotency_key: idempotencyKey },
+        metadata: {
+          idempotency_key: idempotencyKey,
+          ...(input.correlationId !== undefined ? { correlation_id: input.correlationId } : {}),
+        },
       },
     );
   } catch (err) {

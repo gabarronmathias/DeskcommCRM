@@ -96,6 +96,7 @@ import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { runBeforeSend } from '../guardrails/before-send';
 import { sendInBubbles } from './split-message';
+import { buildMenuReply, hasPendingMenuRequest, loadAthosMenuContext } from '../edge/crm/menu-context';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
@@ -120,6 +121,11 @@ export const AGENT_TOOL_DEFS = {
   get_lead_context: {
     description:
       'Relê o contexto curado do lead nesta organização: dados do contato e as últimas mensagens da conversa.',
+    inputSchema: z.object({}),
+  },
+  get_athos_menu: {
+    description:
+      'Lê o cardápio oficial da Athos desta organização. Use quando o lead pedir cardápio, menu, opções ou quiser fazer um pedido; nunca invente nem altere o URL retornado.',
     inputSchema: z.object({}),
   },
   send_message: {
@@ -268,6 +274,7 @@ const inboundTurnPayloadSchema = z
     channel_session_id: z.string().uuid(),
     inbound_message_id: z.string().uuid(),
     crm_event_id: z.string().uuid(),
+    correlation_id: z.string().uuid().optional(),
   })
   .passthrough();
 
@@ -318,6 +325,8 @@ export interface InboundTurnKnobs {
   notesIndexMaxTokens: number;
   /** teto de steps do loop de tools por run (AGENT_MAX_STEPS) — circuit breaker fino é F2-15 */
   maxSteps: number;
+  /** limite de parede de cada chamada LLM (LLM_TIMEOUT_MS). */
+  llmTimeoutMs?: number;
   /** atraso do reagendamento em veto/queued herdado da F2-06 (SEND_QUEUED_RETRY_MS) */
   queuedRetryDelayMs: number;
   /** circuit breaker de tools por run (F2-15) — env TOOL_BREAKER_* */
@@ -533,6 +542,7 @@ function buildOpeningMessage(
     '',
     'Responda ao lead usando a tool send_message — NUNCA escreva a resposta como texto direto',
     '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
+    'Se o lead pediu cardápio, menu ou opções, use get_athos_menu e inclua no envio o URL exato retornado.',
     'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
     'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
   ].join('\n');
@@ -550,6 +560,8 @@ export interface AgentTurnInput {
   channelSessionId: string;
   /** conversa do CRM — destino do send_message. */
   conversationId: string;
+  /** Correlação criada na entrada WAHA e carregada até o egress. */
+  correlationId?: string;
   /** monta a abertura APÓS o ritual de leitura (inbound vs. bloco temporal do follow-up). */
   buildOpening: (ritual: {
     previous: LeadCheckpointRow | null;
@@ -580,7 +592,12 @@ export async function runAgentTurn(
   }
   const contextKnobs = { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens };
   // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
-  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+  const runLog = withFields(deps.log, {
+    job_id: job.id,
+    tenant_id: tenantId,
+    lead_id: leadId,
+    ...(input.correlationId !== undefined ? { correlation_id: input.correlationId } : {}),
+  });
 
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
@@ -721,6 +738,7 @@ export async function runAgentTurn(
       : systemWithMemory;
   const previous = await latestCheckpoint(pool, tenantId, leadId);
   const leadState = await getLeadState(pool, tenantId, leadId);
+  const contextStartedAt = Date.now();
   const openingContext = await getLeadContext(
     pool,
     deps.crmCfg,
@@ -732,6 +750,7 @@ export async function runAgentTurn(
     // sumiu) — ambos re-tentam pela fila e morrem em 'dead' se persistirem.
     throw new Error(`abertura do turno falhou em get_lead_context (${openingContext.error.code})`);
   }
+  runLog.info('turn stage complete', { stage: 'context', duration_ms: Date.now() - contextStartedAt });
 
   // F4-06 (acceptance 1): detecção DETERMINÍSTICA (regex PT-BR, sem LLM) de pedido explícito
   // de atendimento humano na última mensagem do lead. Handoff é cidadão de 1ª classe (exigência
@@ -827,6 +846,11 @@ export async function runAgentTurn(
       };
     }
   }
+
+  // Um pedido de cardápio permanece pendente até o URL oficial aparecer em uma
+  // mensagem de saída. Assim, uma saudação posterior ainda conclui a entrega
+  // que o modelo havia prometido, sem repetir "só um instante".
+  const menuRequested = hasPendingMenuRequest(effectiveContext.messages, effectiveContext.menu?.menu_url);
 
   // Índice da memória durável do lead (F3-05) — headlines dentro do orçamento fixo,
   // injetado no SUFIXO da abertura (não invalida o prefixo cacheável F2-17). Montado
@@ -982,6 +1006,21 @@ export async function runAgentTurn(
         }
       },
     }),
+    get_athos_menu: tool({
+      ...AGENT_TOOL_DEFS.get_athos_menu,
+      execute: async () => {
+        const menu = await loadAthosMenuContext(pool, tenantId);
+        return menu
+          ? { ok: true, menu }
+          : {
+              ok: false,
+              error: {
+                code: 'athos_menu_unavailable',
+                message: 'cardápio Athos não está configurado para esta organização; não invente um URL e encaminhe para confirmação humana.',
+              },
+            };
+      },
+    }),
     search_knowledge: tool({
       ...AGENT_TOOL_DEFS.search_knowledge,
       execute: async ({ query }) => {
@@ -1037,7 +1076,9 @@ export async function runAgentTurn(
             leadId,
             jobId: job.id,
             channelSessionId: input.channelSessionId,
-            body,
+            body: menuRequested && effectiveContext.menu
+              ? buildMenuReply(effectiveContext.menu.menu_url, effectiveContext.contact.name)
+              : body,
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
@@ -1070,6 +1111,7 @@ export async function runAgentTurn(
                     seq,
                     conversationId: input.conversationId,
                     body: bubble,
+                    ...(input.correlationId !== undefined ? { correlationId: input.correlationId } : {}),
                   });
                 },
               }),
@@ -1588,6 +1630,7 @@ export async function runAgentTurn(
       : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
 
   // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
+  const modelStartedAt = Date.now();
   const turn = await runModelCall(
     pool,
     deps.llmCfg,
@@ -1600,6 +1643,7 @@ export async function runAgentTurn(
       messages: openingMessages,
       tools,
       maxSteps,
+      ...(deps.knobs.llmTimeoutMs !== undefined ? { timeoutMs: deps.knobs.llmTimeoutMs } : {}),
       ...(agentConfig !== null
         ? {
             model: agentConfig.model,
@@ -1609,6 +1653,7 @@ export async function runAgentTurn(
     },
     { registry: deps.registry, log: runLog },
   );
+  runLog.info('turn stage complete', { stage: 'agent_model', duration_ms: Date.now() - modelStartedAt });
 
   // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
   // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
@@ -1644,6 +1689,7 @@ export async function runAgentTurn(
       : turn.result.response.messages;
 
   // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
+  const checkpointStartedAt = Date.now();
   const closing = await runModelCall(
     pool,
     deps.llmCfg,
@@ -1666,9 +1712,11 @@ export async function runAgentTurn(
         ...responseMessages,
         { role: 'user', content: CHECKPOINT_INSTRUCTION },
       ],
+      ...(deps.knobs.llmTimeoutMs !== undefined ? { timeoutMs: deps.knobs.llmTimeoutMs } : {}),
     },
     { registry: deps.registry, log: runLog },
   );
+  runLog.info('turn stage complete', { stage: 'checkpoint_model', duration_ms: Date.now() - checkpointStartedAt });
   const content = parseCheckpointText(closing.result.text);
 
   // Wave 3 (2.4): o checkpoint anterior é lido ANTES de gravar o novo — a
@@ -1782,6 +1830,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: payload.channel_session_id,
       conversationId: payload.conversation_id,
+      ...(payload.correlation_id !== undefined ? { correlationId: payload.correlation_id } : {}),
       buildOpening: ({ previous, leadState, context, notesIndexBlock }) =>
         buildOpeningMessage(previous, leadState, context, notesIndexBlock),
     });

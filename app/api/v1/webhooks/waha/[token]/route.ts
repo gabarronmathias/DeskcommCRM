@@ -93,7 +93,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     if (key.toLowerCase() === "cookie") return;
     headersJson[key] = value;
   });
-  await admin.from("webhook_events_log").insert({
+  const { error: webhookLogError } = await admin.from("webhook_events_log").insert({
     organization_id: session.organization_id,
     channel_session_id: session.id,
     provider: "waha",
@@ -109,11 +109,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     status: "received",
     attempts: 0,
   });
+  if (webhookLogError) {
+    console.error("[waha.webhook] webhook event log failed", webhookLogError.message);
+    return fail("internal_error", "webhook_log_retryable", 503, { requestId });
+  }
 
   try {
     await dispatchWahaEvent(admin, session, envelope, requestId);
   } catch (err) {
     console.error("[waha.webhook] handler failed", err);
+    return fail("internal_error", "webhook_ingest_retryable", 503, { requestId });
   }
 
   return ok({ accepted: true }, { requestId });

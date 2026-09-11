@@ -73,6 +73,7 @@ CREATE OR REPLACE FUNCTION "public"."emit_event"("p_event_type" "text", "p_entit
 declare
   v_org_id uuid;
   v_event_id uuid;
+  v_metadata jsonb;
 begin
   v_org_id := p_organization_id;
   if v_org_id is null then
@@ -86,14 +87,39 @@ begin
     raise exception 'emit_event: organization_id obrigatorio';
   end if;
 
-  insert into public.event_log
+  v_metadata := coalesce(p_metadata, '{}'::jsonb)
+    || jsonb_build_object('emitted_at', extract(epoch from now()));
+
+  if v_metadata ? 'source_event_key' then
+    select id into v_event_id
+      from public.event_log
+      where organization_id = v_org_id
+        and event_type = p_event_type
+        and metadata ->> 'source_event_key' = v_metadata ->> 'source_event_key'
+      limit 1;
+    if v_event_id is not null then return v_event_id; end if;
+  end if;
+
+  begin
+    insert into public.event_log
     (organization_id, event_type, entity_kind, entity_id, payload, metadata)
   values
     (v_org_id, p_event_type, p_entity_kind, p_entity_id,
      coalesce(p_payload, '{}'::jsonb),
-     coalesce(p_metadata, '{}'::jsonb)
-       || jsonb_build_object('emitted_at', extract(epoch from now())))
+     v_metadata)
   returning id into v_event_id;
+  exception when unique_violation then
+    if v_metadata ? 'source_event_key' then
+      select id into v_event_id
+        from public.event_log
+        where organization_id = v_org_id
+          and event_type = p_event_type
+          and metadata ->> 'source_event_key' = v_metadata ->> 'source_event_key'
+        limit 1;
+      if v_event_id is not null then return v_event_id; end if;
+    end if;
+    raise;
+  end;
 
   return v_event_id;
 end $$;
@@ -2320,6 +2346,9 @@ CREATE INDEX "event_log_org_type_idx" ON "public"."event_log" USING "btree" ("or
 
 
 CREATE INDEX "event_log_pending_idx" ON "public"."event_log" USING "btree" ("organization_id", "created_at") WHERE ("status" = 'pending'::"text");
+
+
+CREATE UNIQUE INDEX "event_log_source_event_key_uq" ON "public"."event_log" USING "btree" ("organization_id", "event_type", (("metadata" ->> 'source_event_key'::"text"))) WHERE ("metadata" ? 'source_event_key'::"text");
 
 
 

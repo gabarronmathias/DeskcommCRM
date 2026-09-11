@@ -14,6 +14,7 @@
 import type { Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import { deriveLgpdFromContact, type LgpdInput } from '../../guardrails/lgpd/legal-basis';
+import { loadAthosMenuContext, type AthosMenuContext } from './menu-context';
 
 /**
  * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
@@ -85,6 +86,8 @@ export interface LeadContext {
    * diferentes, não alternativas.
    */
   last_human_decision: UltimaDecisaoHumana | null;
+  /** URL oficial do cardápio, quando este tenant possui Athos ativo. */
+  menu?: AthosMenuContext | null;
   /** Últimas N mensagens, da mais antiga para a mais nova. */
   messages: LeadContextMessage[];
 }
@@ -172,6 +175,10 @@ export async function getLeadContext(
     );
   }
 
+  // Athos é a fonte oficial do cardápio. A leitura é org-scoped e o contexto
+  // carrega o valor estruturado para o modelo e para o guard de envio.
+  const menu = await loadAthosMenuContext(db, input.tenantId);
+
   // Conversa: a do job quando informada (fonte confiável); senão a 1:1 mais
   // recente do contato. Grupos NUNCA (regra dura nº 12).
   let conversationId = input.conversationId ?? null;
@@ -243,6 +250,7 @@ export async function getLeadContext(
       },
       conversation_id: conversationId,
       last_human_decision: lastHumanDecision,
+      menu,
     },
     history,
     knobs.maxTokens,

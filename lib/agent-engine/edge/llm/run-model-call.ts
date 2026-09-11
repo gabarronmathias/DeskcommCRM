@@ -95,6 +95,8 @@ export interface RunModelCallInput {
    * 2B) — resolvido no seam, nunca no call site. Sem ele, config da org.
    */
   llmOverride?: import('./credentials').LlmResolveOverride;
+  /** Limite de parede para provider/tool loop; timeout vira falha retryable do job. */
+  timeoutMs?: number;
 }
 
 export interface RunModelCallDeps {
@@ -174,6 +176,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   });
 
   const startedAt = Date.now();
+  const timeoutMs = input.timeoutMs ?? 120_000;
   // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
   // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
   const result = await generateText({
@@ -186,6 +189,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     topP,
     topK,
     maxOutputTokens,
+    abortSignal: AbortSignal.timeout(timeoutMs),
   });
   const latencyMs = Date.now() - startedAt;
 
@@ -229,6 +233,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     ...usage,
     cost_cents: cost,
     latency_ms: latencyMs,
+    timeout_ms: timeoutMs,
   });
 
   return {

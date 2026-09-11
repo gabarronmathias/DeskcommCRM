@@ -70,6 +70,7 @@ const envSchema = z.object({
   FOLLOWUP_MAX_AHEAD_MS: z.coerce.number().int().positive().default(15_552_000_000),
   // TTL do prefixo estável de prompt cache (doutrina: 1h).
   LLM_CACHE_TTL: z.enum(['5m', '1h']).default('1h'),
+  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   // Payload curado da tool get_lead_context.
   LEAD_CONTEXT_HISTORY_LIMIT: z.coerce.number().int().positive().default(20),
   LEAD_CONTEXT_MAX_TOKENS: z.coerce.number().int().positive().default(1_000),

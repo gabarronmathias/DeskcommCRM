@@ -22,6 +22,8 @@ export interface ChannelSendInput {
   /** referência da conversa no canal (conversation_id do CRM na v1) */
   conversationId: string;
   body: string;
+  /** Correlação do webhook inbound; follow-ups podem omitir. */
+  correlationId?: string;
 }
 
 /**

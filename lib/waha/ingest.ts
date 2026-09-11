@@ -201,7 +201,7 @@ async function upsertContact(
   } as never);
   if (error) {
     console.error("[waha.ingest] fn_upsert_wa_contact failed", error.message);
-    return null;
+    throw new Error(`waha contact upsert failed: ${error.message}`);
   }
   return (data as string) ?? null;
 }
@@ -219,7 +219,7 @@ async function upsertConversation(
   } as never);
   if (error) {
     console.error("[waha.ingest] fn_upsert_wa_conversation failed", error.message);
-    return null;
+    throw new Error(`waha conversation upsert failed: ${error.message}`);
   }
   return (data as string) ?? null;
 }
@@ -282,6 +282,69 @@ async function markConversation(
   }
 }
 
+interface InboundEventDetails {
+  organizationId: string;
+  messageId: string;
+  conversationId: string;
+  contactId: string;
+  channelSessionId: string;
+  externalId: string;
+  body: string;
+  hasMedia: boolean;
+  requestId: string;
+}
+
+/**
+ * Eventos que sustentam o próximo passo são parte da ingestão, não um efeito
+ * colateral fire-and-forget. A rota só confirma o webhook depois que eles
+ * foram aceitos pelo event_log; em falha, o WAHA recebe 503 e pode reenviar.
+ * `source_event_key` torna o replay do mesmo webhook idempotente no banco.
+ */
+async function emitInboundEvents(admin: Admin, details: InboundEventDetails): Promise<void> {
+  const baseMetadata = {
+    source: "waha_webhook",
+    request_id: details.requestId,
+    source_event_key: `waha:${details.organizationId}:${details.externalId}`,
+  };
+  const events = [
+    {
+      p_event_type: "ai_agent.dispatch_requested",
+      p_entity_kind: "message",
+      p_payload: {
+        organization_id: details.organizationId,
+        conversation_id: details.conversationId,
+        contact_id: details.contactId,
+        channel_session_id: details.channelSessionId,
+        inbound_message_id: details.messageId,
+        correlation_id: details.requestId,
+      },
+    },
+    ...(details.hasMedia
+      ? [{
+          p_event_type: "media.persist_requested",
+          p_entity_kind: "message",
+          p_payload: {
+            message_id: details.messageId,
+            conversation_id: details.conversationId,
+            correlation_id: details.requestId,
+          },
+        }]
+      : []),
+  ];
+
+  const results = await Promise.all(
+    events.map((event) =>
+      admin.rpc("emit_event" as never, {
+        ...event,
+        p_metadata: { ...baseMetadata, source_event_key: `${baseMetadata.source_event_key}:${event.p_event_type}` },
+        p_organization_id: details.organizationId,
+      } as never),
+    ),
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw new Error(`waha event emission failed: ${failed.error.message}`);
+}
+
 /**
  * Mensagem recebida (fromMe=false). Contato = remetente (`from`).
  */
@@ -322,7 +385,7 @@ async function handleInbound(
       sent_via: "external_device",
       sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
       delivered_at: now,
-      metadata: { raw_type: p.type, ack_name: p.ackName },
+      metadata: { raw_type: p.type, ack_name: p.ackName, correlation_id: requestId },
     })
     .select("id")
     .maybeSingle();
@@ -330,9 +393,34 @@ async function handleInbound(
   // Idempotência: 23505 = unique (organization_id, external_id) já ingerido.
   if (insertErr && insertErr.code !== "23505") {
     console.error("[waha.ingest] message insert failed", insertErr.message);
+    throw new Error(`waha inbound message insert failed: ${insertErr.message}`);
+  }
+  if (insertErr?.code === "23505") {
+    // `message` + `message.any` e retries do WAHA chegam com o mesmo external_id.
+    // Reconfirma os eventos pelo mesmo source_event_key; o banco deduplica sem
+    // criar uma segunda execução do agente.
+    const existing = await admin
+      .from("messages")
+      .select("id, conversation_id, contact_id, channel_session_id, body, media_url")
+      .eq("organization_id", session.organization_id)
+      .eq("external_id", p.id)
+      .maybeSingle();
+    if (existing.error) throw new Error(`waha duplicate lookup failed: ${existing.error.message}`);
+    if (existing.data?.id) {
+      await emitInboundEvents(admin, {
+        organizationId: session.organization_id,
+        messageId: existing.data.id,
+        conversationId: existing.data.conversation_id,
+        contactId: existing.data.contact_id,
+        channelSessionId: existing.data.channel_session_id,
+        externalId: p.id,
+        body: existing.data.body ?? "",
+        hasMedia: Boolean(existing.data.media_url),
+        requestId,
+      });
+    }
     return;
   }
-  if (insertErr?.code === "23505") return;
 
   await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), now);
 
@@ -358,60 +446,20 @@ async function handleInbound(
     metadata: { conversation_id: conversationId, type: p.type, external_id: p.id },
   });
 
-  // Dispara o agent-dispatcher worker (fire-and-forget; falha não quebra o 200).
+  // O event_log é a custódia durável do próximo passo. A confirmação do
+  // webhook só sai depois que os eventos foram aceitos.
   if (insertedMessage?.id) {
-    const inboundMessageId = insertedMessage.id;
-    admin
-      .rpc("emit_event" as never, {
-        p_event_type: "ai_agent.dispatch_requested",
-        p_entity_kind: "message",
-        p_entity_id: inboundMessageId,
-        p_payload: {
-          organization_id: session.organization_id,
-          conversation_id: conversationId,
-          contact_id: contactId,
-          channel_session_id: session.id,
-          inbound_message_id: inboundMessageId,
-        },
-        p_metadata: { source: "waha_webhook", request_id: requestId },
-        p_organization_id: session.organization_id,
-      } as never)
-      .then(({ error }) => {
-        if (error) console.error("[waha.ingest] emit dispatch_requested failed", error.message);
-      });
-
-    admin
-      .rpc("emit_event" as never, {
-        p_event_type: "message.received",
-        p_entity_kind: "message",
-        p_entity_id: inboundMessageId,
-        p_payload: {
-          conversation_id: conversationId,
-          contact_id: contactId,
-          channel_session_id: session.id,
-          body_preview: (p.body ?? "").slice(0, 280),
-        },
-        p_metadata: { source: "waha_webhook", request_id: requestId },
-        p_organization_id: session.organization_id,
-      } as never)
-      .then(({ error }) => {
-        if (error) console.error("[waha.ingest] emit message.received failed", error.message);
-      });
-
-    if (mediaUrlOf(p)) {
-      admin
-        .rpc("emit_event" as never, {
-          p_event_type: "media.persist_requested",
-          p_entity_kind: "message",
-          p_entity_id: inboundMessageId,
-          p_payload: { message_id: inboundMessageId, conversation_id: conversationId },
-          p_metadata: { source: "waha_webhook", request_id: requestId },
-          p_organization_id: session.organization_id,
-        } as never)
-        .then(({ error }) => {
-          if (error) console.error("[waha.ingest] emit media.persist_requested failed", error.message);
-        });
-    }
+    await emitInboundEvents(admin, {
+      organizationId: session.organization_id,
+      messageId: insertedMessage.id,
+      conversationId,
+      contactId,
+      channelSessionId: session.id,
+      externalId: p.id!,
+      body: p.body ?? "",
+      hasMedia: Boolean(mediaUrlOf(p)),
+      requestId,
+    });
   }
 }
 
