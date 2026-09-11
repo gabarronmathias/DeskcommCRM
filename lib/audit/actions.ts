@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Canonical audit action codes. Append new codes at the end; never rename.
  * Each code maps 1:1 with a row in api_audit_log.action.
  */
@@ -280,4 +280,12 @@ export type AuditAction =
   // trilha responde é diferente: "quem repintou a marca desta empresa?" contra
   // "quem mexeu no cadastro dela?". Fundir as duas obrigaria a ler o metadata
   // para saber qual das duas coisas aconteceu.
-  | "org.branding_updated";
+  | "org.branding_updated"
+  | "athos.launch.created"
+  /**
+   * EPIC-21 (Athos): GET /api/v1/customers/[phone]/order-history — Sarah/time
+   * Athos leem o histórico de compras de um cliente para campanhas. Quem é
+   * `actor_user_id`/`actor_api_token_id` (server-to-server) e qual a janela
+   * ficam no metadata.
+   */
+  | "orders.read.history";
