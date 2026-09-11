@@ -18,6 +18,16 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["vender", "atender"],
   },
   {
+    name: "crm_get_customer_order_history",
+    category: "read",
+    rotulo: "Histórico completo de compras do cliente",
+    explicacao:
+      "Mostra o histórico completo de um cliente pelo telefone: quanto já gastou, quando foi a última compra, quais são os produtos favoritos e a lista de pedidos com itens. Use antes de propor uma campanha de recompra ou reativação: sem isso, o assistente pode oferecer o que a pessoa acabou de comprar.",
+    oQueToca: "Histórico de vendas do cliente",
+    risco: "seguro",
+    pacotes: ["vender", "reter"],
+  },
+  {
     name: "crm_search_products",
     category: "read",
     rotulo: "Procurar produto na loja",
