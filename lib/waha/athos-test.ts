@@ -3,7 +3,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import type { WahaEnvelope } from "@/lib/waha/ingest";
 import { sendWAHA } from "@/lib/waha/send";
 import { parseWahaMessageId } from "@/lib/waha/message-id";
-import { buildMenuReply } from "@/lib/agent-engine/edge/crm/menu-context";
+import { buildMenuReply, isMenuRequest } from "@/lib/agent-engine/edge/crm/menu-context";
 
 export const ATHOS_TEST_ORG = "036bb1d5-2cb6-4346-9c19-3dbb1c0d0433";
 export const ATHOS_TEST_SESSION = "15ed07d7-57f9-4746-a543-d8768003848b";
@@ -39,6 +39,17 @@ export interface AthosTestSession {
 export function isAthosTestSession(session: AthosTestSession): boolean {
   return process.env.ATHOS_TEST_MODE === "true" &&
     session.organization_id === ATHOS_TEST_ORG && session.id === ATHOS_TEST_SESSION;
+}
+
+/**
+ * Nome curto só para apresentação no sandbox. Não altera o contato persistido.
+ * Usa o primeiro token do push-name e normaliza a capitalização.
+ */
+export function presentContactName(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const token = raw.trim().split(/\s+/)[0]?.trim();
+  if (!token) return null;
+  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
 }
 
 export function athosTrace(correlationId: string, startedAt: number) {
@@ -132,12 +143,25 @@ export function createAthosTestHandler(deps = { send: sendWAHA }) {
     if (!p || p.fromMe || !["message", "message.any"].includes(envelope.event ?? "")) return false;
     if (envelope.session !== session.waha_session_name) throw new Error("athos_session_mismatch");
     if (!p.id || !p.from || !/^[0-9]+@(c\.us|s\.whatsapp\.net|lid)$/.test(p.from)) return false;
-    if (!p.body && !p.hasMedia && !p.mediaUrl && !p.media?.url) return false;
+    const body = p.body ?? "";
+    if (!body && !p.hasMedia && !p.mediaUrl && !p.media?.url) return false;
     const chatId = p.from;
 
     const key = createHash("sha256").update(`${session.organization_id}:${session.id}:${p.from}:${p.id}`).digest("hex");
     const correlationId = requestId ?? key;
     const trace = athosTrace(correlationId, startedAt);
+
+    // Esta guarda decide somente se o fast path do cardápio deve interceptar.
+    // Mensagens como "somos em 6 pessoas" voltam `false` e seguem para o
+    // pipeline normal da Sarah, que conduz a venda com a persona comercial.
+    if (!isMenuRequest(body)) {
+      trace("not_menu_intent", {
+        body_preview: body.slice(0, 80),
+        reason: "pipeline_normal_handles",
+      });
+      return false;
+    }
+
     const previous = attempts.get(key);
     if (previous) {
       trace("duplicate_received", { message_key: key });
@@ -176,12 +200,8 @@ export function createAthosTestHandler(deps = { send: sendWAHA }) {
           enrichment: "in_flight",
         });
         outboundStarted = true;
-        // Nome do cliente vem do WAHA push-name (`_data.notifyName` ou
-        // `_data.pushName`). Se vazio/não-confiável, `buildMenuReply` cai
-        // automaticamente para a saudação genérica "Oi! Tudo bem? 😊" —
-        // nunca inventamos nome. A função é PURA + SÍNCRONA (sem LLM,
-        // sem rede, sem lookup); preserva o fast path do commit 093f9a50.
-        const contactName = p._data?.notifyName ?? p._data?.pushName ?? null;
+        const rawPushName = p._data?.notifyName ?? p._data?.pushName ?? null;
+        const contactName = presentContactName(rawPushName);
         const text = buildMenuReply(ATHOS_TEST_MENU_URL, contactName);
         const result = await deps.send({
           sessionName: session.waha_session_name,
