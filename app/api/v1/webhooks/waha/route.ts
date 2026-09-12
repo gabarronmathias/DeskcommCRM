@@ -73,6 +73,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     } else {
       validSignature = verifyHmacSha512(rawBody, sigHeader, dec.data as string);
     }
+    // WAHA self-hosted assina com o segredo global configurado em
+    // WHATSAPP_HOOK_HMAC. Aceitamos esse segredo como fallback quando uma
+    // sessão legada ainda não tem o mesmo segredo individual no CRM.
+    if (!validSignature && process.env.WAHA_HMAC_SECRET) {
+      validSignature = verifyHmacSha512(rawBody, sigHeader, process.env.WAHA_HMAC_SECRET);
+    }
   } catch {
     hmacSkipped = true;
   }
