@@ -47,7 +47,7 @@ describe("Athos isolated pipeline — local HTTP adapter, no WhatsApp delivery c
     vi.stubEnv("ATHOS_TEST_MODE", "true");
     vi.stubEnv("WAHA_API_BASE_URL", url);
     vi.stubEnv("WAHA_API_KEY", "local-test-key");
-    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
@@ -64,7 +64,7 @@ describe("Athos isolated pipeline — local HTTP adapter, no WhatsApp delivery c
     expect(received.every(r => r.text === `Olá! 😊 Aqui está nosso cardápio:\n${menu}`)).toBe(true);
     expect(query.eq).toHaveBeenCalledWith("organization_id", ATHOS_TEST_ORG);
     times.sort((a, b) => a - b);
-    console.info(JSON.stringify({ test: "100 sequential, local HTTP; database simulated", responses: received.length,
+    console.warn(JSON.stringify({ test: "100 sequential, local HTTP; database simulated", responses: received.length,
       p50_ms: times[49], p95_ms: times[94], max_ms: times[99] }));
   });
 

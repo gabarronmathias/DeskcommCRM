@@ -21,7 +21,7 @@ export function athosTrace(correlationId: string, startedAt: number) {
   let lastAt = startedAt;
   return (stage: string, details: Record<string, unknown> = {}) => {
     const now = Date.now();
-    console.log(JSON.stringify({
+    console.info(JSON.stringify({
       scope: "ATHOS-TEST", stage, correlation_id: correlationId,
       timestamp: new Date(now).toISOString(), elapsed_ms: now - startedAt,
       duration_ms: now - lastAt, ...details,
