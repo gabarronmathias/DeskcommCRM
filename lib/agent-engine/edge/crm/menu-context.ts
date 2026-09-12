@@ -124,10 +124,34 @@ export function hasPendingMenuRequest(messages: MenuMessage[], menuUrl: string |
   return pending;
 }
 
-/** Resposta inicial estável: não promete um link para uma mensagem futura. */
+/** Resposta inicial estável: não promete um link para uma mensagem futura.
+ *
+ * Persona: Sarah como ATENDENTE DE RELACIONAMENTO E VENDAS (foodservice).
+ * Estrutura fixa (3 blocos) — conteúdo variável conforme contexto do lead:
+ *   1. Recepção curta (greeting com nome se conhecido)
+ *   2. URL oficial do cardápio
+ *   3. UMA pergunta comercial simples (CTA que abre a próxima etapa)
+ *
+ * Esta função é DETERMINÍSTICA — não chama LLM, não depende de lookup.
+ * É o fast-path de abertura do cardápio preservado pelo commit 093f9a50
+ * (inbound → menu_url determinística → send imediato).
+ *
+ * O LLM pode compor mensagens posteriores usando o índice de memória do
+ * lead e as regras comerciais da camada platform do playbook; este
+ * template cobre apenas a PRIMEIRA resposta ao pedido do cardápio. */
 export function buildMenuReply(menuUrl: string, contactName?: string | null): string {
-  const greeting = contactName?.trim() ? `Olá, ${contactName.trim()}!` : 'Olá!';
-  return `${greeting} Eu sou a Sarah, da Tortas do Calmon.\n\nAbaixo está o nosso cardápio digital. Nele você pode conhecer todas as nossas delícias e fazer seu pedido:\n${menuUrl}`;
+  const greeting = contactName?.trim()
+    ? `Oi, ${contactName.trim()}! Tudo bem? 😊`
+    : 'Oi! Tudo bem? 😊';
+  return [
+    greeting,
+    '',
+    'Que bom falar com você! Segue nosso cardápio:',
+    menuUrl,
+    '',
+    'Me conta: é para quantas pessoas? Aí posso te indicar o que ' +
+    'combina melhor e sugerir os mais pedidos. 😄',
+  ].join('\n');
 }
 
 /** Garante o link oficial em um envio que responde a um pedido explícito de menu. */

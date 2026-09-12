@@ -77,9 +77,19 @@ describe('garantia do link no envio', () => {
   });
 
   it('anexa o mesmo URL oficial e não duplica o link', () => {
-    expect(ensureMenuUrl('Claro, já te mando.', MENU, true)).toBe(
-      `Olá! Eu sou a Sarah, da Tortas do Calmon.\n\nAbaixo está o nosso cardápio digital. Nele você pode conhecer todas as nossas delícias e fazer seu pedido:\n${MENU_URL}`,
-    );
+    // Após o fix de persona, a abertura inclui recepção + URL + UMA pergunta
+    // comercial simples (CTA). Continua sendo determinístico e fast-path —
+    // ver menu-context.test.ts para regressões da estrutura nova.
+    const expected = [
+      'Oi! Tudo bem? 😊',
+      '',
+      'Que bom falar com você! Segue nosso cardápio:',
+      MENU_URL,
+      '',
+      'Me conta: é para quantas pessoas? Aí posso te indicar o que ' +
+        'combina melhor e sugerir os mais pedidos. 😄',
+    ].join('\n');
+    expect(ensureMenuUrl('Claro, já te mando.', MENU, true)).toBe(expected);
     expect(ensureMenuUrl(`Aqui está: ${MENU_URL}`, MENU, true)).toBe(`Aqui está: ${MENU_URL}`);
     expect(ensureMenuUrl('Posso ajudar em algo?', MENU, false)).toBe('Posso ajudar em algo?');
   });
@@ -99,7 +109,15 @@ describe('garantia do link no envio', () => {
 
   it('monta a abertura completa da Tortas do Calmon', () => {
     expect(buildMenuReply(MENU_URL, 'Thailer')).toBe(
-      `Olá, Thailer! Eu sou a Sarah, da Tortas do Calmon.\n\nAbaixo está o nosso cardápio digital. Nele você pode conhecer todas as nossas delícias e fazer seu pedido:\n${MENU_URL}`,
+      [
+        'Oi, Thailer! Tudo bem? 😊',
+        '',
+        'Que bom falar com você! Segue nosso cardápio:',
+        MENU_URL,
+        '',
+        'Me conta: é para quantas pessoas? Aí posso te indicar o que ' +
+          'combina melhor e sugerir os mais pedidos. 😄',
+      ].join('\n'),
     );
   });
 });
