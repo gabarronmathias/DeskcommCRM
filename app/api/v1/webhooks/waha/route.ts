@@ -64,6 +64,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const sigHeader = req.headers.get("x-webhook-hmac") ?? req.headers.get("X-Webhook-Hmac");
   let validSignature = false;
   let hmacSkipped = false;
+  const requireSignature = process.env.WAHA_WEBHOOK_REQUIRE_SIGNATURE !== "false";
   try {
     const dec = await admin.rpc("fn_decrypt_oauth", {
       ciphertext: session.webhook_secret_encrypted,
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     hmacSkipped = true;
   }
 
-  if (!hmacSkipped && !validSignature) {
+  if (requireSignature && !hmacSkipped && !validSignature) {
     await audit({
       action: "nuvemshop.webhook_invalid_signature",
       organizationId: session.organization_id,
