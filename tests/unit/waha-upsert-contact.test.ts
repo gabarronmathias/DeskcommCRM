@@ -5,68 +5,80 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 import { upsertContact, type ChatIdentity } from "@/lib/waha/ingest";
 
 // ---------------------------------------------------------------------------
-// Mock de admin: encadeia tudo que o ingest.ts chama em cima de .from("contacts").
-// A decisão do que devolver fica registrada nos arrays de "calls":
-//   - contactLookups: recebe o filtro do .or(...) — uma chamada por upsertContact
-//   - canonicalLookups: recebe o id passado em .eq("id", ...) — uma chamada se merge
-// O mock decide o que retornar com base no que foi configurado pelo teste.
+// Mock de admin: o helper findExistingContactByIdentity agora faz 3 níveis
+// de lookup separados (wa_lid coluna, LID legado, telefone), mais 1 lookup
+// opcional do canônico. O mock enfileira configs por "fase" e consome em
+// ordem. Cada config descreve a resposta esperada do próximo .maybeSingle().
 // ---------------------------------------------------------------------------
 
 type RpcResult = (fn: string, args: Record<string, unknown>) =>
   { data: string | null; error: { code?: string; message: string } | null };
 
-interface MockConfig {
-  rpcResult?: RpcResult;
-  /** Resposta do .or(...).maybeSingle() — chamado 1x por upsertContact com 23505. */
-  contactLookup?: (filter: string) => { data: ContactRow | null; error: { message: string } | null };
-  /** Resposta do .eq("id", X).maybeSingle() — chamado quando is_merged_into != null. */
-  canonicalLookup?: (id: string) => { data: { id: string } | null; error: { message: string } | null };
+interface LevelConfig {
+  /** O que esse nível retorna (match, null, ou erro de query). */
+  response: () => { data: ContactRow | null; error: { message: string } | null };
+  /** Filtros/eqs permitidos nesse nível (para assertions). Opcional. */
+  expectFilter?: string | RegExp;
 }
 
 type ContactRow = { id: string; is_merged_into?: string | null };
 
+interface MockConfig {
+  rpcResult?: RpcResult;
+  /**
+   * Lista de configs por chamada de maybeSingle (em ordem de consumo).
+   * Ex.: [nível1, nível2, nível3, canônico, ...].
+   * Se acabar antes das chamadas reais, retorna { data: null, error: null }.
+   */
+  levels?: LevelConfig[];
+  /** Resposta quando canônico é resolvido (lookup .eq("id", X)). */
+  canonicalLookup?: (id: string) => { data: { id: string } | null; error: { message: string } | null };
+}
+
 function buildAdmin(config: MockConfig) {
   const calls = {
     rpc: [] as Array<{ fn: string; args: Record<string, unknown> }>,
-    contactLookups: [] as string[],
-    canonicalLookups: [] as string[],
+    maybeSingleCalls: [] as Array<{ filter: string | null; idLookup: string | null; isCanonicalLookup: boolean }>,
   };
 
-  // Builder ÚNICO compartilhado (não função) — assim lastOrFilter/lastIdLookup
-  // persistem ao longo do encadeamento (.select().eq().or().order().limit().maybeSingle()).
-  let lastOrFilter: string | null = null;
-  let lastIdLookup: string | null = null;
-  const builder: Record<string, unknown> = {
-    select: () => builder,
-    eq: (_col: string, val?: string) => {
-      if (_col === "id" && typeof val === "string") lastIdLookup = val;
-      return builder;
-    },
-    or: (filter: string) => {
-      lastOrFilter = filter;
-      return builder;
-    },
-    order: () => builder,
-    limit: () => builder,
-    maybeSingle: async () => {
-      // Se foi chamado .eq("id", X), é o lookup do canônico
-      if (lastIdLookup !== null) {
-        calls.canonicalLookups.push(lastIdLookup);
-        const captured = lastIdLookup;
-        lastIdLookup = null;
-        if (config.canonicalLookup) return config.canonicalLookup(captured);
-        return { data: null, error: null };
-      }
-      // Se foi chamado .or(F), é o lookup expandido
-      if (lastOrFilter !== null) {
-        calls.contactLookups.push(lastOrFilter);
-        const captured = lastOrFilter;
+  const queue = [...(config.levels ?? [])];
+
+  const builderFn = (): unknown => {
+    let lastOrFilter: string | null = null;
+    let lastIdLookup: string | null = null;
+    const obj: Record<string, unknown> = {
+      select: () => obj,
+      eq: (_col: string, val?: string) => {
+        if (_col === "id" && typeof val === "string") lastIdLookup = val;
+        return obj;
+      },
+      is: (_col: string, _val: unknown) => obj,
+      or: (filter: string) => {
+        lastOrFilter = filter;
+        return obj;
+      },
+      order: () => obj,
+      limit: () => obj,
+      maybeSingle: async () => {
+        const isCanonicalLookup = lastIdLookup !== null && lastOrFilter === null;
+        calls.maybeSingleCalls.push({ filter: lastOrFilter, idLookup: lastIdLookup, isCanonicalLookup });
+
+        // Lookup do canônico: .eq("id", X) sem .or
+        if (isCanonicalLookup) {
+          const captured = lastIdLookup!;
+          lastIdLookup = null;
+          if (config.canonicalLookup) return config.canonicalLookup(captured);
+          return { data: null, error: null };
+        }
+
+        // Lookup de contato: consome próxima config da fila
+        const level = queue.shift();
         lastOrFilter = null;
-        if (config.contactLookup) return config.contactLookup(captured);
-        return { data: null, error: null };
-      }
-      return { data: null, error: null };
-    },
+        if (!level) return { data: null, error: null };
+        return level.response();
+      },
+    };
+    return obj;
   };
 
   const admin = {
@@ -76,7 +88,7 @@ function buildAdmin(config: MockConfig) {
         ? config.rpcResult(fn, args)
         : { data: "contato-novo", error: null };
     },
-    from: (_table: string) => builder,
+    from: (_table: string) => builderFn(),
   };
 
   return { admin, calls };
@@ -87,100 +99,185 @@ const LID_PARSED: ChatIdentity = { kind: "lid", phone: null, lid: "5511999000001
 const PHONE_PARSED: ChatIdentity = { kind: "phone", phone: "+5511999000002", lid: null };
 
 // ---------------------------------------------------------------------------
-// Casos
+// PRECEDÊNCIA — o ponto mais crítico do fix
 // ---------------------------------------------------------------------------
 
-describe("upsertContact — recuperação de unique violation por identidade", () => {
-  it("Caso 1: contato já existe com mesmo org + wa_lid (constraint uniq_contacts_org_wa_lid)", async () => {
-    const { admin } = buildAdmin({
-      rpcResult: () => ({
-        data: null,
-        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
-      }),
-      contactLookup: () => ({ data: { id: "contato-existente" }, error: null }),
-    });
-
-    const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
-
-    expect(id).toBe("contato-existente");
-  });
-
-  it("Caso 2: wa_lid novo — RPC retorna sucesso direto, sem lookup", async () => {
-    const { admin } = buildAdmin({
-      rpcResult: () => ({ data: "contato-novo", error: null }),
-      contactLookup: () => {
-        throw new Error("lookup não deveria ter sido chamado");
-      },
-    });
-
-    const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
-
-    expect(id).toBe("contato-novo");
-  });
-
-  it("Caso 3: lookup expandido encontra por qualquer um dos 3 caminhos de identidade (lid)", async () => {
-    // O contato existe, lookup retorna — qual caminho achou é detalhe do banco.
+describe("upsertContact — recuperação por identidade", () => {
+  it("PRECEDÊNCIA: contato A casa por wa_lid exato, B casa por telefone e é mais antigo → retorna A", async () => {
+    // O RPC dá 23505 e o nível 1 (wa_lid coluna) encontra A pelo exato.
+    // O nível 2 e 3 NÃO DEVEM ser chamados — telefone nunca pode vencer wa_lid.
     const { admin, calls } = buildAdmin({
       rpcResult: () => ({
         data: null,
         error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
       }),
-      contactLookup: () => ({ data: { id: "contato-por-identity" }, error: null }),
+      levels: [
+        // Nível 1 — wa_lid coluna: ACHA
+        { response: () => ({ data: { id: "contato-A-wa-lid" }, error: null }) },
+        // Nível 2 — não deve ser chamado
+        // Nível 3 — não deve ser chamado
+      ],
     });
 
     const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
 
-    expect(id).toBe("contato-por-identity");
-    // Confirma que o filtro cobre todos os caminhos de identidade lid
-    expect(calls.contactLookups).toHaveLength(1);
-    const filter = calls.contactLookups[0];
-    expect(filter).toContain("wa_lid.eq.5511999000001");
-    expect(filter).toContain("source_metadata->>waha_lid.eq.5511999000001");
-    expect(filter).toContain("wa_identity.eq.lid:5511999000001");
+    expect(id).toBe("contato-A-wa-lid");
+    // Apenas 1 chamada a maybeSingle (nível 1), porque níveis 2 e 3 não rodam
+    expect(calls.maybeSingleCalls.length).toBe(1);
   });
 
-  it("Caso 4: contato encontrado está mergeado — retorna o canônico, não o mergeado", async () => {
+  it("PRECEDÊNCIA: kind=lid, A não tem wa_lid coluna mas tem LID legado; nível 2 acha; nível 3 (telefone) NÃO é tentado", async () => {
+    const { admin, calls } = buildAdmin({
+      rpcResult: () => ({
+        data: null,
+        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
+      }),
+      levels: [
+        // Nível 1 — wa_lid coluna: NÃO acha
+        { response: () => ({ data: null, error: null }) },
+        // Nível 2 — LID legado (wa_identity OR source_metadata): ACHA
+        { response: () => ({ data: { id: "contato-A-legado" }, error: null }) },
+        // Nível 3 — telefone: NÃO deve ser tentado (kind=lid)
+      ],
+    });
+
+    const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
+
+    expect(id).toBe("contato-A-legado");
+    expect(calls.maybeSingleCalls.length).toBe(2);
+    // Confirma que a 2ª chamada foi com .or() (nível 2)
+    expect(calls.maybeSingleCalls[1]?.filter).not.toBeNull();
+    expect(calls.maybeSingleCalls[1]?.filter).toMatch(/wa_identity/);
+  });
+
+  it("PRECEDÊNCIA: kind=phone → nível 3 (telefone) é tentado, níveis 1 e 2 são skipped (lid null)", async () => {
+    // PHONE_PARSED tem lid=null → níveis 1 e 2 são skipped pelo `if (lid)` do helper.
+    // Só nível 3 (telefone) roda. A queue deve ter 1 entrada — a do nível 3.
+    const { admin, calls } = buildAdmin({
+      rpcResult: () => ({
+        data: null,
+        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
+      }),
+      levels: [
+        // Nível 3 — telefone: ACHA
+        { response: () => ({ data: { id: "contato-por-telefone" }, error: null }) },
+      ],
+    });
+
+    const id = await upsertContact(admin as never, SESSION.organization_id, PHONE_PARSED, "5511999000002@c.us", null);
+
+    expect(id).toBe("contato-por-telefone");
+    expect(calls.maybeSingleCalls.length).toBe(1);
+    // Confirma que a query foi por telefone, não por LID
+    expect(calls.maybeSingleCalls[0]?.filter).toMatch(/phone_number/);
+  });
+
+  it("PRECEDÊNCIA: kind=lid, níveis 1 e 2 não acham — nível 3 (telefone) NÃO é tentado", async () => {
+    const { admin, calls } = buildAdmin({
+      rpcResult: () => ({
+        data: null,
+        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
+      }),
+      levels: [
+        { response: () => ({ data: null, error: null }) },
+        { response: () => ({ data: null, error: null }) },
+        // Nível 3 não deveria ter config (não é tentado pra kind=lid)
+      ],
+    });
+
+    await expect(
+      upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null),
+    ).rejects.toThrow(/contact upsert race/);
+    // Apenas 2 chamadas (níveis 1 e 2), nível 3 não roda
+    expect(calls.maybeSingleCalls.length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MERGE — is_merged_into resolve pro canônico
+// ---------------------------------------------------------------------------
+
+describe("upsertContact — resolução de contato mergeado", () => {
+  it("Contato encontrado no nível 1 está mergeado → resolve pro canônico", async () => {
+    const { admin, calls } = buildAdmin({
+      rpcResult: () => ({
+        data: null,
+        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
+      }),
+      levels: [
+        // Nível 1: match mergeado
+        { response: () => ({ data: { id: "contato-mergeado", is_merged_into: "contato-canonico" }, error: null }) },
+        // Canônico
+        { response: () => ({ data: { id: "contato-canonico" }, error: null }) },
+      ],
+      canonicalLookup: (id) =>
+        id === "contato-canonico" ? { data: { id: "contato-canonico" }, error: null } : { data: null, error: null },
+    });
+
+    const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
+
+    expect(id).toBe("contato-canonico");
+    expect(calls.maybeSingleCalls.length).toBe(2);
+    expect(calls.maybeSingleCalls[1]?.isCanonicalLookup).toBe(true);
+    expect(calls.maybeSingleCalls[1]?.idLookup).toBe("contato-canonico");
+  });
+
+  it("Contato encontrado no nível 2 está mergeado → resolve pro canônico", async () => {
     const { admin } = buildAdmin({
       rpcResult: () => ({
         data: null,
         error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
       }),
-      contactLookup: () => ({
-        data: { id: "contato-mergeado", is_merged_into: "contato-canonico" },
-        error: null,
-      }),
+      levels: [
+        // Nível 1: nada
+        { response: () => ({ data: null, error: null }) },
+        // Nível 2: match mergeado
+        { response: () => ({ data: { id: "contato-mergeado", is_merged_into: "contato-canonico" }, error: null }) },
+        // Canônico
+        { response: () => ({ data: { id: "contato-canonico" }, error: null }) },
+      ],
       canonicalLookup: (id) =>
-        id === "contato-canonico"
-          ? { data: { id: "contato-canonico" }, error: null }
-          : { data: null, error: null },
+        id === "contato-canonico" ? { data: { id: "contato-canonico" }, error: null } : { data: null, error: null },
     });
 
     const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
 
     expect(id).toBe("contato-canonico");
   });
+});
 
-  it("Caso 5: lookup pós-23505 falha (LOOKUP_FAILED) — propaga erro, não cria contato às cegas", async () => {
+// ---------------------------------------------------------------------------
+// LOOKUP_FAILED vs LOOKUP_NOT_FOUND
+// ---------------------------------------------------------------------------
+
+describe("upsertContact — classificação de erro", () => {
+  it("LOOKUP_FAILED no nível 1 propaga (não tenta níveis seguintes, não cria contato)", async () => {
     const { admin } = buildAdmin({
       rpcResult: () => ({
         data: null,
         error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
       }),
-      contactLookup: () => ({ data: null, error: { message: "timeout expired" } }),
+      levels: [
+        // Nível 1: erro de query (timeout)
+        { response: () => ({ data: null, error: { message: "timeout expired" } }) },
+      ],
     });
 
     await expect(
       upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null),
-    ).rejects.toThrow(/contact identity lookup failed/);
+    ).rejects.toThrow(/wa_lid lookup failed/);
   });
 
-  it("Caso 6: lookup pós-23505 retorna null (LOOKUP_NOT_FOUND genuíno) — não cria contato", async () => {
+  it("LOOKUP_NOT_FOUND em todos os níveis propaga como 'contact upsert race' (sem criar contato)", async () => {
     const { admin } = buildAdmin({
       rpcResult: () => ({
         data: null,
         error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
       }),
-      contactLookup: () => ({ data: null, error: null }),
+      levels: [
+        { response: () => ({ data: null, error: null }) },
+        { response: () => ({ data: null, error: null }) },
+      ],
     });
 
     await expect(
@@ -188,29 +285,50 @@ describe("upsertContact — recuperação de unique violation por identidade", (
     ).rejects.toThrow(/contact upsert race/);
   });
 
-  it("Caso 7: erro NÃO é 23505 — propaga sem tentar lookup", async () => {
-    const { admin } = buildAdmin({
+  it("Erro NÃO-23505 propaga sem tentar lookup", async () => {
+    const { admin, calls } = buildAdmin({
       rpcResult: () => ({
         data: null,
         error: { code: "42P10", message: 'column "wa_lid" does not exist' },
       }),
-      contactLookup: () => {
-        throw new Error("lookup não deveria ter sido chamado para erro não-23505");
-      },
+      levels: [
+        // não deveria ter config — nenhum lookup roda pra erro não-23505
+      ],
     });
 
     await expect(
       upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null),
     ).rejects.toThrow(/waha contact upsert failed/);
+    expect(calls.maybeSingleCalls.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Casos gerais
+// ---------------------------------------------------------------------------
+
+describe("upsertContact — casos gerais", () => {
+  it("Caso B: wa_lid novo — RPC retorna sucesso direto, sem nenhum lookup", async () => {
+    const { admin, calls } = buildAdmin({
+      rpcResult: () => ({ data: "contato-novo", error: null }),
+      levels: [],
+    });
+
+    const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
+
+    expect(id).toBe("contato-novo");
+    expect(calls.maybeSingleCalls.length).toBe(0);
   });
 
-  it("Caso 8: chatId com sufixo @lid — o lookup usa só os dígitos", async () => {
+  it("Normalização: chatId com sufixo @lid — filtros usam só os dígitos", async () => {
     const { admin, calls } = buildAdmin({
       rpcResult: () => ({
         data: null,
         error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
       }),
-      contactLookup: () => ({ data: { id: "contato-normalizado" }, error: null }),
+      levels: [
+        { response: () => ({ data: { id: "contato-normalizado" }, error: null }) },
+      ],
     });
 
     const id = await upsertContact(
@@ -222,30 +340,13 @@ describe("upsertContact — recuperação de unique violation por identidade", (
     );
 
     expect(id).toBe("contato-normalizado");
-    const filter = calls.contactLookups[0];
-    // O filtro NUNCA contém o sufixo @c.us/@lid — só dígitos e o prefixo lid:
-    expect(filter).not.toMatch(/@c\.us|@lid/);
-    expect(filter).toContain("5511999000001");
+    // Nível 1: .eq("wa_lid", digits)
+    const level1 = calls.maybeSingleCalls[0];
+    // Não há .or() no nível 1, e o filtro vai por .eq direto — sem chance de @c.us/@lid
+    expect(level1?.filter).toBeNull();
   });
 
-  it("Caso 9: kind=phone — lookup cobre phone_number E wa_identity='phone:+E164'", async () => {
-    const { admin, calls } = buildAdmin({
-      rpcResult: () => ({
-        data: null,
-        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_id"' },
-      }),
-      contactLookup: () => ({ data: { id: "contato-por-telefone" }, error: null }),
-    });
-
-    const id = await upsertContact(admin as never, SESSION.organization_id, PHONE_PARSED, "5511999000002@c.us", null);
-
-    expect(id).toBe("contato-por-telefone");
-    const filter = calls.contactLookups[0];
-    expect(filter).toContain("phone_number.eq.+5511999000002");
-    expect(filter).toContain("wa_identity.eq.phone:+5511999000002");
-  });
-
-  it("Caso 10: race condition entre message e message.any — uma RPC vence, outra recebe 23505 e recupera", async () => {
+  it("Race: duas chamadas simultâneas — uma vence RPC, outra recebe 23505 e recupera o mesmo id", async () => {
     let rpcCount = 0;
     const { admin } = buildAdmin({
       rpcResult: (fn) => {
@@ -257,7 +358,9 @@ describe("upsertContact — recuperação de unique violation por identidade", (
           error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
         };
       },
-      contactLookup: () => ({ data: { id: "contato-vencedor" }, error: null }),
+      levels: [
+        { response: () => ({ data: { id: "contato-vencedor" }, error: null }) },
+      ],
     });
 
     const [idA, idB] = await Promise.all([
@@ -265,7 +368,6 @@ describe("upsertContact — recuperação de unique violation por identidade", (
       upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null),
     ]);
 
-    // Ambos retornam o mesmo id (sem duplicação)
     expect(idA).toBe("contato-vencedor");
     expect(idB).toBe("contato-vencedor");
   });

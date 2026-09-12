@@ -244,69 +244,97 @@ export async function upsertContact(
 }
 
 /**
- * Localiza contato existente na MESMA organização por qualquer caminho de
- * identidade WhatsApp canônico. NÃO faz merge destrutivo: se a linha
- * encontrada está mergeada (`is_merged_into IS NOT NULL`), retorna o
+ * Localiza contato existente na MESMA organização por precedência
+ * DETERMINÍSTICA de identidade WhatsApp. NÃO faz merge destrutivo: se a
+ * linha encontrada está mergeada (`is_merged_into IS NOT NULL`), retorna o
  * canônico.
  *
+ * PRECEDÊNCIA (estrita; telefone nunca vence wa_lid):
+ *   1. `wa_lid` coluna (índice uniq_contacts_org_wa_lid em produção) — EXATO
+ *   2. LID canônico/legado:
+ *        `wa_identity = 'lid:<digits>'`  (coluna gerada)
+ *        `source_metadata->>'waha_lid' = <digits>`  (jsonb legado pré-0027)
+ *   3. Telefone (SÓ se `parsed.kind === "phone"`):
+ *        `phone_number = <+E164>`
+ *        `wa_identity = 'phone:<+E164>'`
+ *
+ * Cada nível é uma query separada. O primeiro nível que achar retorna.
+ * Se um nível achar e o contato estiver mergeado, resolve para o canônico.
+ *
  * LOOKUP_FAILED (erro de query) propaga como throw. LOOKUP_NOT_FOUND
- * (consulta funcionou, não achou nada) retorna null.
+ * genuíno (consulta funcionou, zero matches em todos os níveis) retorna null.
  */
 async function findExistingContactByIdentity(
   admin: Admin,
   orgId: string,
   identity: { lid: string | null; phone: string | null },
 ): Promise<string | null> {
-  const filters: string[] = [];
-  if (identity.lid) {
-    // coluna wa_lid (índice uniq_contacts_org_wa_lid em produção)
-    filters.push(`wa_lid.eq.${identity.lid}`);
-    // jsonb legado pré-0027
-    filters.push(`source_metadata->>waha_lid.eq.${identity.lid}`);
-    // coluna gerada canônica
-    filters.push(`wa_identity.eq.lid:${identity.lid}`);
-  }
-  if (identity.phone) {
-    const e164 = identity.phone.startsWith("+") ? identity.phone : `+${identity.phone}`;
-    filters.push(`phone_number.eq.${e164}`);
-    filters.push(`wa_identity.eq.phone:${e164}`);
-  }
-  if (filters.length === 0) return null;
+  const lid = identity.lid;
+  const phone = identity.phone;
 
-  // PostgREST or-filter: "(a,b,c)" casa qualquer. Limite + ordem cobrem
-  // múltiplos matches legados (mesmo wa_lid em contatos antigos): pega o
-  // mais antigo, que é o canônico pela regra de merge 0027.
-  const orFilter = `(${filters.join(",")})`;
-  const { data, error } = await admin
-    .from("contacts")
-    .select("id, is_merged_into")
-    .eq("organization_id", orgId)
-    .or(orFilter)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.error("[waha.ingest] contact identity lookup failed", error.message);
-    throw new Error(`waha contact identity lookup failed: ${error.message}`);
-  }
-  if (!data) return null;
-
-  // Linha mergeada: o canônico vive em is_merged_into. Resolve canônico
-  // antes de retornar.
-  if (data.is_merged_into) {
-    const { data: canonical, error: canonErr } = await admin
+  // ----- Nível 1: wa_lid coluna (EXATO; identidade mais forte) -----
+  if (lid) {
+    const { data, error } = await admin
       .from("contacts")
-      .select("id")
-      .eq("id", data.is_merged_into)
+      .select("id, is_merged_into")
+      .eq("organization_id", orgId)
+      .eq("wa_lid", lid)
+      .is("is_merged_into", null)
       .maybeSingle();
-    if (canonErr) {
-      console.error("[waha.ingest] canonical contact lookup failed", canonErr.message);
-      throw new Error(`waha canonical contact lookup failed: ${canonErr.message}`);
-    }
-    return canonical?.id ?? data.id;
+    if (error) throw new Error(`waha wa_lid lookup failed: ${error.message}`);
+    if (data?.id) return resolveCanonicalOrSelf(admin, data);
   }
-  return data.id;
+
+  // ----- Nível 2: LID canônico/legado -----
+  if (lid) {
+    const { data, error } = await admin
+      .from("contacts")
+      .select("id, is_merged_into")
+      .eq("organization_id", orgId)
+      .or(`wa_identity.eq.lid:${lid},source_metadata->>waha_lid.eq.${lid}`)
+      .is("is_merged_into", null)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`waha lid legacy lookup failed: ${error.message}`);
+    if (data?.id) return resolveCanonicalOrSelf(admin, data);
+  }
+
+  // ----- Nível 3: telefone (SÓ se kind=phone) -----
+  if (phone) {
+    const e164 = phone.startsWith("+") ? phone : `+${phone}`;
+    const { data, error } = await admin
+      .from("contacts")
+      .select("id, is_merged_into")
+      .eq("organization_id", orgId)
+      .or(`phone_number.eq.${e164},wa_identity.eq.phone:${e164}`)
+      .is("is_merged_into", null)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`waha phone lookup failed: ${error.message}`);
+    if (data?.id) return resolveCanonicalOrSelf(admin, data);
+  }
+
+  return null;
+}
+
+/**
+ * Resolve um match de contato para o canônico. Se `is_merged_into` aponta
+ * para outro id, retorna esse outro id (canônico). Em falha do lookup do
+ * canônico, retorna o próprio id encontrado (degradação segura — não
+ * esconde erro mas também não cria contato novo).
+ */
+async function resolveCanonicalOrSelf(
+  admin: Admin,
+  contact: { id: string; is_merged_into?: string | null },
+): Promise<string> {
+  if (!contact.is_merged_into) return contact.id;
+  const { data: canonical, error } = await admin
+    .from("contacts")
+    .select("id")
+    .eq("id", contact.is_merged_into)
+    .maybeSingle();
+  if (error) throw new Error(`waha canonical lookup failed: ${error.message}`);
+  return canonical?.id ?? contact.id;
 }
 
 async function upsertConversation(
