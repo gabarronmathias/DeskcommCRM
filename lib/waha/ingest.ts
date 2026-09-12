@@ -182,8 +182,26 @@ function notifyNameOf(p: WahaPayload): string | null {
 /**
  * Upsert atômico de contato pela identidade canônica. Retorna null se a
  * identidade for de grupo ou a RPC falhar.
+ *
+ * Política em 23505 (unique violation):
+ *   O contato JÁ EXISTE (a constraint não mente). Em vez de criar outro,
+ *   localizamos o vencedor por QUALQUER caminho de identidade canônico
+ *   e o reutilizamos. Cobrimos:
+ *     - índice `uniq_contacts_org_wa_identity` (wa_identity — versão 0027)
+ *     - índice `uniq_contacts_org_wa_lid` (wa_lid — adicionado em produção,
+ *       fora das migrations)
+ *     - legado jsonb `source_metadata->>'waha_lid'` (pré-0027)
+ *     - coluna `phone_number` (legado)
+ *
+ *   A diferença entre LOOKUP_NOT_FOUND e LOOKUP_FAILED é explícita: erro de
+ *   query propaga como throw; null genuíno também propaga (não cria contato
+ *   às cegas em race extrema).
+ *
+ *   Contatos mergeados (`is_merged_into IS NOT NULL`) resolvem para o
+ *   canônico — sem merge destrutivo automático.
  */
-async function upsertContact(
+/** Exportada só para teste. Em produção é chamada por handleInbound/handleOutboundFromUserPhone. */
+export async function upsertContact(
   admin: Admin,
   orgId: string,
   parsed: ChatIdentity,
@@ -199,64 +217,96 @@ async function upsertContact(
     p_chat_id: chatId,
     p_notify: notifyName,
   } as never);
-  if (error) {
-    // Instalações antigas ainda podem ter a constraint `unique_contacts_org_wa_id`.
-    // Quando o WAHA entrega `message` e `message.any` ao mesmo tempo, uma das
-    // transações pode perder essa corrida mesmo com o upsert pela identidade
-    // canônica. Reaproveitamos o contato vencedor para manter o webhook
-    // idempotente em bases legadas, sem criar outro contato nem perder a mensagem.
-    if (error.code === "23505" || /unique_contacts_org_wa_id/i.test(error.message)) {
-      const identity = parsed.kind === "phone" ? `phone:${parsed.phone}` : `lid:${parsed.lid}`;
-      const byIdentity = await admin
-        .from("contacts")
-        .select("id")
-        .eq("organization_id", orgId)
-        .eq("wa_identity", identity)
-        .is("is_merged_into", null)
-        .maybeSingle();
-      if (byIdentity.error) {
-        console.error("[waha.ingest] contact collision lookup failed", byIdentity.error.message);
-      } else if (byIdentity.data?.id) {
-        return byIdentity.data.id;
-      }
+  if (!error) return (data as string) ?? null;
 
-      // Em bases legadas, o contato pode ter sido criado pela primeira
-      // mensagem como telefone enquanto a segunda entrega vem como LID.
-      // O LID persistido continua sendo a identidade estável da segunda
-      // entrega e recupera o contato vencedor sem criar outro registro.
-      const byLid = await admin
-        .from("contacts")
-        .select("id")
-        .eq("organization_id", orgId)
-        .eq("wa_lid", parsed.lid)
-        .is("is_merged_into", null)
-        .maybeSingle();
-      if (byLid.error) {
-        console.error("[waha.ingest] contact LID collision lookup failed", byLid.error.message);
-      } else if (byLid.data?.id) {
-        return byLid.data.id;
-      }
-
-      // Fallback para registros criados antes da coluna `wa_identity` existir.
-      if (parsed.kind === "phone") {
-        const byPhone = await admin
-          .from("contacts")
-          .select("id")
-          .eq("organization_id", orgId)
-          .eq("phone_number", parsed.phone)
-          .is("is_merged_into", null)
-          .maybeSingle();
-        if (byPhone.error) {
-          console.error("[waha.ingest] contact phone collision lookup failed", byPhone.error.message);
-        } else if (byPhone.data?.id) {
-          return byPhone.data.id;
-        }
-      }
-    }
+  // Erro que NÃO é unique violation: propaga sem fallback cego.
+  if (error.code !== "23505") {
     console.error("[waha.ingest] fn_upsert_wa_contact failed", error.message);
     throw new Error(`waha contact upsert failed: ${error.message}`);
   }
-  return (data as string) ?? null;
+
+  // 23505: tenta recuperar pelo caminho mais amplo possível.
+  const lid = parsed.kind === "lid" ? parsed.lid.replace(/@.*$/, "") : null;
+  const phone = parsed.kind === "phone" ? parsed.phone : null;
+  const recovered = await findExistingContactByIdentity(admin, orgId, { lid, phone });
+  if (recovered) return recovered;
+
+  // LOOKUP_NOT_FOUND genuíno após 23505: race extrema ou drift de schema.
+  // NÃO criar outro contato — propagar erro recuperável pro webhook retornar
+  // 503 e o WAHA reentregar (com lock mais limpo da segunda vez).
+  console.error("[waha.ingest] contact upsert race: 23505 but no existing contact", {
+    org_id: orgId,
+    parsed_kind: parsed.kind,
+    lid, phone,
+    constraint_error: error.message,
+  });
+  throw new Error(`waha contact upsert race: ${error.message}`);
+}
+
+/**
+ * Localiza contato existente na MESMA organização por qualquer caminho de
+ * identidade WhatsApp canônico. NÃO faz merge destrutivo: se a linha
+ * encontrada está mergeada (`is_merged_into IS NOT NULL`), retorna o
+ * canônico.
+ *
+ * LOOKUP_FAILED (erro de query) propaga como throw. LOOKUP_NOT_FOUND
+ * (consulta funcionou, não achou nada) retorna null.
+ */
+async function findExistingContactByIdentity(
+  admin: Admin,
+  orgId: string,
+  identity: { lid: string | null; phone: string | null },
+): Promise<string | null> {
+  const filters: string[] = [];
+  if (identity.lid) {
+    // coluna wa_lid (índice uniq_contacts_org_wa_lid em produção)
+    filters.push(`wa_lid.eq.${identity.lid}`);
+    // jsonb legado pré-0027
+    filters.push(`source_metadata->>waha_lid.eq.${identity.lid}`);
+    // coluna gerada canônica
+    filters.push(`wa_identity.eq.lid:${identity.lid}`);
+  }
+  if (identity.phone) {
+    const e164 = identity.phone.startsWith("+") ? identity.phone : `+${identity.phone}`;
+    filters.push(`phone_number.eq.${e164}`);
+    filters.push(`wa_identity.eq.phone:${e164}`);
+  }
+  if (filters.length === 0) return null;
+
+  // PostgREST or-filter: "(a,b,c)" casa qualquer. Limite + ordem cobrem
+  // múltiplos matches legados (mesmo wa_lid em contatos antigos): pega o
+  // mais antigo, que é o canônico pela regra de merge 0027.
+  const orFilter = `(${filters.join(",")})`;
+  const { data, error } = await admin
+    .from("contacts")
+    .select("id, is_merged_into")
+    .eq("organization_id", orgId)
+    .or(orFilter)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[waha.ingest] contact identity lookup failed", error.message);
+    throw new Error(`waha contact identity lookup failed: ${error.message}`);
+  }
+  if (!data) return null;
+
+  // Linha mergeada: o canônico vive em is_merged_into. Resolve canônico
+  // antes de retornar.
+  if (data.is_merged_into) {
+    const { data: canonical, error: canonErr } = await admin
+      .from("contacts")
+      .select("id")
+      .eq("id", data.is_merged_into)
+      .maybeSingle();
+    if (canonErr) {
+      console.error("[waha.ingest] canonical contact lookup failed", canonErr.message);
+      throw new Error(`waha canonical contact lookup failed: ${canonErr.message}`);
+    }
+    return canonical?.id ?? data.id;
+  }
+  return data.id;
 }
 
 async function upsertConversation(
