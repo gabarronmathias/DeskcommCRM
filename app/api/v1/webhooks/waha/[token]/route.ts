@@ -15,6 +15,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { handleAthosTestInbound } from "@/lib/waha/athos-test";
 import { dispatchWahaEvent, verifyHmacSha512, type WahaEnvelope } from "@/lib/waha/ingest";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   }
 
   const rawBody = await req.text();
+  const receivedAt = Date.now();
   let envelope: WahaEnvelope;
   try {
     envelope = JSON.parse(rawBody) as WahaEnvelope;
@@ -93,6 +95,21 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
 
   const eventType = envelope.event ?? "unknown";
   const externalId = envelope.payload?.id ?? null;
+
+  const isMessageEvent = eventType === "message" || eventType === "message.any";
+  if (isMessageEvent) {
+    // Phase 1 emergency isolation: do not enter ingest/CRM/agent for inbound
+    // messages. Outbound echoes are acknowledged and ignored to prevent loops.
+    if (envelope.payload?.fromMe) return ok({ accepted: true }, { requestId });
+    try {
+      await handleAthosTestInbound(admin, session, envelope, receivedAt);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[ATHOS-TEST] webhook_failed", err);
+      return fail("internal_error", `athos_test_failed: ${message}`, 503, { requestId });
+    }
+    return ok({ accepted: true }, { requestId });
+  }
 
   const headersJson: Record<string, string> = {};
   req.headers.forEach((value, key) => {
