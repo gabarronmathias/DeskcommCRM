@@ -228,7 +228,7 @@ async function upsertContact(
         .from("contacts")
         .select("id")
         .eq("organization_id", orgId)
-        .eq("wa_chat_id", chatId)
+        .eq("waha_chat_id", chatId)
         .is("is_merged_into", null)
         .maybeSingle();
       if (byChatId.error) {
