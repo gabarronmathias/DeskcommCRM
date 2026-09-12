@@ -105,11 +105,12 @@ export async function loadAthosMenuContext(
 
 /** Sinal explícito de que o inbound pede o cardápio/opções para fazer pedido. */
 export function isMenuRequest(text: string): boolean {
+  if (typeof text !== 'string' || text.trim() === '') return false;
   const normalized = text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-  if (/\b(cardapio|menu|opcoes)\b/.test(normalized)) return true;
+  if (/\b(cardapio|menu|opcoes|produtos?|itens)\b/.test(normalized)) return true;
   return /\b(?:quero|gostaria de|posso|pode me|vou)\s+(?:fazer|realizar|montar|pedir)\b/.test(normalized);
 }
 
