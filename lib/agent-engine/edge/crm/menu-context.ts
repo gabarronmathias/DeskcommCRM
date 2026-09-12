@@ -2,8 +2,9 @@
  * Fonte determinística do cardápio Athos.
  *
  * O URL não é montado pelo modelo nem duplicado no prompt: ele vem da conexão
- * Athos vinculada ao tenant. Se a conexão não estiver disponível, retornamos
- * null e nunca fabricamos um endereço.
+ * Athos vinculada ao tenant ou da configuração de comércio já persistida no
+ * CRM. Se nenhuma fonte estiver disponível, retornamos null e nunca fabricamos
+ * um endereço.
  */
 import type { Queryable } from '../../queue/queue';
 
@@ -23,6 +24,11 @@ interface AthosMenuRow {
   menu_url: string | null;
 }
 
+interface CommerceMenuRow {
+  menu_url: string | null;
+  store_ref: string | null;
+}
+
 function validHttpsUrl(value: unknown): string | null {
   if (typeof value !== 'string' || value.trim() === '') return null;
   const candidate = value.trim();
@@ -39,7 +45,7 @@ export async function loadAthosMenuContext(
   db: Queryable,
   organizationId: string,
 ): Promise<AthosMenuContext | null> {
-  let rows: AthosMenuRow[];
+  let rows: AthosMenuRow[] = [];
   try {
     ({ rows } = await db.query<AthosMenuRow>(
       `select c.store_ref, c.menu_url
@@ -57,15 +63,44 @@ export async function loadAthosMenuContext(
     // The Athos PR9 schema is optional for non-Athos installations. Other
     // database failures remain visible and retryable; only a missing relation
     // means this tenant has no Athos capability installed yet.
+    if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === '42P01')) {
+      throw error;
+    }
+  }
+  const row = rows[0];
+
+  const linkedMenuUrl = validHttpsUrl(row?.menu_url);
+  if (row && linkedMenuUrl && typeof row.store_ref === 'string' && row.store_ref.trim() !== '') {
+    return { provider: 'athos', store_ref: row.store_ref, menu_url: linkedMenuUrl };
+  }
+
+  // The live CRM can be connected to the Athos sandbox without carrying the
+  // sandbox receipt tables locally. In that deployment, food_commerce_settings
+  // is the existing tenant-scoped source of the official menu URL.
+  let commerceRows: CommerceMenuRow[];
+  try {
+    ({ rows: commerceRows } = await db.query<CommerceMenuRow>(
+      `select settings ->> 'athos_menu_url' as menu_url,
+              settings ->> 'athos_store_ref' as store_ref
+       from food_commerce_settings
+       where organization_id = $1
+         and is_enabled = true
+       order by updated_at desc
+       limit 1`,
+      [organizationId],
+    ));
+  } catch (error) {
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === '42P01') return null;
     throw error;
   }
-  const row = rows[0];
-  const menuUrl = validHttpsUrl(row?.menu_url);
-  if (!row || !menuUrl || typeof row.store_ref !== 'string' || row.store_ref.trim() === '') {
-    return null;
-  }
-  return { provider: 'athos', store_ref: row.store_ref, menu_url: menuUrl };
+  const commerceRow = commerceRows[0];
+  const commerceMenuUrl = validHttpsUrl(commerceRow?.menu_url);
+  if (!commerceMenuUrl) return null;
+  return {
+    provider: 'athos',
+    store_ref: commerceRow?.store_ref?.trim() || 'tortas-do-calmon',
+    menu_url: commerceMenuUrl,
+  };
 }
 
 /** Sinal explícito de que o inbound pede o cardápio/opções para fazer pedido. */
