@@ -177,7 +177,27 @@ export async function getLeadContext(
 
   // Athos é a fonte oficial do cardápio. A leitura é org-scoped e o contexto
   // carrega o valor estruturado para o modelo e para o guard de envio.
-  const menu = await loadAthosMenuContext(db, input.tenantId);
+  //
+  // Defesa (fix menu-lookup-do-caminho-crítico): uma falha aqui (timeout,
+  // instabilidade do Supabase, schema ausente) NÃO pode matar o run do agente
+  // — o cliente que pediu o cardápio ficaria sem resposta. O `loadAthosMenuContext`
+  // já retorna `null` em vez de throw na maior parte dos casos, mas envelopamos
+  // por segurança caso uma exceção inesperada escape. O `menu` fica `null` e o
+  // agente segue sem a URL no contexto (LLM pode usar outras vias, ex.: tool
+  // `get_athos_menu` chamada on-demand pelo modelo).
+  let menu: Awaited<ReturnType<typeof loadAthosMenuContext>> = null;
+  try {
+    menu = await loadAthosMenuContext(db, input.tenantId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[get-lead-context] menu lookup threw unexpectedly; continuing with menu=null', {
+      organizationId: input.tenantId,
+      leadId: input.leadId,
+      error: message,
+      non_fatal: true,
+    });
+    menu = null;
+  }
 
   // Conversa: a do job quando informada (fonte confiável); senão a 1:1 mais
   // recente do contato. Grupos NUNCA (regra dura nº 12).

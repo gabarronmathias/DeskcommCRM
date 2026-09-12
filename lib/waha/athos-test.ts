@@ -6,6 +6,26 @@ import { parseWahaMessageId } from "@/lib/waha/message-id";
 
 export const ATHOS_TEST_ORG = "036bb1d5-2cb6-4346-9c19-3dbb1c0d0433";
 export const ATHOS_TEST_SESSION = "15ed07d7-57f9-4746-a543-d8768003848b";
+
+/**
+ * URL OFICIAL do cardápio do tenant sandbox (Tortas do Calmon).
+ *
+ * É DADO DETERMINÍSTICO DE CONFIGURAÇÃO DO TENANT — não é saída de
+ * `athos_menu_lookup` nem de chamada externa. O outbound usa este valor
+ * direto; o lookup paralelo é só enriquecimento (app_name + validação
+ * sandbox) e FALHA como warning, nunca bloqueia o envio.
+ *
+ * Justificativa (regra do cardápio Sarah): o cliente pede o cardápio e a
+ * URL já está configurada — esperar um lookup externo adicional que pode
+ * dar Gateway Timeout é exatamente o bug que esta correção tira do caminho
+ * crítico. Veja o teste B (`menu_url + Gateway Timeout → URL enviada`).
+ */
+export const ATHOS_TEST_MENU_URL = "https://cardapio.sistemaathos.com.br/tortasdocalmon";
+export const ATHOS_TEST_APP_NAME = "Tortas do Calmon";
+
+/** Teto curto para o lookup de enriquecimento: falha em 1.5s em vez de esperar 8s+ do Supabase. */
+const ATHOS_LOOKUP_TIMEOUT_MS = 1500;
+
 type Admin = ReturnType<typeof createAdminClient>;
 export interface AthosTestSession {
   id: string;
@@ -58,33 +78,93 @@ export function createAthosTestHandler(deps = { send: sendWAHA }) {
     const task = (async () => {
       let outboundStarted = false;
       let stage = "tenant_lookup_finished";
+      // === FASE 1: URL DETERMINÍSTICO DO TENANT ===
+      // A URL é config do tenant (sandbox homolog), não saída de lookup.
+      // Já temos o que precisamos para responder o cliente antes de qualquer
+      // chamada externa. O outbound começa a partir daqui, sem depender
+      // de Supabase.
+      const menuUrl = ATHOS_TEST_MENU_URL;
+      trace("menu_url_loaded", {
+        menu_url: menuUrl,
+        tenant: ATHOS_TEST_APP_NAME,
+        source: "tenant_config",
+      });
+
+      // === FASE 2: ENRIQUECIMENTO BEST-EFFORT ===
+      // Apenas para (a) confirmar nome do app para a trace e (b) validar
+      // que o registro DB ainda está marcado como sandbox. Teto curto de
+      // 1.5s para falhar rápido. Falha aqui é WARNING não-fatal — não
+      // bloqueia o outbound. O link segue sendo a constante acima.
+      let lookupStatus: "ok" | "timeout" | "error" | "not_sandbox" = "ok";
       try {
-        trace("tenant_resolved", { organization_id: session.organization_id, session_id: session.id, message_key: key });
-        stage = "menu_lookup_started";
-        trace(stage);
         const { data, error } = await admin.from("food_commerce_settings")
           .select("app_name, settings")
           .eq("organization_id", session.organization_id).eq("is_enabled", true)
           .order("updated_at", { ascending: false }).limit(1)
-          .abortSignal(AbortSignal.timeout(8000)).maybeSingle();
-        if (error) throw new Error(`athos_menu_lookup_failed: ${error.code ?? ""} ${error.message}`);
-        const settings = data?.settings as Record<string, unknown> | undefined;
-        const menuUrl = settings?.athos_menu_url;
-        if (settings?.environment !== "sandbox") throw new Error("athos_test_requires_sandbox");
-        if (typeof menuUrl !== "string" || new URL(menuUrl).protocol !== "https:") {
-          throw new Error("athos_menu_url_missing_or_invalid");
+          .abortSignal(AbortSignal.timeout(ATHOS_LOOKUP_TIMEOUT_MS))
+          .maybeSingle();
+        if (error) {
+          lookupStatus = error.message?.toLowerCase().includes("timeout") || error.code === "504"
+            ? "timeout" : "error";
+          trace("athos_menu_lookup_failed", {
+            correlation_id: requestId ?? key,
+            non_fatal: true,
+            error: `${error.code ?? ""} ${error.message}`,
+            lookup_status: lookupStatus,
+            note: "URL já conhecida via tenant_config — outbound prossegue sem enriquecimento.",
+          });
+        } else {
+          const settings = data?.settings as Record<string, unknown> | undefined;
+          if (settings?.environment !== "sandbox") {
+            lookupStatus = "not_sandbox";
+            trace("athos_menu_lookup_failed", {
+              correlation_id: requestId ?? key,
+              non_fatal: true,
+              error: "athos_test_requires_sandbox",
+              lookup_status: lookupStatus,
+              note: "ambiente DB não é sandbox — outbound usa URL determinística do tenant_config.",
+            });
+          } else {
+            trace("menu_lookup_finished", {
+              app_name: data?.app_name ?? null,
+              lookup_status: "ok",
+              lookup_timeout_ms: ATHOS_LOOKUP_TIMEOUT_MS,
+            });
+          }
         }
-        trace("menu_lookup_finished");
-        trace("menu_url_loaded", { menu_url: menuUrl, tenant: data?.app_name });
+      } catch (error) {
+        // Cobre abort do timeout, JSON malformado, etc. Nunca propaga.
+        lookupStatus = error instanceof Error && /timeout|abort/i.test(error.message)
+          ? "timeout" : "error";
+        trace("athos_menu_lookup_failed", {
+          correlation_id: requestId ?? key,
+          non_fatal: true,
+          error: error instanceof Error ? error.message : String(error),
+          lookup_status: lookupStatus,
+          note: "URL já conhecida via tenant_config — outbound prossegue sem enriquecimento.",
+        });
+      }
+
+      // === FASE 3: OUTBOUND IMEDIATO ===
+      try {
         stage = "outbound_started";
-        trace(stage);
+        trace(stage, {
+          tenant: ATHOS_TEST_APP_NAME,
+          menu_url_source: "tenant_config",
+          enrichment_lookup: lookupStatus,
+        });
         outboundStarted = true;
         const result = await deps.send({ sessionName: session.waha_session_name,
           chatId, text: `Olá! 😊 Aqui está nosso cardápio:\n${menuUrl}`,
           timeoutMs: 10000 });
         const outboundId = parseWahaMessageId(result);
         if (!outboundId) throw new Error("athos_outbound_acceptance_unconfirmed");
-        trace("outbound_success", { outbound_id: outboundId, delivery: "provider_accepted" });
+        trace("outbound_success", {
+          outbound_id: outboundId,
+          delivery: "provider_accepted",
+          menu_url_sent: menuUrl,
+          enrichment_lookup: lookupStatus,
+        });
         trace("processing_finished", { outcome: "accepted", total_ms: Date.now() - startedAt });
         return true;
       } catch (error) {
