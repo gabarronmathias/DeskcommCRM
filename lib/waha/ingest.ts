@@ -200,6 +200,42 @@ async function upsertContact(
     p_notify: notifyName,
   } as never);
   if (error) {
+    // Instalações antigas ainda podem ter a constraint `unique_contacts_org_wa_id`.
+    // Quando o WAHA entrega `message` e `message.any` ao mesmo tempo, uma das
+    // transações pode perder essa corrida mesmo com o upsert pela identidade
+    // canônica. Reaproveitamos o contato vencedor para manter o webhook
+    // idempotente em bases legadas, sem criar outro contato nem perder a mensagem.
+    if (error.code === "23505" || /unique_contacts_org_wa_id/i.test(error.message)) {
+      const identity = parsed.kind === "phone" ? `phone:${parsed.phone}` : `lid:${parsed.lid}`;
+      const byIdentity = await admin
+        .from("contacts")
+        .select("id")
+        .eq("organization_id", orgId)
+        .eq("wa_identity", identity)
+        .is("is_merged_into", null)
+        .maybeSingle();
+      if (byIdentity.error) {
+        console.error("[waha.ingest] contact collision lookup failed", byIdentity.error.message);
+      } else if (byIdentity.data?.id) {
+        return byIdentity.data.id;
+      }
+
+      // Fallback para registros criados antes da coluna `wa_identity` existir.
+      if (parsed.kind === "phone") {
+        const byPhone = await admin
+          .from("contacts")
+          .select("id")
+          .eq("organization_id", orgId)
+          .eq("phone_number", parsed.phone)
+          .is("is_merged_into", null)
+          .maybeSingle();
+        if (byPhone.error) {
+          console.error("[waha.ingest] contact phone collision lookup failed", byPhone.error.message);
+        } else if (byPhone.data?.id) {
+          return byPhone.data.id;
+        }
+      }
+    }
     console.error("[waha.ingest] fn_upsert_wa_contact failed", error.message);
     throw new Error(`waha contact upsert failed: ${error.message}`);
   }
