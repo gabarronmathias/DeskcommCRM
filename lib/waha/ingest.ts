@@ -222,19 +222,19 @@ async function upsertContact(
 
       // Em bases legadas, o contato pode ter sido criado pela primeira
       // mensagem como telefone enquanto a segunda entrega vem como LID.
-      // O chat id continua sendo a identidade estável compartilhada pelas
-      // duas formas e recupera o contato vencedor sem depender de `wa_lid`.
-      const byChatId = await admin
+      // O LID persistido continua sendo a identidade estável da segunda
+      // entrega e recupera o contato vencedor sem criar outro registro.
+      const byLid = await admin
         .from("contacts")
         .select("id")
         .eq("organization_id", orgId)
-        .eq("waha_chat_id", chatId)
+        .eq("wa_lid", parsed.lid)
         .is("is_merged_into", null)
         .maybeSingle();
-      if (byChatId.error) {
-        console.error("[waha.ingest] contact chat collision lookup failed", byChatId.error.message);
-      } else if (byChatId.data?.id) {
-        return byChatId.data.id;
+      if (byLid.error) {
+        console.error("[waha.ingest] contact LID collision lookup failed", byLid.error.message);
+      } else if (byLid.data?.id) {
+        return byLid.data.id;
       }
 
       // Fallback para registros criados antes da coluna `wa_identity` existir.
