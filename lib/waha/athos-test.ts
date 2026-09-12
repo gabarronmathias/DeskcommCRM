@@ -13,17 +13,20 @@ export const ATHOS_TEST_SESSION = "15ed07d7-57f9-4746-a543-d8768003848b";
  * É DADO DETERMINÍSTICO DE CONFIGURAÇÃO DO TENANT — não é saída de
  * `athos_menu_lookup` nem de chamada externa. O outbound usa este valor
  * direto; o lookup paralelo é só enriquecimento (app_name + validação
- * sandbox) e FALHA como warning, nunca bloqueia o envio.
+ * sandbox) e NUNCA bloqueia o envio.
  *
- * Justificativa (regra do cardápio Sarah): o cliente pede o cardápio e a
- * URL já está configurada — esperar um lookup externo adicional que pode
- * dar Gateway Timeout é exatamente o bug que esta correção tira do caminho
- * crítico. Veja o teste B (`menu_url + Gateway Timeout → URL enviada`).
+ * TRAVA DETERMINÍSTICA: este URL só pode ser usado pelo driver
+ * `createAthosTestHandler` quando:
+ *   - `process.env.ATHOS_TEST_MODE === "true"`
+ *   - `session.organization_id === ATHOS_TEST_ORG`
+ *   - `session.id === ATHOS_TEST_SESSION`
+ * Ver `isAthosTestSession` e o teste "D. tenant diferente NUNCA recebe
+ * ATHOS_TEST_MENU_URL".
  */
 export const ATHOS_TEST_MENU_URL = "https://cardapio.sistemaathos.com.br/tortasdocalmon";
 export const ATHOS_TEST_APP_NAME = "Tortas do Calmon";
 
-/** Teto curto para o lookup de enriquecimento: falha em 1.5s em vez de esperar 8s+ do Supabase. */
+/** Teto curto para o lookup de enriquecimento. Falha após 1.5s. */
 const ATHOS_LOOKUP_TIMEOUT_MS = 1500;
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -50,6 +53,67 @@ export function athosTrace(correlationId: string, startedAt: number) {
   };
 }
 
+/** Resultado do lookup de enriquecimento — nunca propaga como throw. */
+type EnrichmentStatus = "ok" | "timeout" | "error" | "not_sandbox";
+interface EnrichmentResult {
+  status: EnrichmentStatus;
+  app_name?: string | null;
+  error?: string;
+}
+
+/** Lê o cardápio oficial via `food_commerce_settings` com teto de tempo.
+ *  Função pura: sempre resolve (nunca rejeita). Caller trata status. */
+async function runMenuEnrichment(
+  admin: Admin,
+  organizationId: string,
+  correlationId: string,
+  trace: ReturnType<typeof athosTrace>,
+): Promise<EnrichmentResult> {
+  try {
+    const { data, error } = await admin.from("food_commerce_settings")
+      .select("app_name, settings")
+      .eq("organization_id", organizationId).eq("is_enabled", true)
+      .order("updated_at", { ascending: false }).limit(1)
+      .abortSignal(AbortSignal.timeout(ATHOS_LOOKUP_TIMEOUT_MS))
+      .maybeSingle();
+    if (error) {
+      const status: EnrichmentStatus = error.code === "504" || /timeout/i.test(error.message)
+        ? "timeout" : "error";
+      trace("athos_menu_lookup_failed", {
+        correlation_id: correlationId,
+        non_fatal: true,
+        enrichment: status,
+        error: `${error.code ?? ""} ${error.message}`,
+        note: "URL já é tenant_config — outbound prossegue sem enriquecimento.",
+      });
+      return { status, error: error.message };
+    }
+    const settings = data?.settings as Record<string, unknown> | undefined;
+    if (settings?.environment !== "sandbox") {
+      trace("athos_menu_lookup_failed", {
+        correlation_id: correlationId,
+        non_fatal: true,
+        enrichment: "not_sandbox",
+        error: "athos_test_requires_sandbox",
+        note: "DB não marca sandbox — outbound usa URL determinística do tenant_config.",
+      });
+      return { status: "not_sandbox", error: "athos_test_requires_sandbox" };
+    }
+    return { status: "ok", app_name: data?.app_name ?? null };
+  } catch (error) {
+    const status: EnrichmentStatus = error instanceof Error && /timeout|abort/i.test(error.message)
+      ? "timeout" : "error";
+    trace("athos_menu_lookup_failed", {
+      correlation_id: correlationId,
+      non_fatal: true,
+      enrichment: status,
+      error: error instanceof Error ? error.message : String(error),
+      note: "URL já é tenant_config — outbound prossegue sem enriquecimento.",
+    });
+    return { status, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 /** Single-process homologation only. Concurrent copies share the same outcome.
  * Ambiguous outbound failures remain failed until operator reconciliation.
  * This temporary mode is not a production send ledger and cannot use replicas.
@@ -58,6 +122,10 @@ export function createAthosTestHandler(deps = { send: sendWAHA }) {
   const attempts = new Map<string, Promise<boolean>>();
   return async (admin: Admin, session: AthosTestSession, envelope: WahaEnvelope,
     startedAt = Date.now(), requestId?: string): Promise<boolean> => {
+    // GUARDA DETERMINÍSTICA — antes de QUALQUER acesso a admin.from ou
+    // leitura da constante ATHOS_TEST_MENU_URL: este driver só atende a
+    // homologação Tortas do Calmon. Outros tenants/dev/orgs recebem `false`
+    // e zero side-effects (sem DB, sem WAHA, sem trace com URL sensível).
     if (!isAthosTestSession(session)) return false;
     const p = envelope.payload;
     if (!p || p.fromMe || !["message", "message.any"].includes(envelope.event ?? "")) return false;
@@ -67,7 +135,8 @@ export function createAthosTestHandler(deps = { send: sendWAHA }) {
     const chatId = p.from;
 
     const key = createHash("sha256").update(`${session.organization_id}:${session.id}:${p.from}:${p.id}`).digest("hex");
-    const trace = athosTrace(requestId ?? key, startedAt);
+    const correlationId = requestId ?? key;
+    const trace = athosTrace(correlationId, startedAt);
     const previous = attempts.get(key);
     if (previous) {
       trace("duplicate_received", { message_key: key });
@@ -78,92 +147,61 @@ export function createAthosTestHandler(deps = { send: sendWAHA }) {
     const task = (async () => {
       let outboundStarted = false;
       let stage = "tenant_lookup_finished";
+
       // === FASE 1: URL DETERMINÍSTICO DO TENANT ===
       // A URL é config do tenant (sandbox homolog), não saída de lookup.
-      // Já temos o que precisamos para responder o cliente antes de qualquer
-      // chamada externa. O outbound começa a partir daqui, sem depender
-      // de Supabase.
-      const menuUrl = ATHOS_TEST_MENU_URL;
       trace("menu_url_loaded", {
-        menu_url: menuUrl,
+        menu_url: ATHOS_TEST_MENU_URL,
         tenant: ATHOS_TEST_APP_NAME,
         source: "tenant_config",
       });
 
-      // === FASE 2: ENRIQUECIMENTO BEST-EFFORT ===
-      // Apenas para (a) confirmar nome do app para a trace e (b) validar
-      // que o registro DB ainda está marcado como sandbox. Teto curto de
-      // 1.5s para falhar rápido. Falha aqui é WARNING não-fatal — não
-      // bloqueia o outbound. O link segue sendo a constante acima.
-      let lookupStatus: "ok" | "timeout" | "error" | "not_sandbox" = "ok";
-      try {
-        const { data, error } = await admin.from("food_commerce_settings")
-          .select("app_name, settings")
-          .eq("organization_id", session.organization_id).eq("is_enabled", true)
-          .order("updated_at", { ascending: false }).limit(1)
-          .abortSignal(AbortSignal.timeout(ATHOS_LOOKUP_TIMEOUT_MS))
-          .maybeSingle();
-        if (error) {
-          lookupStatus = error.message?.toLowerCase().includes("timeout") || error.code === "504"
-            ? "timeout" : "error";
-          trace("athos_menu_lookup_failed", {
-            correlation_id: requestId ?? key,
-            non_fatal: true,
-            error: `${error.code ?? ""} ${error.message}`,
-            lookup_status: lookupStatus,
-            note: "URL já conhecida via tenant_config — outbound prossegue sem enriquecimento.",
-          });
-        } else {
-          const settings = data?.settings as Record<string, unknown> | undefined;
-          if (settings?.environment !== "sandbox") {
-            lookupStatus = "not_sandbox";
-            trace("athos_menu_lookup_failed", {
-              correlation_id: requestId ?? key,
-              non_fatal: true,
-              error: "athos_test_requires_sandbox",
-              lookup_status: lookupStatus,
-              note: "ambiente DB não é sandbox — outbound usa URL determinística do tenant_config.",
-            });
-          } else {
-            trace("menu_lookup_finished", {
-              app_name: data?.app_name ?? null,
-              lookup_status: "ok",
-              lookup_timeout_ms: ATHOS_LOOKUP_TIMEOUT_MS,
-            });
-          }
-        }
-      } catch (error) {
-        // Cobre abort do timeout, JSON malformado, etc. Nunca propaga.
-        lookupStatus = error instanceof Error && /timeout|abort/i.test(error.message)
-          ? "timeout" : "error";
-        trace("athos_menu_lookup_failed", {
-          correlation_id: requestId ?? key,
-          non_fatal: true,
-          error: error instanceof Error ? error.message : String(error),
-          lookup_status: lookupStatus,
-          note: "URL já conhecida via tenant_config — outbound prossegue sem enriquecimento.",
-        });
-      }
+      // === FASE 2: ENRICHMENT EM PARALELO ===
+      // Dispara o lookup MAS NÃO espera — outbound começa imediatamente.
+      // A promise fica em vôo durante o envio; só é resolvida/aguardada
+      // depois, para o trace final. Falha do enrichment NUNCA bloqueia o
+      // outbound (é best-effort, com catch interno).
+      const enrichmentPromise = runMenuEnrichment(admin, session.organization_id, correlationId, trace)
+        .catch((err): EnrichmentResult => ({
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+        }));
 
       // === FASE 3: OUTBOUND IMEDIATO ===
       try {
         stage = "outbound_started";
         trace(stage, {
-          tenant: ATHOS_TEST_APP_NAME,
           menu_url_source: "tenant_config",
-          enrichment_lookup: lookupStatus,
+          enrichment: "in_flight",
         });
         outboundStarted = true;
-        const result = await deps.send({ sessionName: session.waha_session_name,
-          chatId, text: `Olá! 😊 Aqui está nosso cardápio:\n${menuUrl}`,
-          timeoutMs: 10000 });
+        const result = await deps.send({
+          sessionName: session.waha_session_name,
+          chatId,
+          text: `Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`,
+          timeoutMs: 10000,
+        });
         const outboundId = parseWahaMessageId(result);
         if (!outboundId) throw new Error("athos_outbound_acceptance_unconfirmed");
         trace("outbound_success", {
           outbound_id: outboundId,
           delivery: "provider_accepted",
-          menu_url_sent: menuUrl,
-          enrichment_lookup: lookupStatus,
+          menu_url_sent: ATHOS_TEST_MENU_URL,
+        });
+        // === FASE 4: AGUARDA ENRICHMENT PARA TRACE ===
+        // Outbound JÁ foi aceito pelo WAHA — esperar o enrichment aqui
+        // não atrasa o cliente. Limita o tempo de espera com um teto
+        // curto para evitar pendurar caso o lookup nunca resolva.
+        const enrichment = await Promise.race([
+          enrichmentPromise,
+          new Promise<EnrichmentResult>((resolve) => setTimeout(
+            () => resolve({ status: "timeout", error: "enrichment_post_send_timeout" }),
+            ATHOS_LOOKUP_TIMEOUT_MS,
+          )),
+        ]);
+        trace("menu_enrichment_finished", {
+          enrichment_status: enrichment.status,
+          app_name: enrichment.app_name ?? null,
         });
         trace("processing_finished", { outcome: "accepted", total_ms: Date.now() - startedAt });
         return true;

@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ATHOS_TEST_APP_NAME, ATHOS_TEST_MENU_URL, ATHOS_TEST_ORG, ATHOS_TEST_SESSION,
-  createAthosTestHandler,
+  createAthosTestHandler, isAthosTestSession,
 } from "./athos-test";
 import { WahaClient } from "./client";
 
@@ -18,8 +18,8 @@ type DatabaseOpts = { failures?: number; delayMs?: number; sandbox?: boolean; da
 
 /**
  * Mock do admin client. O ponto crítico é que `.maybeSingle()` HONRA o
- * AbortSignal.timeout que o athos-test.ts injeta — sem isso, um lookup
- * "lento" nunca aborta e o outbound não começa.
+ * AbortSignal.timeout — sem isso, um lookup "lento" nunca aborta e o teste
+ * de latência seria inválido.
  */
 function database(opts: DatabaseOpts = {}) {
   let { failures = 0 } = opts;
@@ -63,12 +63,13 @@ function database(opts: DatabaseOpts = {}) {
 }
 
 function makeServer() {
-  const received: Array<{ session: string; chatId: string; text: string }> = [];
+  const received: Array<{ session: string; chatId: string; text: string; received_at: number }> = [];
   const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     if (req.url === "/api/sendText") {
-      received.push(JSON.parse(Buffer.concat(chunks).toString()));
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      received.push({ ...body, received_at: performance.now() });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ id: `accepted-${received.length}` }));
     } else { res.writeHead(404); res.end(); }
@@ -131,36 +132,6 @@ describe("Athos isolated pipeline — local HTTP adapter, no WhatsApp delivery c
     expect(ctx.received.every(r => r.session === session.waha_session_name && r.text.endsWith(menu))).toBe(true);
   });
 
-  it("never intercepts other tenants/sessions or disabled mode", async () => {
-    const handler = createAthosTestHandler();
-    const { admin } = database();
-    expect(await handler(admin, { ...session, organization_id: "other" }, event("x"))).toBe(false);
-    expect(await handler(admin, { ...session, id: "other" }, event("x"))).toBe(false);
-    vi.stubEnv("ATHOS_TEST_MODE", "false");
-    expect(await handler(admin, session, event("x"))).toBe(false);
-    expect(admin.from).not.toHaveBeenCalled();
-    expect(ctx.received).toHaveLength(0);
-  });
-
-  /**
-   * REGRA: a URL é dado determinístico do tenant (constante), NÃO vem do
-   * lookup. Falha do lookup é warning não-fatal — outbound prossegue com a
-   * constante. Verifica o comportamento pós-fix: outbound acontece mesmo
-   * com `failures=99` (todas as chamadas Supabase dão 504).
-   */
-  it("sends menu URL even when ALL menu lookups fail (Gateway Timeout)", async () => {
-    const handler = createAthosTestHandler();
-    const { admin } = database({ failures: 99 });
-    const t0 = performance.now();
-    expect(await handler(admin, session, event("gateway-timeout"))).toBe(true);
-    const elapsed = performance.now() - t0;
-    expect(ctx.received).toHaveLength(1);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${menu}`);
-    // O outbound começa imediatamente após `menu_url_loaded` (constante),
-    // não espera pelo lookup.
-    expect(elapsed).toBeLessThan(2000);
-  });
-
   it("does not resend or falsely acknowledge an ambiguous outbound failure", async () => {
     const send = vi.fn().mockRejectedValue(new Error("socket disconnected after write"));
     const handler = createAthosTestHandler({ send });
@@ -197,10 +168,11 @@ describe("Athos isolated pipeline — local HTTP adapter, no WhatsApp delivery c
 /**
  * Suite dedicada ao FIX do menu lookup: a URL do cardápio é DADO
  * DETERMINÍSTICO do tenant (sandbox homolog) e NUNCA deve depender de
- * `athos_menu_lookup` para ser enviada. Os testes abaixo cobrem A–F
- * exatamente como pedido no escopo.
+ * `athos_menu_lookup` para ser enviada. O enrichment roda em PARALELO
+ * com o outbound (não bloqueia o envio). Os testes abaixo cobrem A–F
+ * exatamente como pedido no escopo, mais a guarda de tenant.
  */
-describe("Athos menu lookup is REMOVED from critical outbound path — tests A–F", () => {
+describe("Athos menu lookup runs in PARALLEL — tests A–F + tenant guard", () => {
   const ctx = makeServer();
   let url: string;
   beforeAll(async () => { url = await ctx.listen(); });
@@ -214,7 +186,7 @@ describe("Athos menu lookup is REMOVED from critical outbound path — tests A�
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
   // A. menu_url configurado + Athos funcionando → envia menu_url correta.
-  it("A. menu_url configured + Athos OK → sends the exact menu URL", async () => {
+  it("A. Tortas do Calmon + lookup OK → sends the exact menu URL", async () => {
     const handler = createAthosTestHandler();
     const { admin } = database({ failures: 0 });
     expect(await handler(admin, session, event("a-ok"))).toBe(true);
@@ -222,53 +194,91 @@ describe("Athos menu lookup is REMOVED from critical outbound path — tests A�
     expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
   });
 
-  // B. menu_url configurado + Athos Gateway Timeout → envia menu_url correta mesmo assim.
-  it("B. menu_url configured + Athos Gateway Timeout → still sends the exact menu URL", async () => {
+  // B. lookup demora 5s → deps.send chamado IMEDIATAMENTE, ANTES do timeout.
+  //    Prova SEND_CALLED_BEFORE_LOOKUP_FINISHED=SIM.
+  //    O HTTP server marca received_at quando recebe o request — usamos
+  //    isso como proxy para "deps.send foi chamado" (o request só chega
+  //    ao server depois de `deps.send` resolver).
+  it("B. slow Athos (5s) → deps.send is called BEFORE lookup finishes", async () => {
+    const { admin, query } = database({ failures: 0, delayMs: 5000 });
+    let lookupStartedAt: number | null = null;
+    let lookupResolvedAt: number | null = null;
+    const maybeSingle = query.maybeSingle as unknown as { getMockImplementation(): () => Promise<unknown>; mockImplementation(impl: () => Promise<unknown>): void };
+    const originalMaybe = maybeSingle.getMockImplementation();
+    maybeSingle.mockImplementation(async () => {
+      lookupStartedAt = lookupStartedAt ?? performance.now();
+      try {
+        return await originalMaybe();
+      } finally {
+        lookupResolvedAt = performance.now();
+      }
+    });
+    // Handler com send REAL (sendWAHA) — o server marca received_at
+    const handler = createAthosTestHandler();
+    const t0 = performance.now();
+    await handler(admin, session, event("b-slow"));
+
+    // ASSERT: send chegou ao server IMEDIATAMENTE após o handler iniciar,
+    // bem ANTES do lookup de 5s terminar (que respeita teto 1.5s).
+    expect(ctx.received).toHaveLength(1);
+    const receivedAt = ctx.received[0]?.received_at as number;
+    expect(lookupStartedAt).not.toBeNull();
+    expect(lookupResolvedAt).not.toBeNull();
+    const sendDelay = receivedAt - t0;
+    // Após expect().not.toBeNull(), TypeScript ainda trata como `null | number`.
+    // Converte via unknown para number — assertions acima garantem que não é null.
+    const lookupDuration = (lookupResolvedAt as unknown as number) - (lookupStartedAt as unknown as number);
+    expect(sendDelay).toBeLessThan(100);  // request chegou < 100ms após handler start
+    expect(lookupDuration).toBeGreaterThan(1400); // lookup respeitou teto de ~1.5s (timeout)
+    // SEND_CALLED_BEFORE_LOOKUP_FINISHED=SIM
+    expect(receivedAt).toBeLessThan(lookupResolvedAt as unknown as number);
+    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
+  });
+
+  // C. lookup retorna 504 → link enviado (URL é determinística do tenant_config).
+  it("C. Athos lookup returns 504 → link is still sent via tenant_config", async () => {
     const handler = createAthosTestHandler();
     const { admin } = database({ failures: 99 });
-    const t0 = performance.now();
-    expect(await handler(admin, session, event("b-gateway-timeout"))).toBe(true);
-    const elapsed = performance.now() - t0;
+    expect(await handler(admin, session, event("c-gateway-timeout"))).toBe(true);
     expect(ctx.received).toHaveLength(1);
     expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
-    // Outbound não espera o lookup: termina em < 2s mesmo com Supabase sempre falhando.
-    expect(elapsed).toBeLessThan(2000);
   });
 
-  // C. menu_url configurado + resposta lenta Athos → outbound do link não espera Athos.
-  it("C. menu_url configured + slow Athos → outbound does NOT wait for the lookup", async () => {
+  // D. tenant diferente → ATHOS_TEST_MENU_URL NUNCA é enviada.
+  //    GUARDA DETERMINÍSTICA: isAthosTestSession bloqueia antes de qualquer
+  //    acesso a admin ou uso da constante.
+  it("D. wrong tenant → handler returns false, NO DB call, NO outbound with hardcoded URL", async () => {
     const handler = createAthosTestHandler();
-    // O mock HONRA o AbortSignal.timeout(1500ms) — sem isso o teste seria
-    // inválido. delayMs=5000 simula um lookup que NUNCA responde dentro do
-    // teto; o abort dispara e o handler segue para o outbound.
-    const { admin } = database({ failures: 0, delayMs: 5000 });
-    const t0 = performance.now();
-    expect(await handler(admin, session, event("c-slow"))).toBe(true);
-    const elapsed = performance.now() - t0;
-    expect(ctx.received).toHaveLength(1);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
-    // Teto do lookup = 1500ms; outbound + abort ~poucos ms. Margem para overhead.
-    expect(elapsed).toBeLessThan(2500);
+    const { admin } = database();
+    // Wrong organization → handler retorna false SEM tocar admin/from
+    expect(await handler(admin,
+      { ...session, organization_id: "OTHER-ORG-00000000-0000-0000-0000-000000000000" },
+      event("d-wrong-org"))).toBe(false);
+    // Wrong session id → mesma proteção
+    expect(await handler(admin,
+      { ...session, id: "OTHER-SESSION-00000000-0000-0000-0000-000000000000" },
+      event("d-wrong-session"))).toBe(false);
+    // Nenhum acesso a admin.from (prova que a guarda rodou ANTES de qualquer lookup)
+    expect(admin.from).not.toHaveBeenCalled();
+    // Nenhum outbound com a URL hardcoded
+    expect(ctx.received).toHaveLength(0);
+    // Validação direta do isAthosTestSession — fonte da verdade
+    expect(isAthosTestSession(
+      { ...session, organization_id: "OTHER-ORG-00000000-0000-0000-0000-000000000000" })).toBe(false);
+    expect(isAthosTestSession(
+      { ...session, id: "OTHER-SESSION-00000000-0000-0000-0000-000000000000" })).toBe(false);
   });
 
-  // D. menu_url ausente → comportamento de fallback existente, sem inventar URL.
-  // Aqui "ausente" significa: o lookup falha e a config DB não tem a URL.
-  // O sandbox homolog tem URL determinística (constante), então "ausente" é
-  // simulado como `failures=99` + DB sem `athos_menu_url`. O outbound ainda
-  // usa a constante, MAS a constante é a URL REAL configurada para o tenant
-  // (não é "invenção" — é o source-of-truth do sandbox).
-  it("D. menu_url absent in DB → still uses the tenant-config URL (deterministic, not invented)", async () => {
+  it("D2. ATHOS_TEST_MODE=false → handler returns false, no DB, no outbound", async () => {
     const handler = createAthosTestHandler();
-    const { admin } = database({
-      failures: 99,
-      data: { app_name: ATHOS_TEST_APP_NAME, settings: { environment: "sandbox" } }, // sem athos_menu_url
-    });
-    expect(await handler(admin, session, event("d-no-url-in-db"))).toBe(true);
-    expect(ctx.received).toHaveLength(1);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
+    const { admin } = database();
+    vi.stubEnv("ATHOS_TEST_MODE", "false");
+    expect(await handler(admin, session, event("d-mode-off"))).toBe(false);
+    expect(admin.from).not.toHaveBeenCalled();
+    expect(ctx.received).toHaveLength(0);
   });
 
-  // E. Tortas do Calmon → URL enviada deve ser EXATAMENTE a configurada.
+  // E. menu URL enviada exatamente: https://cardapio.sistemaathos.com.br/tortasdocalmon
   it("E. Tortas do Calmon → outbound URL is exactly https://cardapio.sistemaathos.com.br/tortasdocalmon", async () => {
     const handler = createAthosTestHandler();
     const { admin } = database();
@@ -276,10 +286,11 @@ describe("Athos menu lookup is REMOVED from critical outbound path — tests A�
     const expected = "https://cardapio.sistemaathos.com.br/tortasdocalmon";
     expect(ctx.received).toHaveLength(1);
     expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${expected}`);
+    // Hardcoded constant must match exactly
+    expect(ATHOS_TEST_MENU_URL).toBe(expected);
   });
 
-  // F. nenhuma duplicação de outbound — múltiplos deliveries do mesmo
-  // message_id resultam em UMA única chamada ao WAHA.
+  // F. duplicidade message_id → um único outbound.
   it("F. duplicate deliveries of same message_id → only ONE outbound", async () => {
     const handler = createAthosTestHandler();
     const { admin } = database();
@@ -294,8 +305,7 @@ describe("Athos menu lookup is REMOVED from critical outbound path — tests A�
     expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
   });
 
-  // Bônus: lookup com `environment !== "sandbox"` (config inconsistente)
-  // também é tratado como warning — outbound usa constante.
+  // Bonus: DB environment != sandbox → outbound ainda usa constante.
   it("DB environment != sandbox is treated as non-fatal warning; outbound still uses tenant config URL", async () => {
     const handler = createAthosTestHandler();
     const { admin } = database({ sandbox: false });

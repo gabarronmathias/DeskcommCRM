@@ -5,22 +5,8 @@
  * Athos vinculada ao tenant ou da configuração de comércio já persistida no
  * CRM. Se nenhuma fonte estiver disponível, retornamos null e nunca fabricamos
  * um endereço.
- *
- * REGRA CRÍTICA (fix menu-lookup-do-caminho-crítico): este lookup NUNCA pode
- * bloquear o outbound do cardápio. Por isso:
- *   - cada query tem teto curto (`ATHOS_MENU_QUERY_TIMEOUT_MS` = 1500ms);
- *   - qualquer falha (timeout, erro de rede, schema ausente) vira `null` com
- *     warning log — NUNCA propaga throw. O caller (`getLeadContext` / tool
- *     `get_athos_menu`) já trata `null` e o outbound segue usando a URL que o
- *     agente tem via contexto ou caminho determinístico.
- *
- * O URL em si continua sendo lido daqui — só não pode demorar para falhar.
  */
-import type { QueryResultRow } from 'pg';
 import type { Queryable } from '../../queue/queue';
-
-/** Teto curto para cada query do menu lookup (ms). Acima disto, falha como warning. */
-export const ATHOS_MENU_QUERY_TIMEOUT_MS = 1500;
 
 export interface AthosMenuContext {
   provider: 'athos';
@@ -59,13 +45,9 @@ export async function loadAthosMenuContext(
   db: Queryable,
   organizationId: string,
 ): Promise<AthosMenuContext | null> {
-  // Defesa: teto curto + catch-all. O URL é config do tenant — uma falha do
-  // Supabase Cloud (Gateway Timeout, instabilidade transitória) NÃO pode
-  // matar o run do agente. Veja o fix do menu-lookup-do-caminho-crítico.
   let rows: AthosMenuRow[] = [];
   try {
-    rows = await queryWithBudget<AthosMenuRow>(
-      db,
+    ({ rows } = await db.query<AthosMenuRow>(
       `select c.store_ref, c.menu_url
        from athos_sandbox_tenant_bindings b
        join athos_sandbox_connections c on c.id = b.connection_id
@@ -76,19 +58,13 @@ export async function loadAthosMenuContext(
        order by b.updated_at desc
        limit 1`,
       [organizationId],
-      ATHOS_MENU_QUERY_TIMEOUT_MS,
-    );
+    ));
   } catch (error) {
-    // 42P01 (undefined_table) significa schema PR9 não instalado — segue sem
-    // fallback para `food_commerce_settings`. Outros erros viram `null` com
-    // warning (NUNCA throw) — o caller trata como "menu não configurado".
-    if (!isMissingRelationError(error)) {
-      console.warn('[menu-context] athos_sandbox lookup failed; treating as not configured', {
-        organizationId,
-        error: errorMessage(error),
-        non_fatal: true,
-      });
-      return null;
+    // The Athos PR9 schema is optional for non-Athos installations. Other
+    // database failures remain visible and retryable; only a missing relation
+    // means this tenant has no Athos capability installed yet.
+    if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === '42P01')) {
+      throw error;
     }
   }
   const row = rows[0];
@@ -103,8 +79,7 @@ export async function loadAthosMenuContext(
   // is the existing tenant-scoped source of the official menu URL.
   let commerceRows: CommerceMenuRow[];
   try {
-    commerceRows = await queryWithBudget<CommerceMenuRow>(
-      db,
+    ({ rows: commerceRows } = await db.query<CommerceMenuRow>(
       `select settings ->> 'athos_menu_url' as menu_url,
               settings ->> 'athos_store_ref' as store_ref
        from food_commerce_settings
@@ -113,16 +88,10 @@ export async function loadAthosMenuContext(
        order by updated_at desc
        limit 1`,
       [organizationId],
-      ATHOS_MENU_QUERY_TIMEOUT_MS,
-    );
+    ));
   } catch (error) {
-    if (isMissingRelationError(error)) return null;
-    console.warn('[menu-context] food_commerce_settings lookup failed; treating as not configured', {
-      organizationId,
-      error: errorMessage(error),
-      non_fatal: true,
-    });
-    return null;
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === '42P01') return null;
+    throw error;
   }
   const commerceRow = commerceRows[0];
   const commerceMenuUrl = validHttpsUrl(commerceRow?.menu_url);
@@ -132,42 +101,6 @@ export async function loadAthosMenuContext(
     store_ref: commerceRow?.store_ref?.trim() || 'tortas-do-calmon',
     menu_url: commerceMenuUrl,
   };
-}
-
-function isMissingRelationError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === '42P01';
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const m = (error as { message: unknown }).message;
-    return typeof m === 'string' ? m : String(m);
-  }
-  return String(error);
-}
-
-/**
- * Executa uma query respeitando um teto de tempo. Se o teto estoura, rejeita
- * com erro "menu_lookup_timeout" — o caller (loadAthosMenuContext) captura e
- * devolve `null` em vez de derrubar o run.
- *
- * O teto é ENFORÇADO via `Promise.race` + `setTimeout`. O `Queryable` que
- * aceita AbortSignal.timeout deve ser configurado pelo caller (ex.: Supabase
- * admin client) — esta função apenas impõe o teto via rejeição.
- */
-async function queryWithBudget<R extends QueryResultRow = QueryResultRow>(
-  db: Queryable,
-  sql: string,
-  params: unknown[],
-  budgetMs: number,
-): Promise<R[]> {
-  const exec = db.query<R>(sql, params);
-  const result = await Promise.race([
-    exec,
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('menu_lookup_timeout')), budgetMs)),
-  ]);
-  return result.rows;
 }
 
 /** Sinal explícito de que o inbound pede o cardápio/opções para fazer pedido. */
