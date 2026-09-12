@@ -5,6 +5,7 @@ import {
   createAthosTestHandler, isAthosTestSession,
 } from "./athos-test";
 import { WahaClient } from "./client";
+import { buildMenuReply } from "@/lib/agent-engine/edge/crm/menu-context";
 
 const menu = ATHOS_TEST_MENU_URL;
 const session = { id: ATHOS_TEST_SESSION, organization_id: ATHOS_TEST_ORG,
@@ -113,7 +114,9 @@ describe("Athos isolated pipeline — local HTTP adapter, no WhatsApp delivery c
       times.push(performance.now() - start);
     }
     expect(ctx.received).toHaveLength(100);
-    expect(ctx.received.every(r => r.text === `Olá! 😊 Aqui está nosso cardápio:\n${menu}`)).toBe(true);
+    // Usa a copy canônica do fast path (buildMenuReply sem nome —
+    // envelope de teste não tem notifyName).
+    expect(ctx.received.every(r => r.text === buildMenuReply(ATHOS_TEST_MENU_URL))).toBe(true);
     expect(query.eq).toHaveBeenCalledWith("organization_id", ATHOS_TEST_ORG);
     times.sort((a, b) => a - b);
     console.warn(JSON.stringify({ test: "100 sequential, local HTTP; database simulated", responses: ctx.received.length,
@@ -129,7 +132,9 @@ describe("Athos isolated pipeline — local HTTP adapter, no WhatsApp delivery c
     expect(outcomes.every(Boolean)).toBe(true);
     expect(ctx.received).toHaveLength(20);
     expect(new Set(ctx.received.map(r => r.chatId)).size).toBe(20);
-    expect(ctx.received.every(r => r.session === session.waha_session_name && r.text.endsWith(menu))).toBe(true);
+    // Cada texto inclui a URL canônica (não termina mais com ela —
+    // a copy do fast path termina com a pergunta comercial CTA).
+    expect(ctx.received.every(r => r.session === session.waha_session_name && r.text.includes(menu))).toBe(true);
   });
 
   it("does not resend or falsely acknowledge an ambiguous outbound failure", async () => {
@@ -191,7 +196,7 @@ describe("Athos menu lookup runs in PARALLEL — tests A–F + tenant guard", ()
     const { admin } = database({ failures: 0 });
     expect(await handler(admin, session, event("a-ok"))).toBe(true);
     expect(ctx.received).toHaveLength(1);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
   });
 
   // B. lookup demora 5s → deps.send chamado IMEDIATAMENTE, ANTES do timeout.
@@ -232,7 +237,7 @@ describe("Athos menu lookup runs in PARALLEL — tests A–F + tenant guard", ()
     expect(lookupDuration).toBeGreaterThan(1400); // lookup respeitou teto de ~1.5s (timeout)
     // SEND_CALLED_BEFORE_LOOKUP_FINISHED=SIM
     expect(receivedAt).toBeLessThan(lookupResolvedAt as unknown as number);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
   });
 
   // C. lookup retorna 504 → link enviado (URL é determinística do tenant_config).
@@ -241,7 +246,7 @@ describe("Athos menu lookup runs in PARALLEL — tests A–F + tenant guard", ()
     const { admin } = database({ failures: 99 });
     expect(await handler(admin, session, event("c-gateway-timeout"))).toBe(true);
     expect(ctx.received).toHaveLength(1);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
   });
 
   // D. tenant diferente → ATHOS_TEST_MENU_URL NUNCA é enviada.
@@ -285,7 +290,7 @@ describe("Athos menu lookup runs in PARALLEL — tests A–F + tenant guard", ()
     await handler(admin, session, event("e-exact"));
     const expected = "https://cardapio.sistemaathos.com.br/tortasdocalmon";
     expect(ctx.received).toHaveLength(1);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${expected}`);
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(expected));
     // Hardcoded constant must match exactly
     expect(ATHOS_TEST_MENU_URL).toBe(expected);
   });
@@ -302,7 +307,7 @@ describe("Athos menu lookup runs in PARALLEL — tests A–F + tenant guard", ()
     ]);
     expect(results.every(Boolean)).toBe(true);
     expect(ctx.received).toHaveLength(1);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
   });
 
   // Bonus: DB environment != sandbox → outbound ainda usa constante.
@@ -311,6 +316,163 @@ describe("Athos menu lookup runs in PARALLEL — tests A–F + tenant guard", ()
     const { admin } = database({ sandbox: false });
     expect(await handler(admin, session, event("g-misconfig"))).toBe(true);
     expect(ctx.received).toHaveLength(1);
-    expect(ctx.received[0]?.text).toBe(`Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`);
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
+  });
+});
+
+/**
+ * Persona compartilhada entre o fast path normal (buildMenuReply) e o
+ * sandbox homolog (athos-test). Estes testes garantem:
+ *   A. ATHOS_TEST_MODE + Tortas do Calmon → URL correta + acolhimento + CTA
+ *   B. Velocidade: send antes do enrichment, sem LLM/Supabase para montar
+ *   C. Tenant errado → handler false, zero side-effects
+ *   D. Nome presente (notifyName) → personaliza saudação
+ *   E. Nome ausente → saudação genérica, nunca inventa
+ *   F. Deduplicação de message_id continua funcionando
+ *   G. Consistência: mesma função `buildMenuReply` em produção e sandbox
+ */
+describe("ATHOS_TEST_MODE usa buildMenuReply canônico — tests A–G", () => {
+  const ctx = makeServer();
+  let url: string;
+  beforeAll(async () => { url = await ctx.listen(); });
+  afterAll(async () => { await ctx.close(); });
+  beforeEach(() => {
+    ctx.received.length = 0;
+    vi.stubEnv("WAHA_API_BASE_URL", url);
+    vi.stubEnv("WAHA_API_KEY", "local-test-key");
+    setupWahaEnv();
+  });
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+
+  // Helper: cria evento com `_data.notifyName` opcional para testar D/E.
+  const eventWithName = (id: string, notifyName?: string, from = "5511000000000@c.us") => ({
+    event: "message.any",
+    session: session.waha_session_name,
+    payload: {
+      id, from, fromMe: false, body: "Olá",
+      ...(notifyName ? { _data: { notifyName } } : {}),
+    },
+  });
+
+  // Teste A — pedido de cardápio retorna URL, recepção e CTA comercial.
+  it("A. Tortas do Calmon + pedido de cardápio → URL correta + acolhimento + CTA", async () => {
+    const handler = createAthosTestHandler();
+    const { admin } = database();
+    expect(await handler(admin, session, eventWithName("a-pedido"))).toBe(true);
+    expect(ctx.received).toHaveLength(1);
+    const text = ctx.received[0]?.text ?? "";
+    // 1. URL correta (determinística, sem invenção).
+    expect(text).toContain(ATHOS_TEST_MENU_URL);
+    // 2. Recepção acolhedora (não "Abaixo está o nosso cardápio digital...").
+    expect(text).toMatch(/Oi[!.]?\s*(Tudo bem|😊)/);
+    expect(text).toMatch(/😊/);
+    // 3. CTA comercial com UMA pergunta principal (não cinco adicionais).
+    expect(text).toMatch(/pessoas|ocasi[ãa]o|prefer|pedido|pedir|escolh|combina|mais pedidos|sugerir/i);
+    const ctaBlock = text.split("\n\n").at(-1) ?? "";
+    expect((ctaBlock.match(/\?/g) ?? []).length).toBe(1);
+    // 4. Equivalente exato à função canônica `buildMenuReply` (sem nome).
+    expect(text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
+  });
+
+  // Teste B — velocidade: send ANTES do enrichment, sem LLM/Supabase.
+  it("B. send é chamado antes do enrichment; nenhum LLM/Supabase necessário para montar texto", async () => {
+    const { admin, query } = database({ failures: 0, delayMs: 5000 });
+    let lookupStartedAt: number | null = null;
+    let lookupResolvedAt: number | null = null;
+    const maybeSingle = query.maybeSingle as unknown as {
+      getMockImplementation(): () => Promise<unknown>;
+      mockImplementation(impl: () => Promise<unknown>): void;
+    };
+    const originalMaybe = maybeSingle.getMockImplementation();
+    maybeSingle.mockImplementation(async () => {
+      lookupStartedAt = lookupStartedAt ?? performance.now();
+      try { return await originalMaybe(); }
+      finally { lookupResolvedAt = performance.now(); }
+    });
+    const handler = createAthosTestHandler();
+    const t0 = performance.now();
+    await handler(admin, session, eventWithName("b-fast"));
+    // ASSERT FAST-PATH: request chega < 100ms; lookup respeita teto 1.5s.
+    expect(ctx.received).toHaveLength(1);
+    const receivedAt = ctx.received[0]?.received_at as number;
+    expect(receivedAt - t0).toBeLessThan(100);
+    expect((lookupResolvedAt as unknown as number) - (lookupStartedAt as unknown as number)).toBeGreaterThan(1400);
+    expect(receivedAt).toBeLessThan(lookupResolvedAt as unknown as number);
+    // Texto é IDÊNTICO ao que buildMenuReply produz offline (zero dependência
+    // externa para montar a copy).
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
+  });
+
+  // Teste C — tenant errado → handler false, zero outbound.
+  it("C. tenant errado → handler false, nenhuma URL Tortas do Calmon, nenhum outbound", async () => {
+    const handler = createAthosTestHandler();
+    const { admin } = database();
+    expect(await handler(admin,
+      { ...session, organization_id: "OTHER-ORG-00000000-0000-0000-0000-000000000000" },
+      eventWithName("c-wrong-org"))).toBe(false);
+    expect(admin.from).not.toHaveBeenCalled();
+    expect(ctx.received).toHaveLength(0);
+  });
+
+  // Teste D — nome presente via notifyName → personaliza saudação.
+  it("D. notifyName presente → saudação personalizada com o nome", async () => {
+    const handler = createAthosTestHandler();
+    const { admin } = database();
+    await handler(admin, session, eventWithName("d-named", "Thailer"));
+    const text = ctx.received[0]?.text ?? "";
+    expect(text).toContain("Thailer");
+    expect(text).toMatch(/^Oi, Thailer/);
+    // Equivalente exato à função canônica com nome.
+    expect(text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL, "Thailer"));
+  });
+
+  // Teste E — nome ausente → saudação genérica, não inventa nome.
+  it("E. notifyName ausente → saudação genérica simpática, não inventa nome", async () => {
+    const handler = createAthosTestHandler();
+    const { admin } = database();
+    await handler(admin, session, eventWithName("e-anon"));
+    const text = ctx.received[0]?.text ?? "";
+    expect(text).toMatch(/^Oi! Tudo bem/);
+    // Nenhum "Thailer" ou qualquer outro nome hardcoded vaza.
+    expect(text).not.toMatch(/Thailer|Cliente|Sarah/);
+    expect(text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
+  });
+
+  // Teste F — deduplicação de message_id continua funcionando.
+  it("F. message_id duplicado → um único outbound", async () => {
+    const handler = createAthosTestHandler();
+    const { admin } = database();
+    const e = eventWithName("f-dup");
+    const results = await Promise.all([
+      handler(admin, session, e),
+      handler(admin, session, { ...e, event: "message" }),
+      handler(admin, session, { ...e, event: "message.any" }),
+    ]);
+    expect(results.every(Boolean)).toBe(true);
+    expect(ctx.received).toHaveLength(1);
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL));
+  });
+
+  // Teste G — consistência: mesma função nos dois fluxos.
+  it("G. buildMenuReply é a fonte canônica única (produção e sandbox usam o mesmo helper)", async () => {
+    // A função é importada do mesmo módulo nos dois lados:
+    //   - produção: inbound-turn.ts → buildMenuReply(menu_url, contact.name)
+    //   - sandbox:  athos-test.ts → buildMenuReply(ATHOS_TEST_MENU_URL, notifyName)
+    // Esta é a regressão: se alguém divergir a copy, este teste falha.
+    const prod = buildMenuReply(ATHOS_TEST_MENU_URL, "Thailer");
+    const sandbox = buildMenuReply(ATHOS_TEST_MENU_URL, null);
+    // Estrutura em 3 blocos (recepção | URL | CTA) — comum aos dois fluxos.
+    for (const out of [prod, sandbox]) {
+      const blocks = out.split("\n\n");
+      expect(blocks).toHaveLength(3);
+      expect(blocks[1]).toContain(ATHOS_TEST_MENU_URL);
+      // CTA contém a pergunta comercial; pode terminar com emoji (😄).
+      expect(blocks[2]).toMatch(/\?|😄|😀|🙂/);
+    }
+    // Sanity: o handler sandbox retorna exatamente o que buildMenuReply produz.
+    const handler = createAthosTestHandler();
+    const { admin } = database();
+    await handler(admin, session, eventWithName("g-consistency", "Ana"));
+    expect(ctx.received[0]?.text).toBe(buildMenuReply(ATHOS_TEST_MENU_URL, "Ana"));
   });
 });

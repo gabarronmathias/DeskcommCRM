@@ -3,6 +3,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import type { WahaEnvelope } from "@/lib/waha/ingest";
 import { sendWAHA } from "@/lib/waha/send";
 import { parseWahaMessageId } from "@/lib/waha/message-id";
+import { buildMenuReply } from "@/lib/agent-engine/edge/crm/menu-context";
 
 export const ATHOS_TEST_ORG = "036bb1d5-2cb6-4346-9c19-3dbb1c0d0433";
 export const ATHOS_TEST_SESSION = "15ed07d7-57f9-4746-a543-d8768003848b";
@@ -175,10 +176,17 @@ export function createAthosTestHandler(deps = { send: sendWAHA }) {
           enrichment: "in_flight",
         });
         outboundStarted = true;
+        // Nome do cliente vem do WAHA push-name (`_data.notifyName` ou
+        // `_data.pushName`). Se vazio/não-confiável, `buildMenuReply` cai
+        // automaticamente para a saudação genérica "Oi! Tudo bem? 😊" —
+        // nunca inventamos nome. A função é PURA + SÍNCRONA (sem LLM,
+        // sem rede, sem lookup); preserva o fast path do commit 093f9a50.
+        const contactName = p._data?.notifyName ?? p._data?.pushName ?? null;
+        const text = buildMenuReply(ATHOS_TEST_MENU_URL, contactName);
         const result = await deps.send({
           sessionName: session.waha_session_name,
           chatId,
-          text: `Olá! 😊 Aqui está nosso cardápio:\n${ATHOS_TEST_MENU_URL}`,
+          text,
           timeoutMs: 10000,
         });
         const outboundId = parseWahaMessageId(result);
@@ -187,6 +195,7 @@ export function createAthosTestHandler(deps = { send: sendWAHA }) {
           outbound_id: outboundId,
           delivery: "provider_accepted",
           menu_url_sent: ATHOS_TEST_MENU_URL,
+          copy_source: "buildMenuReply (canonical)",
         });
         // === FASE 4: AGUARDA ENRICHMENT PARA TRACE ===
         // Outbound JÁ foi aceito pelo WAHA — esperar o enrichment aqui
