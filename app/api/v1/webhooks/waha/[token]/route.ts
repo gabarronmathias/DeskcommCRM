@@ -15,7 +15,7 @@ import type { NextRequest, NextResponse } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { handleAthosTestInbound } from "@/lib/waha/athos-test";
+import { handleAthosTestInbound, isAthosTestSession, athosTrace } from "@/lib/waha/athos-test";
 import { dispatchWahaEvent, verifyHmacSha512, type WahaEnvelope } from "@/lib/waha/ingest";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,9 @@ interface RouteCtx {
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
   const requestId = randomUUID();
+  const receivedAt = Date.now();
+  const trace = athosTrace(requestId, receivedAt);
+  if (process.env.ATHOS_TEST_MODE === "true") trace("webhook_started");
   const { token } = await ctx.params;
 
   if (!token || token.length < 8) {
@@ -34,7 +37,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   }
 
   const rawBody = await req.text();
-  const receivedAt = Date.now();
   let envelope: WahaEnvelope;
   try {
     envelope = JSON.parse(rawBody) as WahaEnvelope;
@@ -43,6 +45,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   }
 
   const admin = createAdminClient();
+  if (process.env.ATHOS_TEST_MODE === "true") trace("tenant_lookup_started");
 
   const { data: session, error: sessErr } = await admin
     .from("channel_sessions")
@@ -50,6 +53,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       "id, organization_id, waha_session_name, webhook_secret_encrypted, status, is_warmup_complete, warmup_started_at",
     )
     .eq("webhook_path_token", token)
+    .abortSignal(AbortSignal.timeout(process.env.ATHOS_TEST_MODE === "true" ? 8000 : 60000))
     .maybeSingle();
 
   if (sessErr) {
@@ -58,6 +62,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   if (!session) {
     return fail("not_found", "unknown webhook token", 404, { requestId });
   }
+
+  const athosTest = isAthosTestSession(session);
+  if (athosTest) trace("tenant_lookup_finished", { organization_id: session.organization_id });
 
   // HMAC (best-effort: se fn_decrypt_oauth falhar — ex. seed dev sem cripto —
   // loga e pula para o MVP).
@@ -68,7 +75,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   try {
     const dec = await admin.rpc("fn_decrypt_oauth", {
       ciphertext: session.webhook_secret_encrypted,
-    });
+    }).abortSignal(AbortSignal.timeout(athosTest ? 8000 : 60000));
     if (dec.error || !dec.data) {
       hmacSkipped = true;
     } else {
@@ -97,12 +104,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const externalId = envelope.payload?.id ?? null;
 
   const isMessageEvent = eventType === "message" || eventType === "message.any";
-  if (isMessageEvent) {
+  if (isMessageEvent && athosTest) {
+    trace("webhook_validated");
     // Phase 1 emergency isolation: do not enter ingest/CRM/agent for inbound
     // messages. Outbound echoes are acknowledged and ignored to prevent loops.
     if (envelope.payload?.fromMe) return ok({ accepted: true }, { requestId });
+    trace("inbound_received", { message_id: externalId });
     try {
-      await handleAthosTestInbound(admin, session, envelope, receivedAt);
+      await handleAthosTestInbound(admin, session, envelope, receivedAt, requestId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[ATHOS-TEST] webhook_failed", err);

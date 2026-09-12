@@ -67,6 +67,7 @@ const schema = z.object({
   // WAHA
   WAHA_API_BASE_URL: required("WAHA_API_BASE_URL"),
   WAHA_API_KEY: required("WAHA_API_KEY"),
+  ATHOS_TEST_MODE: z.enum(["true", "false"]).default("false"),
   WAHA_WEBHOOK_BASE_URL: required("WAHA_WEBHOOK_BASE_URL"),
 
   // Upstash Redis

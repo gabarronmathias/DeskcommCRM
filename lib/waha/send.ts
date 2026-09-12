@@ -12,6 +12,7 @@ export interface SendWahaInput {
   sessionName: string;
   chatId: string;
   text: string;
+  timeoutMs?: number;
 }
 
 export interface ResolveWahaChatIdInput {
@@ -39,5 +40,5 @@ export function resolveWahaChatId(input: ResolveWahaChatIdInput): string | null 
 export async function sendWAHA(input: SendWahaInput): Promise<unknown | null> {
   const client = getWahaClient();
   if (!client) return null;
-  return client.sendMessage(input.sessionName, input.chatId, input.text);
+  return client.sendMessage(input.sessionName, input.chatId, input.text, input.timeoutMs);
 }

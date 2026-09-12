@@ -1,177 +1,103 @@
+import { createHash } from "node:crypto";
 import type { createAdminClient } from "@/lib/supabase/admin";
-import type { WahaEnvelope, WahaPayload } from "@/lib/waha/ingest";
+import type { WahaEnvelope } from "@/lib/waha/ingest";
 import { sendWAHA } from "@/lib/waha/send";
+import { parseWahaMessageId } from "@/lib/waha/message-id";
 
+export const ATHOS_TEST_ORG = "036bb1d5-2cb6-4346-9c19-3dbb1c0d0433";
+export const ATHOS_TEST_SESSION = "15ed07d7-57f9-4746-a543-d8768003848b";
 type Admin = ReturnType<typeof createAdminClient>;
-
-interface AthosTestSession {
+export interface AthosTestSession {
   id: string;
   organization_id: string;
   waha_session_name: string;
 }
-
-interface CommerceSettingsRow {
-  app_name: string | null;
-  settings: Record<string, unknown> | null;
-  athos_store_ref: string | null;
+export function isAthosTestSession(session: AthosTestSession): boolean {
+  return process.env.ATHOS_TEST_MODE === "true" &&
+    session.organization_id === ATHOS_TEST_ORG && session.id === ATHOS_TEST_SESSION;
 }
 
-const recentInbound = new Map<string, number>();
-const DEDUPE_TTL_MS = 5 * 60 * 1000;
-
-function elapsed(startedAt: number): number {
-  return Date.now() - startedAt;
+export function athosTrace(correlationId: string, startedAt: number) {
+  let lastAt = startedAt;
+  return (stage: string, details: Record<string, unknown> = {}) => {
+    const now = Date.now();
+    console.log(JSON.stringify({
+      scope: "ATHOS-TEST", stage, correlation_id: correlationId,
+      timestamp: new Date(now).toISOString(), elapsed_ms: now - startedAt,
+      duration_ms: now - lastAt, ...details,
+    }));
+    lastAt = now;
+  };
 }
 
-function logStage(
-  stage: string,
-  startedAt: number,
-  details?: Record<string, unknown>,
-): void {
-  const suffix = details ? ` ${JSON.stringify(details)}` : "";
-  console.log(`[ATHOS-TEST] ${stage} +${elapsed(startedAt)}ms${suffix}`);
-}
-
-function logFailure(
-  startedAt: number,
-  stage: string,
-  error: unknown,
-): void {
-  const normalized = error instanceof Error ? error : new Error(String(error));
-  console.error(
-    `[ATHOS-TEST] outbound_failed +${elapsed(startedAt)}ms ${JSON.stringify({
-      failed_stage: stage,
-      error: normalized.message,
-    })}`,
-  );
-  console.error(normalized.stack ?? normalized);
-  console.error(`TOTAL: ${elapsed(startedAt)}ms`);
-}
-
-function inboundChatId(payload: WahaPayload): string | null {
-  const extra = payload as WahaPayload & Record<string, unknown>;
-  const candidate = [payload.from, extra.chatId, extra.fromNumber].find(
-    (value): value is string => typeof value === "string" && value.trim() !== "",
-  );
-  if (!candidate) return null;
-  if (candidate.includes("@")) return candidate;
-  const digits = candidate.replace(/\D/g, "");
-  return digits.length >= 8 ? `${digits}@c.us` : null;
-}
-
-function claimInbound(sessionId: string, payload: WahaPayload): boolean {
-  const now = Date.now();
-  for (const [key, timestamp] of recentInbound) {
-    if (now - timestamp > DEDUPE_TTL_MS) recentInbound.delete(key);
-  }
-  if (!payload.id) return true;
-  const key = `${sessionId}:${payload.id}`;
-  if (recentInbound.has(key)) return false;
-  recentInbound.set(key, now);
-  return true;
-}
-
-function officialMenuUrl(row: CommerceSettingsRow | null): string | null {
-  const value = row?.settings?.athos_menu_url;
-  if (typeof value !== "string" || value.trim() === "") return null;
-  const candidate = value.trim();
-  try {
-    const parsed = new URL(candidate);
-    return parsed.protocol === "https:" ? candidate : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Temporary phase-1 isolation path: inbound WhatsApp -> official Athos URL ->
- * WhatsApp. It deliberately does not invoke ingestion, CRM, automations, or
- * the Sarah/LLM runtime.
+/** Single-process homologation only. Concurrent copies share the same outcome.
+ * Ambiguous outbound failures remain failed until operator reconciliation.
+ * This temporary mode is not a production send ledger and cannot use replicas.
  */
-export async function handleAthosTestInbound(
-  admin: Admin,
-  session: AthosTestSession,
-  envelope: WahaEnvelope,
-  startedAt = Date.now(),
-): Promise<boolean> {
-  const payload = envelope.payload ?? {};
-  const chatId = inboundChatId(payload);
-  if (!chatId) {
-    const error = new Error("waha_inbound_chat_id_missing");
-    logFailure(startedAt, "inbound_received", error);
-    throw error;
-  }
-  if (!claimInbound(session.id, payload)) {
-    console.log(
-      `[ATHOS-TEST] duplicate_ignored +${elapsed(startedAt)}ms ${JSON.stringify({
-        message_id: payload.id,
-      })}`,
-    );
-    return false;
-  }
+export function createAthosTestHandler(deps = { send: sendWAHA }) {
+  const attempts = new Map<string, Promise<boolean>>();
+  return async (admin: Admin, session: AthosTestSession, envelope: WahaEnvelope,
+    startedAt = Date.now(), requestId?: string): Promise<boolean> => {
+    if (!isAthosTestSession(session)) return false;
+    const p = envelope.payload;
+    if (!p || p.fromMe || !["message", "message.any"].includes(envelope.event ?? "")) return false;
+    if (envelope.session !== session.waha_session_name) throw new Error("athos_session_mismatch");
+    if (!p.id || !p.from || !/^[0-9]+@(c\.us|s\.whatsapp\.net|lid)$/.test(p.from)) return false;
+    if (!p.body && !p.hasMedia && !p.mediaUrl && !p.media?.url) return false;
+    const chatId = p.from;
 
-  logStage("inbound_received", startedAt, {
-    event: envelope.event ?? "unknown",
-    message_id: payload.id ?? null,
-    chat_id: chatId,
-  });
-  logStage("tenant_resolved", startedAt, {
-    organization_id: session.organization_id,
-    channel_session_id: session.id,
-    waha_session: session.waha_session_name,
-  });
-
-  let row: CommerceSettingsRow | null;
-  try {
-    const result = await admin
-      .from("food_commerce_settings")
-      .select("app_name, settings, athos_store_ref")
-      .eq("organization_id", session.organization_id)
-      .eq("is_enabled", true)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (result.error) throw result.error;
-    row = (result.data as CommerceSettingsRow | null) ?? null;
-  } catch (error) {
-    logFailure(startedAt, "menu_url_loaded", error);
-    throw error;
-  }
-
-  const menuUrl = officialMenuUrl(row);
-  if (!menuUrl) {
-    const error = new Error("athos_menu_url_missing_or_invalid");
-    logFailure(startedAt, "menu_url_loaded", error);
-    throw error;
-  }
-  logStage("menu_url_loaded", startedAt, {
-    organization_id: session.organization_id,
-    tenant_name: row?.app_name ?? null,
-    athos_store_ref: row?.athos_store_ref ?? null,
-    menu_url: menuUrl,
-  });
-
-  const text = `Olá! 😊 Aqui está nosso cardápio:\n${menuUrl}`;
-  logStage("outbound_started", startedAt, {
-    chat_id: chatId,
-    menu_url: menuUrl,
-  });
-  try {
-    const sent = await sendWAHA({
-      sessionName: session.waha_session_name,
-      chatId,
-      text,
-    });
-    if (!sent) throw new Error("waha_client_not_configured");
-  } catch (error) {
-    logFailure(startedAt, "outbound", error);
-    throw error;
-  }
-
-  logStage("outbound_success", startedAt, {
-    chat_id: chatId,
-    menu_url: menuUrl,
-  });
-  console.error(`TOTAL: ${elapsed(startedAt)}ms`);
-  return true;
+    const key = createHash("sha256").update(`${session.organization_id}:${session.id}:${p.from}:${p.id}`).digest("hex");
+    const trace = athosTrace(requestId ?? key, startedAt);
+    const previous = attempts.get(key);
+    if (previous) {
+      trace("duplicate_received", { message_key: key });
+      return previous;
+    }
+    // Never evict completed/ambiguous sends and silently allow duplicate retries.
+    if (attempts.size >= 10000) throw new Error("athos_test_capacity_reached");
+    const task = (async () => {
+      let outboundStarted = false;
+      let stage = "tenant_lookup_finished";
+      try {
+        trace("tenant_resolved", { organization_id: session.organization_id, session_id: session.id, message_key: key });
+        stage = "menu_lookup_started";
+        trace(stage);
+        const { data, error } = await admin.from("food_commerce_settings")
+          .select("app_name, settings")
+          .eq("organization_id", session.organization_id).eq("is_enabled", true)
+          .order("updated_at", { ascending: false }).limit(1)
+          .abortSignal(AbortSignal.timeout(8000)).maybeSingle();
+        if (error) throw new Error(`athos_menu_lookup_failed: ${error.code ?? ""} ${error.message}`);
+        const settings = data?.settings as Record<string, unknown> | undefined;
+        const menuUrl = settings?.athos_menu_url;
+        if (settings?.environment !== "sandbox") throw new Error("athos_test_requires_sandbox");
+        if (typeof menuUrl !== "string" || new URL(menuUrl).protocol !== "https:") {
+          throw new Error("athos_menu_url_missing_or_invalid");
+        }
+        trace("menu_lookup_finished");
+        trace("menu_url_loaded", { menu_url: menuUrl, tenant: data?.app_name });
+        stage = "outbound_started";
+        trace(stage);
+        outboundStarted = true;
+        const result = await deps.send({ sessionName: session.waha_session_name,
+          chatId, text: `Olá! 😊 Aqui está nosso cardápio:\n${menuUrl}`,
+          timeoutMs: 10000 });
+        const outboundId = parseWahaMessageId(result);
+        if (!outboundId) throw new Error("athos_outbound_acceptance_unconfirmed");
+        trace("outbound_success", { outbound_id: outboundId, delivery: "provider_accepted" });
+        trace("processing_finished", { outcome: "accepted", total_ms: Date.now() - startedAt });
+        return true;
+      } catch (error) {
+        if (!outboundStarted) attempts.delete(key);
+        const err = error instanceof Error ? error : new Error(String(error));
+        trace("outbound_failed", { failed_stage: stage, error: err.message, stack: err.stack,
+          outcome: outboundStarted ? "requires_reconciliation" : "retryable" });
+        throw err;
+      }
+    })();
+    attempts.set(key, task);
+    return task;
+  };
 }
+
+export const handleAthosTestInbound = createAthosTestHandler();

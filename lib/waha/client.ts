@@ -79,7 +79,7 @@ export class WahaClient {
     return (await res.json()) as { qr?: string; status: string };
   }
 
-  async sendMessage(session: string, chatId: string, text: string): Promise<unknown> {
+  async sendMessage(session: string, chatId: string, text: string, timeoutMs?: number): Promise<unknown> {
     const res = await fetch(`${this.baseUrl}/api/sendText`, {
       method: "POST",
       headers: {
@@ -87,8 +87,12 @@ export class WahaClient {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ session, chatId, text }),
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
-    if (!res.ok) throw new Error(`waha_${res.status}`);
+    if (!res.ok) {
+      const detail = timeoutMs ? (await res.text()).replaceAll(this.apiKey, "[REDACTED]") : "";
+      throw new Error(`waha_${res.status}${detail ? `: ${detail}` : ""}`);
+    }
     return res.json();
   }
 
