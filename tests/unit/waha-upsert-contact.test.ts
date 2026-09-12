@@ -195,35 +195,65 @@ describe("upsertContact — recuperação por identidade", () => {
 
 // ---------------------------------------------------------------------------
 // MERGE — is_merged_into resolve pro canônico
+//
+// IMPORTANTE: a query NÃO filtra `is_merged_into IS NULL`. Política real de
+// merge (supabase/baseline.sql:4165) só seta `is_merged_into` e move as FKs
+// — não transfere `wa_lid`/`wa_identity`/`phone` para o canônico. A
+// identidade fica no contato mergeado. Se filtrássemos mergeados, a
+// identidade desapareceria e o sistema criaria contato duplicado em vez de
+// redirecionar pro canônico.
 // ---------------------------------------------------------------------------
 
 describe("upsertContact — resolução de contato mergeado", () => {
-  it("Contato encontrado no nível 1 está mergeado → resolve pro canônico", async () => {
+  it("Cenário realista: A mergeado em B com mesmo wa_lid → incoming redireciona pra B", async () => {
+    // Estado do banco:
+    //   merged-A:   organization_id=org-A, wa_lid=5511999000001, is_merged_into=canonical-B
+    //   canonical-B: organization_id=org-A, is_merged_into=NULL, wa_lid=NULL
+    //                (o merge NÃO transfere wa_lid)
+    //
+    // Incoming: wa_lid=5511999000001 (só existe em merged-A)
+    // Esperado: o sistema retorna canonical-B (não merged-A, não cria novo)
     const { admin, calls } = buildAdmin({
       rpcResult: () => ({
         data: null,
         error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
       }),
       levels: [
-        // Nível 1: match mergeado
-        { response: () => ({ data: { id: "contato-mergeado", is_merged_into: "contato-canonico" }, error: null }) },
-        // Canônico
-        { response: () => ({ data: { id: "contato-canonico" }, error: null }) },
+        // Nível 1 (wa_lid coluna, SEM filtro de merge): retorna merged-A com is_merged_into
+        { response: () => ({ data: { id: "merged-A", is_merged_into: "canonical-B" }, error: null }) },
       ],
-      canonicalLookup: (id) =>
-        id === "contato-canonico" ? { data: { id: "contato-canonico" }, error: null } : { data: null, error: null },
+      canonicalLookup: () => ({ data: { id: "canonical-B" }, error: null }),
     });
 
     const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
 
-    expect(id).toBe("contato-canonico");
+    expect(id).toBe("canonical-B");
     expect(calls.maybeSingleCalls.length).toBe(2);
+    // 2ª chamada é o lookup do canônico (eq("id", "canonical-B"))
     expect(calls.maybeSingleCalls[1]?.isCanonicalLookup).toBe(true);
-    expect(calls.maybeSingleCalls[1]?.idLookup).toBe("contato-canonico");
+    expect(calls.maybeSingleCalls[1]?.idLookup).toBe("canonical-B");
   });
 
-  it("Contato encontrado no nível 2 está mergeado → resolve pro canônico", async () => {
-    const { admin } = buildAdmin({
+  it("Contato encontrado no nível 1 sem merge → retorna direto (sem 2ª chamada)", async () => {
+    const { admin, calls } = buildAdmin({
+      rpcResult: () => ({
+        data: null,
+        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
+      }),
+      levels: [
+        { response: () => ({ data: { id: "contato-ativo", is_merged_into: null }, error: null }) },
+      ],
+    });
+
+    const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
+
+    expect(id).toBe("contato-ativo");
+    expect(calls.maybeSingleCalls.length).toBe(1);
+    // Não chamou o canônico porque is_merged_into é null
+  });
+
+  it("Contato mergeado encontrado no nível 2 (LID legado) → resolve pro canônico", async () => {
+    const { admin, calls } = buildAdmin({
       rpcResult: () => ({
         data: null,
         error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
@@ -231,18 +261,53 @@ describe("upsertContact — resolução de contato mergeado", () => {
       levels: [
         // Nível 1: nada
         { response: () => ({ data: null, error: null }) },
-        // Nível 2: match mergeado
-        { response: () => ({ data: { id: "contato-mergeado", is_merged_into: "contato-canonico" }, error: null }) },
-        // Canônico
-        { response: () => ({ data: { id: "contato-canonico" }, error: null }) },
+        // Nível 2: match mergeado via wa_identity legado
+        { response: () => ({ data: { id: "merged-A", is_merged_into: "canonical-B" }, error: null }) },
       ],
-      canonicalLookup: (id) =>
-        id === "contato-canonico" ? { data: { id: "contato-canonico" }, error: null } : { data: null, error: null },
+      canonicalLookup: () => ({ data: { id: "canonical-B" }, error: null }),
     });
 
     const id = await upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null);
 
-    expect(id).toBe("contato-canonico");
+    expect(id).toBe("canonical-B");
+    expect(calls.maybeSingleCalls.length).toBe(3);
+  });
+
+  it("Contato mergeado encontrado no nível 3 (telefone) → resolve pro canônico", async () => {
+    const { admin, calls } = buildAdmin({
+      rpcResult: () => ({
+        data: null,
+        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
+      }),
+      levels: [
+        // Nível 3: match mergeado via telefone (níveis 1 e 2 não rodam pra kind=phone porque lid=null)
+        { response: () => ({ data: { id: "merged-A", is_merged_into: "canonical-B" }, error: null }) },
+      ],
+      canonicalLookup: () => ({ data: { id: "canonical-B" }, error: null }),
+    });
+
+    const id = await upsertContact(admin as never, SESSION.organization_id, PHONE_PARSED, "5511999000002@c.us", null);
+
+    expect(id).toBe("canonical-B");
+    expect(calls.maybeSingleCalls.length).toBe(2);
+  });
+
+  it("Lookup do canônico falha (LOOKUP_FAILED no resolveCanonicalOrSelf) → propaga erro", async () => {
+    const { admin } = buildAdmin({
+      rpcResult: () => ({
+        data: null,
+        error: { code: "23505", message: 'duplicate key value violates unique constraint "uniq_contacts_org_wa_lid"' },
+      }),
+      levels: [
+        // Nível 1: match mergeado
+        { response: () => ({ data: { id: "merged-A", is_merged_into: "canonical-B" }, error: null }) },
+      ],
+      canonicalLookup: () => ({ data: null, error: { message: "timeout expired" } }),
+    });
+
+    await expect(
+      upsertContact(admin as never, SESSION.organization_id, LID_PARSED, "5511999000001@lid", null),
+    ).rejects.toThrow(/canonical lookup failed/);
   });
 });
 

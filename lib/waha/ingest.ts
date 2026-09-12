@@ -249,6 +249,14 @@ export async function upsertContact(
  * linha encontrada está mergeada (`is_merged_into IS NOT NULL`), retorna o
  * canônico.
  *
+ * IMPORTANTE: NÃO filtramos `is_merged_into IS NULL` na query. A política
+ * real de merge no projeto (supabase/baseline.sql:4165) SÓ seta
+ * `is_merged_into` e move as FKs — não transfere `wa_lid`, `wa_identity` ou
+ * `phone` para o canônico. Identidades em contatos mergeados ficam
+ * órfãs no banco; se a query filtrasse mergeados, essas identidades
+ * desapareceriam do alcance da busca e o sistema criaria um novo contato
+ * duplicado em vez de redirecionar para o canônico.
+ *
  * PRECEDÊNCIA (estrita; telefone nunca vence wa_lid):
  *   1. `wa_lid` coluna (índice uniq_contacts_org_wa_lid em produção) — EXATO
  *   2. LID canônico/legado:
@@ -259,7 +267,7 @@ export async function upsertContact(
  *        `wa_identity = 'phone:<+E164>'`
  *
  * Cada nível é uma query separada. O primeiro nível que achar retorna.
- * Se um nível achar e o contato estiver mergeado, resolve para o canônico.
+ * Se o match estiver mergeado, resolve para o canônico.
  *
  * LOOKUP_FAILED (erro de query) propaga como throw. LOOKUP_NOT_FOUND
  * genuíno (consulta funcionou, zero matches em todos os níveis) retorna null.
@@ -279,7 +287,6 @@ async function findExistingContactByIdentity(
       .select("id, is_merged_into")
       .eq("organization_id", orgId)
       .eq("wa_lid", lid)
-      .is("is_merged_into", null)
       .maybeSingle();
     if (error) throw new Error(`waha wa_lid lookup failed: ${error.message}`);
     if (data?.id) return resolveCanonicalOrSelf(admin, data);
@@ -292,7 +299,6 @@ async function findExistingContactByIdentity(
       .select("id, is_merged_into")
       .eq("organization_id", orgId)
       .or(`wa_identity.eq.lid:${lid},source_metadata->>waha_lid.eq.${lid}`)
-      .is("is_merged_into", null)
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(`waha lid legacy lookup failed: ${error.message}`);
@@ -307,7 +313,6 @@ async function findExistingContactByIdentity(
       .select("id, is_merged_into")
       .eq("organization_id", orgId)
       .or(`phone_number.eq.${e164},wa_identity.eq.phone:${e164}`)
-      .is("is_merged_into", null)
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(`waha phone lookup failed: ${error.message}`);
