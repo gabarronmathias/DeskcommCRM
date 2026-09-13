@@ -106,18 +106,37 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const isMessageEvent = eventType === "message" || eventType === "message.any";
   if (isMessageEvent && athosTest) {
     trace("webhook_validated");
-    // Phase 1 emergency isolation: do not enter ingest/CRM/agent for inbound
-    // messages. Outbound echoes are acknowledged and ignored to prevent loops.
+    // O fast path do sandbox só encerra a request quando realmente trata a
+    // mensagem (ex.: pedido de cardápio). Mensagens comuns fazem fallthrough
+    // para ingest/CRM/agente normal. Outbound echoes seguem acknowledged e
+    // ignorados para evitar loops.
     if (envelope.payload?.fromMe) return ok({ accepted: true }, { requestId });
     trace("inbound_received", { message_id: externalId });
+
+    let handledByAthosFastPath = false;
     try {
-      await handleAthosTestInbound(admin, session, envelope, receivedAt, requestId);
+      handledByAthosFastPath = await handleAthosTestInbound(
+        admin,
+        session,
+        envelope,
+        receivedAt,
+        requestId,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[ATHOS-TEST] webhook_failed", err);
       return fail("internal_error", `athos_test_failed: ${message}`, 503, { requestId });
     }
-    return ok({ accepted: true }, { requestId });
+
+    if (handledByAthosFastPath) {
+      return ok({ accepted: true }, { requestId });
+    }
+
+    trace("fallback_to_normal_pipeline", {
+      reason: "athos_fast_path_not_applicable",
+      event_type: eventType,
+      message_id: externalId,
+    });
   }
 
   const headersJson: Record<string, string> = {};
