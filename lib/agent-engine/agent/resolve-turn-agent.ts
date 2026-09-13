@@ -19,8 +19,30 @@
  *      (categoria própria, distinta de "classificou e não bateu" — ver
  *      task-4-report.md, review T4 finding 1).
  *   5. sem match / confiança baixa ⇒ fallback se houver (outcome 'fallback'),
- *      senão config:null + outcome 'no_match' ⇒ turno responde com o agente
- *      GENÉRICO (decisão do Rafael — não é silêncio).
+ *      senão o agente PUBLICADO DA SESSÃO — o mesmo que responderia se o router
+ *      não existisse. Só quando nem esse existe é que sai config:null e o turno
+ *      responde com o agente GENÉRICO (decisão do Rafael — não é silêncio).
+ *
+ *      ⚠️ ESTE DEGRAU DO MEIO NASCEU DE UM DEFEITO MEDIDO (2026-08-18). Antes,
+ *      "sem fallback" pulava direto para o genérico — e um router ATIVO com
+ *      ZERO membros e sem fallback (estado que a tela deixa criar em dois
+ *      cliques, e que classifica nada por construção) sequestrava a sessão
+ *      inteira: o agente publicado, com prompt, ferramentas e chave próprios,
+ *      deixava de atender TODA mensagem daquele número. Na instalação onde isso
+ *      foi medido o genérico caía em `organizations.settings.llm` (provider
+ *      'anthropic', sem credencial), então cada turno morria em
+ *      `LlmNotConfiguredError`, esgotava as 5 tentativas e virava job morto —
+ *      silêncio total, com a tela dizendo "IA atendendo". Um router vazio agora
+ *      é inócuo: não casa nada e o número segue atendido por quem estava
+ *      publicado.
+ *   5b. router ATIVO com ZERO membros (mesmo com fallback declarado) ⇒ bypass
+ *      determinístico do classificador: por construção `classifyIntent` não
+ *      tem como casar uma intent em `router.members` vazio — a chamada LLM só
+ *      gastaria ~14.3s e o turno cairia no fallback de qualquer jeito (regra 5).
+ *      Resolver localmente: com fallback declarado ⇒ outcome 'fallback' (mesmo
+ *      helper do caso normal, sem classificação); sem fallback ⇒ outcome
+ *      'no_match' com config do agente publicado DA SESSÃO (regra 5 portada).
+ *      Log explícito `router_empty_members_bypass` com hasFallback.
  *   6. signal null (follow-up, sem mensagem inbound) ⇒ nunca classifica:
  *      sticky se houver, senão fallback, senão genérico.
  *   7. o agente casado (sticky, classificado ou fallback) pode não ter
@@ -102,7 +124,17 @@ export async function resolveTurnAgent(
       confidence: number | null,
     ): Promise<TurnAgentResolution> => {
       if (router.fallbackAgentId === null) {
-        return { config: null, routerId: router.id, intentName: null, confidence, outcome };
+        // Regra 5: sem fallback declarado, quem atende é o agente publicado da
+        // SESSÃO — o comportamento de antes do router existir. `null` aqui
+        // (nenhum publicado) segue caindo no genérico, como sempre.
+        const daSessao = await _loadAgentBySession(db, input.tenantId, input.channelSessionId);
+        if (daSessao === null) {
+          deps.log.warn('resolve-turn-agent: router sem fallback e sessão sem agente publicado — turno cai no genérico', {
+            routerId: router.id,
+            outcome,
+          });
+        }
+        return { config: daSessao, routerId: router.id, intentName: null, confidence, outcome };
       }
       const config = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
       if (config === null) {
@@ -152,6 +184,33 @@ export async function resolveTurnAgent(
       router.sticky && input.stickyAgentId !== null
         ? router.members.find((m) => m.agentId === input.stickyAgentId)
         : undefined;
+
+    // Regra 5b (bypass determinístico do classificador): router ATIVO com ZERO
+    // membros. Por construção `classifyIntent` não tem como casar uma intent em
+    // `router.members` vazio — a chamada LLM só gastaria ~14.3s e o turno cairia
+    // no fallback de qualquer jeito (regra 5). Resolver localmente:
+    //   - com fallback declarado ⇒ outcome 'fallback' (mesmo helper do caso
+    //     normal, sem classificação);
+    //   - sem fallback ⇒ outcome 'no_match' com config do agente publicado DA
+    //     SESSÃO (regra 5 portada — não vai pro genérico).
+    // Log explícito `router_empty_members_bypass` com hasFallback pra telemetria.
+    // Ver tests/unit/resolve-turn-agent-empty-router.test.ts (A-D).
+    if (router.members.length === 0) {
+      // resolveFallback já lida com ambos os casos (com/sem fallbackAgentId):
+      // com fallback declarado, carrega-o (outcome 'fallback' se tem versão,
+      // 'no_match' honesto se não tem — ver regra 7); sem fallback, carrega o
+      // agente publicado DA SESSÃO (regra 5 portada). O signal passado é 'no_match'
+      // pq por construção nada foi classificado.
+      const resolution = await resolveFallback('no_match', null);
+      deps.log.info('resolve-turn-agent: router_empty_members_bypass', {
+        routerId: router.id,
+        tenantId: input.tenantId,
+        channelSessionId: input.channelSessionId,
+        hasFallback: router.fallbackAgentId !== null,
+        outcome: resolution.outcome,
+      });
+      return resolution;
+    }
 
     // regra 6: sem mensagem inbound (follow-up) — nunca classifica.
     if (input.signal === null) {
