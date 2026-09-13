@@ -1,5 +1,5 @@
 /**
- * Worker 24/7 do agent-engine (fusão Vendaval → DeskcommCRM) — o processo
+ * Worker 24/7 do agent-engine (fusão Vendaval → G&M CRM) — o processo
  * long-running que o CRM não tinha: fila durável, cron/follow-up, drain do
  * event_log e os turnos do agente rico.
  *
@@ -378,8 +378,12 @@ export async function main(): Promise<void> {
     }),
     llmCfg: llmEdgeConfigFromEnv(env),
     knobs: {
-      historyLimit: env.LEAD_CONTEXT_HISTORY_LIMIT,
-      maxContextTokens: env.LEAD_CONTEXT_MAX_TOKENS,
+      historyLimit: env.AGENT_FAST_CONTEXT_PROFILE
+        ? env.AGENT_FAST_HISTORY_LIMIT
+        : env.LEAD_CONTEXT_HISTORY_LIMIT,
+      maxContextTokens: env.AGENT_FAST_CONTEXT_PROFILE
+        ? env.AGENT_FAST_MAX_CONTEXT_TOKENS
+        : env.LEAD_CONTEXT_MAX_TOKENS,
       notesIndexMaxTokens: env.LEAD_NOTES_INDEX_MAX_TOKENS,
       maxSteps: env.AGENT_MAX_STEPS,
       queuedRetryDelayMs: env.SEND_QUEUED_RETRY_MS,
