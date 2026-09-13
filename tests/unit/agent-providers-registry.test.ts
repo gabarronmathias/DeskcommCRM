@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultRegistry } from "@/lib/agent-engine/edge/llm/providers";
+import {
+  createDefaultRegistry,
+  stripProviderPrefix,
+} from "@/lib/agent-engine/edge/llm/providers";
 
 describe("createDefaultRegistry", () => {
   it("registra os providers que a tela oferece", () => {
@@ -21,5 +24,25 @@ describe("createDefaultRegistry", () => {
     expect(() => reg.openrouter!("k", "meta-llama/llama-3.3-70b-instruct")).not.toThrow();
     // Endpoint próprio (gateway compatível, ou modelo local no roteiro).
     expect(() => reg.openrouter!("k", "x/y", "https://gateway.exemplo/v1")).not.toThrow();
+  });
+
+  it('OpenAI entrega "gpt-5-mini" ao SDK quando o id canônico é "openai/gpt-5-mini"', () => {
+    const model = createDefaultRegistry().openai!("k", "openai/gpt-5-mini") as {
+      modelId: string;
+    };
+    expect(model.modelId).toBe("gpt-5-mini");
+  });
+
+  it('OpenAI mantém "gpt-5-mini" sem prefixo', () => {
+    const model = createDefaultRegistry().openai!("k", "gpt-5-mini") as {
+      modelId: string;
+    };
+    expect(model.modelId).toBe("gpt-5-mini");
+  });
+
+  it("não remove prefixo incompatível", () => {
+    expect(stripProviderPrefix("openai", "anthropic/claude-sonnet-4-6")).toBe(
+      "anthropic/claude-sonnet-4-6",
+    );
   });
 });

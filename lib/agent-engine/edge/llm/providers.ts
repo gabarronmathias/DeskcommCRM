@@ -53,6 +53,15 @@ export const ALIBABA_ENDPOINT =
 export const OPENCODE_ZEN_ENDPOINT = 'https://opencode.ai/zen/v1';
 
 /**
+ * Remove apenas o namespace pertencente ao provider selecionado. Prefixos de
+ * outro provider permanecem intactos para não mascarar configuração inválida.
+ */
+export function stripProviderPrefix(provider: string, modelId: string): string {
+  const prefix = `${provider}/`;
+  return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
+}
+
+/**
  * Providers reais do lançamento. Sonnet (Anthropic) é o default RECOMENDADO —
  * recomendação vive em .env.example/docs; o id do modelo é sempre config da org.
  *
@@ -76,7 +85,9 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
     anthropic: (apiKey, modelId) =>
       createAnthropic({ apiKey, fetch: contain(ANTHROPIC_ENDPOINT) })(modelId),
     openai: (apiKey, modelId) =>
-      createOpenAI({ apiKey, fetch: contain(OPENAI_ENDPOINT) })(modelId),
+      createOpenAI({ apiKey, fetch: contain(OPENAI_ENDPOINT) })(
+        stripProviderPrefix('openai', modelId),
+      ),
     google: (apiKey, modelId) =>
       createGoogleGenerativeAI({ apiKey, fetch: contain(GOOGLE_ENDPOINT) })(modelId),
     alibaba: (apiKey, modelId, baseUrl) => {
