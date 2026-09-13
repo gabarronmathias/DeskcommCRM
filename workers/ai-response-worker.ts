@@ -18,10 +18,12 @@ import { generateText } from "ai";
 
 import {
   DEFAULT_BOT_MODEL,
+  LlmProviderUnconfiguredError,
   gatewayConfig,
   gatewayHeaders,
   isAiGatewayConfigured,
   isEmbeddingProviderConfigured,
+  resolveLlmModel,
 } from "@/lib/ai/gateway";
 import { embedText } from "@/lib/ai/embed";
 import { computeCost } from "@/lib/ai/cost";
@@ -56,9 +58,13 @@ export interface ProcessResult {
 }
 
 export async function processMessageReceived(row: EventRow): Promise<ProcessResult> {
-  // Cheap pre-check before doing any DB work.
-  if (!isAiGatewayConfigured()) {
-    return { status: "skipped", reason: "ai_gateway_key_missing" };
+  // Pre-check de provider LLM ANTES do DB work. Se NENHUMA chave (gateway,
+  // Anthropic, OpenAI) estiver setada, skip instrutivo — o `resolveLlmModel`
+  // no `invokeBot` também joga `LlmProviderUnconfiguredError` por garantia.
+  // Sem este pre-check, o worker fazia queries caras antes de falhar no
+  // generateText (bug do segundo turno Sarah — Tortas do Calmon).
+  if (!isAiGatewayConfigured() && !process.env.OPENAI_API_KEY) {
+    return { status: "skipped", reason: "llm_provider_unconfigured" };
   }
 
   const messageId = (row.payload?.["message_id"] as string | undefined) ?? row.entity_id ?? null;
@@ -498,7 +504,7 @@ async function invokeBot(ctx: BotContext): Promise<BotResponse> {
 
   const start = Date.now();
   const result = await generateText({
-    model: ctx.agent.model,
+    model: resolveLlmModel(ctx.agent.model),
     system: renderedSystem,
     messages,
     headers,

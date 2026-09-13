@@ -88,6 +88,7 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260727000000` | `0086_knowledge_searches` | Telemetria de busca de conhecimento (hits, top_score, threshold) — leitor é o Painel de Evolução da Fase 4. Sem PII. |
 | `20260729000000` | `0092_stage_names_acentos` | Acentos nas etapas padrão do funil: o seed criava "Em separacao" e "Pos-venda" sem acento, e esses nomes aparecem no quadro principal. Corrige o seed e cura instalações existentes (só onde o nome padrão está intacto). |
 | `20260911200000` | `0093_waha_event_idempotency` | WAHA retry seguro: eventos de ingestão passam a aceitar `source_event_key` estável, com índice único por organização/tipo e `emit_event` idempotente, evitando novo turno quando o webhook é reenviado depois de uma falha. |
+| `20260913104443` | `0094_emit_event_signature_drift` | Reconcilia a assinatura de `public.emit_event` para a versão canônica do repo (6 params com `p_entity_id`). Bug observado em produção no segundo turno da Sarah: PostgREST devolvia `Could not find the function public.emit_event(...) in the schema cache` porque o banco tinha versão antiga com 5 params. `CREATE OR REPLACE` idempotente + `NOTIFY pgrst` para reload imediato do cache. |
 
 ## Reproducibility
 

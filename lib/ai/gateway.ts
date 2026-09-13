@@ -11,6 +11,8 @@
  * Only model strings via the gateway-shaped `ai` SDK calls.
  */
 
+import { createOpenAI } from "@ai-sdk/openai";
+import type { LanguageModel } from "ai";
 import { env } from "@/lib/env";
 
 export type ModelId =
@@ -32,6 +34,50 @@ export function isEmbeddingProviderConfigured(): boolean {
   // Embeddings go through the gateway when `AI_GATEWAY_API_KEY` is set;
   // otherwise the worker calls `openai/...` directly via OPENAI_API_KEY.
   return Boolean(env.AI_GATEWAY_API_KEY) || Boolean(env.OPENAI_API_KEY);
+}
+
+/**
+ * LLM principal: gateway quando `AI_GATEWAY_API_KEY` está configurado; do
+ * contrário, monta o provider OpenAI direto a partir de `OPENAI_API_KEY`.
+ *
+ * Espelha o pattern do `embed.ts` (embeddings já suportam dual-path) — o bug
+ * em produção era o worker do LLM pular quando o gateway não estava setado,
+ * deixando Sarah muda. Agora qualquer chave de provider direto resolve.
+ */
+export function isLlmProviderConfigured(): boolean {
+  return Boolean(env.AI_GATEWAY_API_KEY)
+    || Boolean(env.ANTHROPIC_API_KEY)
+    || Boolean(env.OPENAI_API_KEY);
+}
+
+/**
+ * Resolve o modelo para `generateText`. Mesmo padrão do `embed.ts`:
+ *   - gateway configurado → devolve a string do model (AI SDK + gateway
+ *     roteiam o `provider/model` automaticamente);
+ *   - sem gateway → monta `LanguageModel` com `createOpenAI(OPENAI_API_KEY)`
+ *     e strip do prefixo `openai/`. Id sem prefixo é interpretado como
+ *     OpenAI (provider default Sarah foodservice).
+ *
+ * Se NENHUMA chave estiver setada, joga `LlmProviderUnconfiguredError` para
+ * o caller emitir uma resposta instrutiva (em vez de pular em silêncio).
+ */
+export class LlmProviderUnconfiguredError extends Error {
+  override readonly name = "llm_provider_unconfigured";
+  constructor() {
+    super(
+      "nenhum provider LLM configurado — defina AI_GATEWAY_API_KEY, ANTHROPIC_API_KEY ou OPENAI_API_KEY (pelo menos uma)",
+    );
+  }
+}
+
+export function resolveLlmModel(modelId: string): string | LanguageModel {
+  const cfg = gatewayConfig();
+  if (cfg !== null) return modelId; // AI SDK + gateway fazem o roteamento
+  if (env.OPENAI_API_KEY) {
+    const bare = String(modelId).replace(/^openai\//, "");
+    return createOpenAI({ apiKey: env.OPENAI_API_KEY })(bare);
+  }
+  throw new LlmProviderUnconfiguredError();
 }
 
 /**
