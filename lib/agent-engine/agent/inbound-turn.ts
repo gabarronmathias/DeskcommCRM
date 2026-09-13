@@ -1531,11 +1531,18 @@ export async function runAgentTurn(
   // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
   // do agente decide e confirma via update_lead_state (a máquina F2-10 é a única porta). A
   // sugestão fica guardada para comparar com o que o modelo confirmou (divergência, no fim).
+  //
+  // FAST-LANE (F3-11.1): quando `stageClassifier.fastLane === true`, o classifyStage
+  // roda em paralelo como FIRE-AND-FORGET — a sugestão NÃO entra no prompt
+  // DESTE turno (modelo vai inferir pelo contexto), mas a classificação ainda
+  // cai no runLog.trace para o próximo turno usar o resultado cached. Salva
+  // o tempo do LLM no caminho crítico sem perder a telemetria do estágio.
   const currentStage: LeadStage = leadState?.stage ?? 'new';
   let stageSuggestion: LeadStage | null = null;
   let stageHintBlock = '';
   if (deps.knobs.stageClassifier !== undefined) {
-    stageSuggestion = await classifyStage(
+    const stageStart = Date.now();
+    const stagePromise = classifyStage(
       pool,
       deps.llmCfg,
       { tenantId, leadId, jobId: job.id },
@@ -1548,8 +1555,24 @@ export async function runAgentTurn(
       },
       { registry: deps.registry, log: runLog },
     );
-    if (stageSuggestion !== null) {
-      stageHintBlock = renderStageHint(stageSuggestion, currentStage);
+    if (deps.knobs.stageClassifier.fastLane === true) {
+      // Fire-and-forget. Não bloqueia o send. `runLog.info` mostra resultado.
+      stagePromise.then((suggestion) => {
+        runLog.info('stage_classifier_fastlane_complete', {
+          duration_ms: Date.now() - stageStart,
+          suggestion,
+        });
+      }, (err) => {
+        runLog.warn('stage_classifier_fastlane_failed', {
+          duration_ms: Date.now() - stageStart,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } else {
+      stageSuggestion = await stagePromise;
+      if (stageSuggestion !== null) {
+        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
+      }
     }
   }
 

@@ -40,6 +40,14 @@ export interface StageClassifierKnobs {
    * enabled_models da org quando a lista não é vazia. Ausente = usa o defaultModel da org.
    */
   model?: string;
+  /**
+   * FAST-LANE (F3-11.1): quando `true`, o classifyStage roda em paralelo
+   * como FIRE-AND-FORGET — a sugestão NÃO entra no prompt DESTE turno
+   * (modelo vai inferir pelo contexto), mas a classificação ainda cai
+   * no runLog.trace. Salva o tempo do LLM no caminho crítico sem perder
+   * a telemetria do estágio. OFF por default (comportamento original).
+   */
+  fastLane?: boolean;
 }
 
 /** Instrução FIXA do classificador — marcador estável (como CHECKPOINT_INSTRUCTION) p/ os testes. */
