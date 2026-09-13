@@ -4,7 +4,7 @@
  *
  * A camada semântica classifica promessa/compromisso EM TEXTO LIVRE (a F4-01,
  * determinística, só pega valor ESTRUTURADO — R$/%/parcelas). No cenário medido
- * em Tortas do Calmon, o classificador LLM rodava em ~12.2s POR ENVIO mesmo
+ * no cenário foodservice homologado, o classificador LLM rodava em ~12.2s POR ENVIO mesmo
  * quando a candidata era inócua ("somos em 6 pessoas"). A regex abaixo
  * cataloga as keywords/frases que SINALIZAM potencial promessa concreta em
  * PT-BR. Se NENHUMA casa na candidata, é certeza razoável de "sem promessa":

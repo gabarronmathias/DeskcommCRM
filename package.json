@@ -23,6 +23,7 @@
     "e2e:env": "bash scripts/gerar-env-e2e.sh",
     "test:journeys": "playwright test -c tests/journeys/playwright.config.ts",
     "test:unit": "vitest run",
+    "test:golden": "vitest run tests/golden/sarah-production-v1.golden.test.ts tests/unit/send-message-exactly-once-inbound.test.ts tests/unit/agent-providers-registry.test.ts tests/unit/resolve-turn-agent-empty-router.test.ts tests/unit/promise-semantic-fast-skip.test.ts tests/unit/production-v1-ops.test.ts",
     "test:db": "bash scripts/test-db.sh",
     "test:shell": "bash tests/shell/update-guard.test.sh && bash tests/shell/scheduler-entrypoint.test.sh && bash hostgator-setup-kit/test-validators.sh",
     "test:invariants": "bash scripts/test-db.sh",

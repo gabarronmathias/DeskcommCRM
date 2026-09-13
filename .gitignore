@@ -106,6 +106,10 @@ package-lock.json
 .superpowers/evidence/
 evidence/.sonda-score-residuo.json
 
+# Estado local dos scripts oficiais de deploy/rollback. Pode conter refs da
+# instalação e nunca deve viajar entre VPSs.
+.release-state/
+
 # sessão reusada pelas jornadas (contém tokens)
 .auth/
 .env*.local

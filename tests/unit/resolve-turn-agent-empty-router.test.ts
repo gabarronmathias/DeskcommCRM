@@ -56,7 +56,7 @@ const baseInput = {
 };
 
 /**
- * Router ATIVO com zero membros — o cenário do bug medido em Tortas do Calmon.
+ * Router ATIVO com zero membros — cenário real do bug medido em homologação.
  * Estado que a tela deixa criar em dois cliques (ligar router sem popular membros).
  */
 function routerVazio(overrides: Partial<LoadedRouter> = {}): LoadedRouter {

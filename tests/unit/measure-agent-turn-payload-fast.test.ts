@@ -21,15 +21,17 @@ import { countPayloadTokens } from '../../lib/agent-engine/edge/crm/get-lead-con
 
 const ROOT = resolve(__dirname, '..', '..');
 const platformMd = readFileSync(resolve(ROOT, 'lib/agent-engine/playbooks/platform.md'), 'utf8');
-const tenantDraft = readFileSync(
-  resolve(ROOT, 'docs/drafts/tortas-do-calmon-system-prompt.clean.md'),
-  'utf8',
-);
-// Extrai apenas o bloco "## system_prompt (versão LIMPA proposta)" do draft
-const tenantClean = (() => {
-  const match = tenantDraft.match(/## system_prompt \(versão LIMPA proposta\)\n+```\n([\s\S]*?)\n```/);
-  return match?.[1] ?? tenantDraft;
-})();
+const tenantClean = `# Atendimento foodservice
+
+## Identidade
+Você é a atendente virtual desta organização. Conduza o atendimento comercial
+com clareza, sem inventar produtos, preços, promoções ou prazos.
+
+## Continuidade
+- Não repita links já enviados.
+- Não repita perguntas já respondidas.
+- Use o contexto recente para fazer uma única pergunta objetiva por vez.
+- Encaminhe para atendimento humano quando houver solicitação explícita ou risco.`;
 
 describe('measure-agent-turn-payload (BLOCO 3) — AGENT_FAST_CONTEXT_PROFILE=true', () => {
   it('"somos em 6 pessoas" → tokens_total <= 5000', () => {
@@ -39,7 +41,7 @@ describe('measure-agent-turn-payload (BLOCO 3) — AGENT_FAST_CONTEXT_PROFILE=tr
       { layer: 'tenant', content: tenantClean },
     ]);
 
-    const orgMemoryBlock = ''; // Tortas do Calmon sem memória curada (default)
+    const orgMemoryBlock = ''; // instalação sem memória curada (default)
     const skillIndex = ''; // fast profile: skill index omitido do prefixo
 
     const systemPrompt = composeSystemPrompt({
@@ -61,7 +63,7 @@ describe('measure-agent-turn-payload (BLOCO 3) — AGENT_FAST_CONTEXT_PROFILE=tr
       sent_at: `2026-09-12T${10 + Math.floor(i / 2)}:${(i * 5) % 60}:00Z`,
     }));
     const leadContext = {
-      lead_id: 'lead-tortas-001',
+      lead_id: 'lead-foodservice-001',
       contact: {
         name: 'Maria Silva',
         phone: '+5511988887777',
@@ -123,7 +125,7 @@ describe('measure-agent-turn-payload (BLOCO 3) — AGENT_FAST_CONTEXT_PROFILE=tr
     // === Breakdown por componente ===
     const tokensPlatform = countPayloadTokens(platformMd);
     const tokensTenant = countPayloadTokens(tenantClean);
-    const tokensCampaign = 0; // não há campaign ativa para Tortas do Calmon
+    const tokensCampaign = 0; // cenário sem campanha ativa
     const tokensOrgMemory = 0; // fast profile: sem org memory curada
     const tokensSkills = 0; // fast profile: omitido do prefixo
     const tokensHistory = countPayloadTokens(leadContextStr);
@@ -135,19 +137,19 @@ describe('measure-agent-turn-payload (BLOCO 3) — AGENT_FAST_CONTEXT_PROFILE=tr
 
     const tokensTotal = countPayloadTokens(agentTurnPayload);
 
-    console.log('\n=== AGENT_TURN PAYLOAD BREAKDOWN (AGENT_FAST_CONTEXT_PROFILE=true) ===');
-    console.log(`  tokens_platform       = ${tokensPlatform}`);
-    console.log(`  tokens_tenant         = ${tokensTenant}`);
-    console.log(`  tokens_campaign       = ${tokensCampaign}`);
-    console.log(`  tokens_org_memory     = ${tokensOrgMemory}`);
-    console.log(`  tokens_skills         = ${tokensSkills}`);
-    console.log(`  tokens_history        = ${tokensHistory}`);
-    console.log(`  tokens_tools          = ${tokensTools}`);
-    console.log(`  tokens_user_message   = ${tokensUserMessage}`);
-    console.log(`  tokens_system_wrapper = ${tokensSystemWrapper}`);
-    console.log(`  -----------------------------------`);
-    console.log(`  tokens_total          = ${tokensTotal}`);
-    console.log('=== CRITÉRIO: tokens_total <= 5000 ===\n');
+    console.info('\n=== AGENT_TURN PAYLOAD BREAKDOWN (AGENT_FAST_CONTEXT_PROFILE=true) ===');
+    console.info(`  tokens_platform       = ${tokensPlatform}`);
+    console.info(`  tokens_tenant         = ${tokensTenant}`);
+    console.info(`  tokens_campaign       = ${tokensCampaign}`);
+    console.info(`  tokens_org_memory     = ${tokensOrgMemory}`);
+    console.info(`  tokens_skills         = ${tokensSkills}`);
+    console.info(`  tokens_history        = ${tokensHistory}`);
+    console.info(`  tokens_tools          = ${tokensTools}`);
+    console.info(`  tokens_user_message   = ${tokensUserMessage}`);
+    console.info(`  tokens_system_wrapper = ${tokensSystemWrapper}`);
+    console.info(`  -----------------------------------`);
+    console.info(`  tokens_total          = ${tokensTotal}`);
+    console.info('=== CRITÉRIO: tokens_total <= 5000 ===\n');
 
     expect(tokensTotal).toBeLessThanOrEqual(5_000);
     // invariantes de cada bloco (sanidade)

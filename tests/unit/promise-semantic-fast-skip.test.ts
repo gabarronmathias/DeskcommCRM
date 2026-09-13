@@ -1,6 +1,6 @@
 /**
  * Fast-skip determinístico da camada semântica de promessa (briefing latência
- * Sarah 2026-09-12, achado 4). O cenário medido em Tortas do Calmon: a
+ * Sarah 2026-09-12, achado 4). No cenário foodservice homologado, a
  * candidata "somos em 6 pessoas" forçava uma chamada LLM inteira no
  * classificador semântico, ~12.2s por envio. Como a camada determinística
  * (F4-01) já cobre preço/desconto estruturado, o classificador LLM é só pra

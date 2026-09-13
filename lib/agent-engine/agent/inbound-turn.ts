@@ -2077,7 +2077,7 @@ export async function runAgentTurn(
   // FIRE-AND-FORGET no critical path. O hint da sugestão é PERDIDO nesse turno (o modelo
   // do agente decide sem a dica, comportamento idêntico ao que ele teria SEM classificador),
   // mas a divergência classificador×modelo continua sendo registrada no fim do turno
-  // quando a promessa termina. Economia medida: ~2.4s por turno inbound (Tortas do Calmon).
+  // quando a promessa termina. Economia medida: ~2.4s por turno inbound na homologação.
   // Default: false (comportamento atual — dica presente).
   const currentStage: LeadStage = leadState?.stage ?? 'new';
   let stageSuggestion: LeadStage | null = null;

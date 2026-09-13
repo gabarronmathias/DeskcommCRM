@@ -99,6 +99,17 @@ services:
     environment:
       # dentro da rede do compose, o WAHA é o serviço 'waha' na porta interna 3000
       WAHA_API_BASE_URL: http://waha:3000
+      # Perfil oficial homologado para continuidade comercial. Estes valores
+      # moram no compose de produção para que a instalação não dependa de
+      # overrides temporários ou de edição manual do .env por tenant.
+      FOODSERVICE_SALES_FAST_PATH: "true"
+      AGENT_FAST_CONTEXT_PROFILE: "true"
+      STAGE_CLASSIFIER_FAST_LANE: "true"
+      INBOUND_DEBOUNCE_MS: "0"
+      CRM_DRAIN_INTERVAL_MS: "500"
+      CRM_DRAIN_IDLE_INTERVAL_MS: "1000"
+      QUEUE_POLL_INTERVAL_MS: "250"
+      QUEUE_IDLE_POLL_MAX_INTERVAL_MS: "1000"
     networks:
       - internal
     healthcheck:
@@ -107,6 +118,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    logging: *default-logging
   waha:
     # Teto de memória — 893 MiB de pico MEDIDO nesta VPS.
     #

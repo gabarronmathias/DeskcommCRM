@@ -10,6 +10,11 @@ Se você roda o G&M CRM numa VPS, **leia a seção da versão para a qual está 
 
 ### Adicionado
 
+- **Sarah Production V1 RC:** configuração oficial do worker com o tuning homologado,
+  scripts genéricos de deploy/healthcheck/smoke/rollback, golden tests para continuidade,
+  exactly-once e provider OpenAI, checklist de novo tenant e política de retenção da VPS.
+  Nenhum comportamento comercial, prompt, schema ou credencial foi alterado.
+
 - **API de histórico de vendas por cliente** (EPIC-21, time Athos). `GET /api/v1/customers/[phone]/order-history` retorna o histórico completo de um cliente pelo telefone — pedidos com itens, agregados (total_orders, total_spent_cents, avg_ticket_cents, days_since_last_order, top-5 produtos por frequência), paginação cursor opaca e janela de tempo configurável. Auth via Bearer `dsk_...` (api_tokens) com scope granular `orders:read`; mesma auth que a Sarah usa via MCP. O time Athos gera o token uma vez via `/api/v1/settings/api-tokens` e consome. Mesma RPC `fn_orders_customer_history` serve a API REST e a MCP tool `crm_get_customer_order_history` — a Sarah usa a tool quando conversa com o cliente no WhatsApp e quer puxar o histórico antes de propor uma campanha de recompra ou reativação. Filtros opcionais: `from`, `to`, `status` (canônico ou pseudo como `not_cancelled`/`completed`), `limit` (1-200, default 50), `cursor`. Tudo atrás de SECURITY INVOKER + filtro manual de `organization_id` na RPC (defesa em profundidade) e RLS das tabelas — não vaza entre tenants.
 
 ## [1.3.0] — 2026-08-13
