@@ -7,14 +7,16 @@
  * mensagem sem passar por aqui.
  *
  * Idempotência (o handler NÃO tem idempotency key própria — o ledger cobre):
- *   1. transação lógica: insert em `send_ledger` (unique (job_id, seq)); o
- *      `send_ledger.id` É a idempotency_key, enviada em `metadata.idempotency_key`
+ *   1. resposta a inbound usa um `send_ledger.id` UUID determinístico derivado
+ *      de (organization_id, inbound_message_id, logical_response_slot); fluxos
+ *      sem inbound preservam unique (job_id, seq). O `send_ledger.id` É a
+ *      idempotency_key enviada em `metadata.idempotency_key`
  *      da mensagem;
  *   2. chamada ao handler; 'sent' → accepted; 'queued'/'failed' → registrados;
  *   3. retry pós-crash: 'accepted' pula; 'requested' PRIMEIRO procura em
  *      `messages` uma linha com essa idempotency_key (o crash pode ter sido
  *      DEPOIS do envio) — achou, reconcilia o ledger sem reenviar; 'failed'
- *      rotaciona o id (tentativa lógica nova).
+ *      reabre a mesma chave estável (ou rotaciona a chave legada).
  */
 import { createHash } from 'node:crypto';
 
@@ -54,12 +56,17 @@ export class SendToolError extends Error {
 export type SendOutcome =
   | { kind: 'sent'; idempotencyKey: string; crmMessageId: string }
   /** Ledger já estava 'accepted' — replay pós-crash, nada a enviar. */
-  | { kind: 'already_sent'; idempotencyKey: string; crmMessageId: string | null }
+  | {
+      kind: 'already_sent';
+      idempotencyKey: string;
+      crmMessageId: string | null;
+      duplicateScope: 'job' | 'inbound';
+    }
   /** CRM aceitou e SEGURA (sessão ≠ WORKING / waha_not_configured) — job reagendado, nunca dropado. */
   | { kind: 'queued'; idempotencyKey: string; crmMessageId: string | null }
   /** 403 is_blocked — veto PERMANENTE de negócio (opt-out, regra dura nº 2). */
   | { kind: 'blocked'; idempotencyKey: string }
-  /** handler registrou a mensagem como 'failed' (sem telefone / erro WAHA) — retry rotaciona a key. */
+  /** handler registrou a mensagem como 'failed' (sem telefone / erro WAHA). */
   | { kind: 'failed'; idempotencyKey: string; crmMessageId: string | null };
 
 export interface SendMessageInput {
@@ -68,6 +75,10 @@ export interface SendMessageInput {
   jobId: string;
   /** Posição da mensagem no turno (1..n) — com jobId forma a identidade da intenção. */
   seq: number;
+  /** Mensagem inbound original; habilita exactly-once entre jobs/eventos/restarts. */
+  inboundMessageId?: string;
+  /** Slot lógico da resposta. Obrigatório quando inboundMessageId estiver presente. */
+  logicalResponseSlot?: string;
   conversationId: string;
   body: string;
   /**
@@ -83,6 +94,27 @@ export interface SendMessageInput {
 export const AGENT_ACTOR_ID = 'agent-engine';
 
 /**
+ * UUID determinístico aceito pelo Postgres, derivado da identidade lógica da
+ * resposta. O bit de versão é marcado como 5 apenas para deixar explícito que
+ * não é UUID aleatório; a fonte continua sendo SHA-256 local, sem estado.
+ */
+export function inboundResponseLedgerId(
+  tenantId: string,
+  inboundMessageId: string,
+  logicalResponseSlot: string,
+): string {
+  const hex = createHash('sha256')
+    .update(`${tenantId}:${inboundMessageId}:${logicalResponseSlot}`)
+    .digest('hex')
+    .slice(0, 32)
+    .split('');
+  hex[12] = '5';
+  hex[16] = ((Number.parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
+  const value = hex.join('');
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
+
+/**
  * Envia UMA mensagem do turno pelo handler do app. Intenção exactly-once,
  * entrega at-least-once: throws (transporte) deixam o ledger em 'requested' —
  * o retry reconcilia por `messages.metadata.idempotency_key` antes de reenviar.
@@ -91,6 +123,7 @@ export async function sendTurnMessage(
   db: Queryable,
   cfg: CrmEdgeConfig,
   input: SendMessageInput,
+  deps: { handler?: typeof sendMessageHandler } = {},
 ): Promise<SendOutcome> {
   const bodyHash = createHash('sha256').update(input.body).digest('hex');
   const ledger = await claimLedgerRow(db, input, bodyHash);
@@ -110,13 +143,31 @@ export async function sendTurnMessage(
     );
     const existing = rows[0];
     if (existing) {
-      return reconcile(db, idempotencyKey, existing.id, existing.status);
+      return reconcile(
+        db,
+        idempotencyKey,
+        existing.id,
+        existing.status,
+        ledger.ownedByDifferentJob ? 'inbound' : 'job',
+      );
+    }
+    // Reserva criada por OUTRO job para o mesmo inbound/slot. Mesmo sem linha em
+    // messages ainda, este job não toma a intenção para si: o job proprietário é
+    // quem será retomado pelo reaper. Isso fecha a corrida entre dois event_log
+    // ids sem depender de cache do processo.
+    if (ledger.ownedByDifferentJob) {
+      return {
+        kind: 'already_sent',
+        idempotencyKey,
+        crmMessageId: null,
+        duplicateScope: 'inbound',
+      };
     }
   }
 
   let message: Message;
   try {
-    message = await sendMessageHandler(
+    message = await (deps.handler ?? sendMessageHandler)(
       cfg.supabase,
       {
         organization_id: input.tenantId,
@@ -162,10 +213,19 @@ async function reconcile(
   idempotencyKey: string,
   messageId: string,
   status: string,
+  replayScope?: 'job' | 'inbound',
 ): Promise<SendOutcome> {
   switch (status) {
     case 'sent':
       await updateLedger(db, idempotencyKey, 'accepted', messageId, null);
+      if (replayScope !== undefined) {
+        return {
+          kind: 'already_sent',
+          idempotencyKey,
+          crmMessageId: messageId,
+          duplicateScope: replayScope,
+        };
+      }
       return { kind: 'sent', idempotencyKey, crmMessageId: messageId };
     case 'queued':
       await updateLedger(db, idempotencyKey, 'queued', messageId, null);
@@ -177,12 +237,21 @@ async function reconcile(
       // status desconhecido (ex.: delivered em replay tardio = já saiu) — trate
       // como aceito: a mensagem existe sob custódia do CRM.
       await updateLedger(db, idempotencyKey, 'accepted', messageId, null);
+      if (replayScope !== undefined) {
+        return {
+          kind: 'already_sent',
+          idempotencyKey,
+          crmMessageId: messageId,
+          duplicateScope: replayScope,
+        };
+      }
       return { kind: 'sent', idempotencyKey, crmMessageId: messageId };
   }
 }
 
 /**
- * Passo 1 do fluxo: garante a linha do ledger para (job_id, seq) e decide o caminho.
+ * Passo 1 do fluxo: garante a linha pela identidade estável do inbound (ou por
+ * job_id/seq nos fluxos legados) e decide o caminho.
  * Linha nova → envio normal. 'requested' → replay (reconciliar antes de reenviar).
  * 'accepted'/'queued'/'vetoed' → short-circuit. 'failed' → rotaciona o id.
  */
@@ -190,14 +259,27 @@ async function claimLedgerRow(
   db: Queryable,
   input: SendMessageInput,
   bodyHash: string,
-): Promise<{ key: string; replay?: boolean; shortCircuit?: SendOutcome }> {
+): Promise<{
+  key: string;
+  replay?: boolean;
+  ownedByDifferentJob?: boolean;
+  shortCircuit?: SendOutcome;
+}> {
+  const stableId = stableResponseId(input);
   try {
-    const { rows } = await db.query<{ id: string }>(
-      `insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash)
-       values ($1, $2, $3, $4, $5)
-       returning id`,
-      [input.tenantId, input.leadId, input.jobId, input.seq, bodyHash],
-    );
+    const { rows } = stableId
+      ? await db.query<{ id: string }>(
+          `insert into send_ledger (id, organization_id, contact_id, job_id, seq, body_hash)
+           values ($1, $2, $3, $4, $5, $6)
+           returning id`,
+          [stableId, input.tenantId, input.leadId, input.jobId, input.seq, bodyHash],
+        )
+      : await db.query<{ id: string }>(
+          `insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash)
+           values ($1, $2, $3, $4, $5)
+           returning id`,
+          [input.tenantId, input.leadId, input.jobId, input.seq, bodyHash],
+        );
     const id = rows[0]?.id;
     if (!id) throw new Error('insert em send_ledger não devolveu linha');
     return { key: id };
@@ -205,18 +287,29 @@ async function claimLedgerRow(
     if (!isUniqueViolation(err)) throw err;
   }
 
-  const { rows } = await db.query<SendLedgerRow>(
-    'select * from send_ledger where job_id = $1 and seq = $2',
-    [input.jobId, input.seq],
-  );
+  const { rows } = stableId
+    ? await db.query<SendLedgerRow>(
+        'select * from send_ledger where id = $1 and organization_id = $2',
+        [stableId, input.tenantId],
+      )
+    : await db.query<SendLedgerRow>(
+        'select * from send_ledger where job_id = $1 and seq = $2',
+        [input.jobId, input.seq],
+      );
   const existing = rows[0];
   if (!existing) throw new Error('linha do send_ledger sumiu entre o 23505 e o select');
+  const duplicateScope = existing.job_id === input.jobId ? 'job' : 'inbound';
 
   switch (existing.status) {
     case 'accepted':
       return {
         key: existing.id,
-        shortCircuit: { kind: 'already_sent', idempotencyKey: existing.id, crmMessageId: existing.crm_message_id },
+        shortCircuit: {
+          kind: 'already_sent',
+          idempotencyKey: existing.id,
+          crmMessageId: existing.crm_message_id,
+          duplicateScope,
+        },
       };
     case 'queued':
       // A mensagem JÁ está sob custódia do CRM (linha 'queued' em messages) —
@@ -228,23 +321,44 @@ async function claimLedgerRow(
     case 'vetoed':
       return { key: existing.id, shortCircuit: { kind: 'blocked', idempotencyKey: existing.id } };
     case 'failed': {
-      // Tentativa lógica NOVA: rotacionar o id preserva unique (job_id, seq) e
-      // desvincula da linha 'failed' antiga em messages.
-      const rotated = await db.query<{ id: string }>(
-        `update send_ledger
-         set id = gen_random_uuid(), status = 'requested', body_hash = $3,
-             crm_message_id = null, last_error = null, updated_at = now()
-         where job_id = $1 and seq = $2
-         returning id`,
-        [input.jobId, input.seq, bodyHash],
-      );
+      // No caminho estável o id NÃO pode rotacionar: ele é a barreira entre
+      // jobs. Reabre a mesma reserva; mensagens failed não contam como entrega.
+      const rotated = stableId
+        ? await db.query<{ id: string }>(
+            `update send_ledger
+             set status = 'requested', body_hash = $2,
+                 crm_message_id = null, last_error = null, updated_at = now()
+             where id = $1
+             returning id`,
+            [stableId, bodyHash],
+          )
+        : await db.query<{ id: string }>(
+            `update send_ledger
+             set id = gen_random_uuid(), status = 'requested', body_hash = $3,
+                 crm_message_id = null, last_error = null, updated_at = now()
+             where job_id = $1 and seq = $2
+             returning id`,
+            [input.jobId, input.seq, bodyHash],
+          );
       const id = rotated.rows[0]?.id;
       if (!id) throw new Error('rotação de key no send_ledger não devolveu linha');
       return { key: id };
     }
     default: // 'requested': crash entre insert e resposta — reconciliar pela key
-      return { key: existing.id, replay: true };
+      return {
+        key: existing.id,
+        replay: true,
+        ownedByDifferentJob: duplicateScope === 'inbound',
+      };
   }
+}
+
+function stableResponseId(input: SendMessageInput): string | null {
+  if (input.inboundMessageId === undefined && input.logicalResponseSlot === undefined) return null;
+  if (!input.inboundMessageId || !input.logicalResponseSlot) {
+    throw new Error('inboundMessageId e logicalResponseSlot devem ser informados juntos');
+  }
+  return inboundResponseLedgerId(input.tenantId, input.inboundMessageId, input.logicalResponseSlot);
 }
 
 async function updateLedger(

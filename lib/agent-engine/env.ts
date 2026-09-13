@@ -148,6 +148,11 @@ const envSchema = z.object({
   AGENT_FAST_HISTORY_LIMIT: z.coerce.number().int().positive().default(8),
   AGENT_FAST_HISTORY_TOKEN_WINDOW: z.coerce.number().int().positive().default(2000),
   AGENT_FAST_MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(600),
+  // Continuidade comercial foodservice conservadora antes do harness LLM.
+  FOODSERVICE_SALES_FAST_PATH: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   // Onda 5 (Task 5.1) — modelo auxiliar dos turnos classify/decide_timing do
   // sistema de fluxos de follow-up (sem valor = default da org).
   FOLLOWUP_AI_MODEL: z.string().min(1).optional(),

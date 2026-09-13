@@ -384,6 +384,7 @@ export async function main(): Promise<void> {
       maxContextTokens: env.AGENT_FAST_CONTEXT_PROFILE
         ? env.AGENT_FAST_MAX_CONTEXT_TOKENS
         : env.LEAD_CONTEXT_MAX_TOKENS,
+      foodserviceSalesFastPath: env.FOODSERVICE_SALES_FAST_PATH,
       notesIndexMaxTokens: env.LEAD_NOTES_INDEX_MAX_TOKENS,
       maxSteps: env.AGENT_MAX_STEPS,
       queuedRetryDelayMs: env.SEND_QUEUED_RETRY_MS,

@@ -28,7 +28,7 @@ const tenantDraft = readFileSync(
 // Extrai apenas o bloco "## system_prompt (versão LIMPA proposta)" do draft
 const tenantClean = (() => {
   const match = tenantDraft.match(/## system_prompt \(versão LIMPA proposta\)\n+```\n([\s\S]*?)\n```/);
-  return match !== null ? match[1] : tenantDraft;
+  return match?.[1] ?? tenantDraft;
 })();
 
 describe('measure-agent-turn-payload (BLOCO 3) — AGENT_FAST_CONTEXT_PROFILE=true', () => {

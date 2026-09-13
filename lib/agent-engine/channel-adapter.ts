@@ -12,13 +12,21 @@
  * concretas (o sink do CRM valida o envio; o watchdog valida o status) — não aqui.
  */
 
-/** Uma mensagem de texto a enviar ao lead. Identidade da intenção = (jobId, seq). */
+/** Uma mensagem de texto a enviar ao lead. */
 export interface ChannelSendInput {
   tenantId: string;
   leadId: string | null;
   jobId: string;
   /** posição da mensagem no turno (1..n) — com jobId forma a chave de idempotência */
   seq: number;
+  /**
+   * Mensagem inbound que originou a resposta. Quando presente, a identidade
+   * durável deixa de depender do job e passa a ser
+   * (tenantId, inboundMessageId, logicalResponseSlot).
+   */
+  inboundMessageId?: string;
+  /** Slot lógico explícito: assistant_primary, assistant_primary:2, etc. */
+  logicalResponseSlot?: string;
   /** referência da conversa no canal (conversation_id do CRM na v1) */
   conversationId: string;
   body: string;
@@ -40,14 +48,21 @@ export interface ChannelSendInput {
 
 /**
  * Desfecho do envio de UMA mensagem. Entrega at-least-once, intenção exactly-once:
- * o adapter é idempotente por (jobId, seq) + idempotencyKey. Espelha os estados do
- * sink F2-06 num vocabulário agnóstico de canal.
+ * o adapter usa a identidade estável do inbound quando disponível e mantém
+ * (jobId, seq) apenas para fluxos que não nasceram de inbound. Espelha os estados
+ * do sink F2-06 num vocabulário agnóstico de canal.
  */
 export type ChannelSendResult =
   /** enviada agora — messageId é o id da mensagem no canal/CRM */
   | { kind: 'sent'; idempotencyKey: string; messageId: string }
   /** replay pós-crash: já estava aceita, nada reenviado */
-  | { kind: 'already_sent'; idempotencyKey: string; messageId: string | null }
+  | {
+      kind: 'already_sent';
+      idempotencyKey: string;
+      messageId: string | null;
+      /** inbound = outro job/replay tentou responder o mesmo inbound/slot. */
+      duplicateScope?: 'job' | 'inbound';
+    }
   /** canal aceitou e SEGURA (sessão fora do ar) — reagendar, nunca dropar */
   | { kind: 'queued'; idempotencyKey: string; messageId: string | null }
   /** veto PERMANENTE de negócio (opt-out/is_blocked, irrevogável — regra dura nº 2) */

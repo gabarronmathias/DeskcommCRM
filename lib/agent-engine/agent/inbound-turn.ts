@@ -27,6 +27,7 @@
  * duplicata); veto is_blocked cancela o job em definitivo (JobSettledError —
  * main.ts não completa nem re-tenta). PII nunca entra em log/erro de job.
  */
+import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { z } from 'zod';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
@@ -121,6 +122,10 @@ import {
   type JailbreakLevel,
 } from '../guardrails/jailbreak/classifier';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
+import {
+  decideFoodserviceSalesFastPath,
+  type FoodserviceHistoryMessage,
+} from './foodservice-sales-fast-path';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -381,6 +386,8 @@ export interface InboundTurnKnobs {
   historyLimit: number;
   /** teto do payload do contexto (LEAD_CONTEXT_MAX_TOKENS) */
   maxContextTokens: number;
+  /** Fast path comercial foodservice, opt-in e conservador. */
+  foodserviceSalesFastPath?: boolean;
   /** orçamento fixo do índice de notas do lead injetado no sufixo (LEAD_NOTES_INDEX_MAX_TOKENS) */
   notesIndexMaxTokens: number;
   /** teto de steps do loop de tools por run (AGENT_MAX_STEPS) — circuit breaker fino é F2-15 */
@@ -721,6 +728,8 @@ export interface AgentTurnInput {
   channelSessionId: string;
   /** conversa do CRM — destino do send_message. */
   conversationId: string;
+  /** Inbound original para exactly-once durável entre jobs/eventos. */
+  inboundMessageId?: string;
   /** monta a abertura APÓS o ritual de leitura (inbound vs. bloco temporal do follow-up). */
   buildOpening: (ritual: {
     previous: LeadCheckpointRow | null;
@@ -1149,6 +1158,37 @@ export async function runAgentTurn(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
+  let inboundDuplicateOutcome:
+    | Extract<ChannelSendResult, { kind: 'already_sent' }>
+    | null = null;
+  const sendThroughChannel = async (
+    body: string,
+    template?: { name: string; language: string; values: Record<string, string> },
+  ): Promise<ChannelSendResult> => {
+    // Outro job já possuiu o slot primário deste inbound: nenhuma bolha/tool
+    // posterior deste replay pode abrir um novo slot e vazar resposta parcial.
+    if (inboundDuplicateOutcome !== null) return inboundDuplicateOutcome;
+    seq += 1;
+    const outcome = await channel.send({
+      tenantId,
+      leadId,
+      jobId: job.id,
+      seq,
+      conversationId: input.conversationId,
+      body,
+      ...(input.inboundMessageId !== undefined
+        ? {
+            inboundMessageId: input.inboundMessageId,
+            logicalResponseSlot: seq === 1 ? 'assistant_primary' : `assistant_primary:${seq}`,
+          }
+        : {}),
+      ...(template !== undefined ? { template } : {}),
+    });
+    if (outcome.kind === 'already_sent' && outcome.duplicateScope === 'inbound') {
+      inboundDuplicateOutcome = outcome;
+    }
+    return outcome;
+  };
   // F3-11: estágio que o MODELO confirmou via update_lead_state neste turno (a máquina
   // F2-10 é a única porta). Comparado com a sugestão do classificador no fim → divergência.
   let confirmedStage: LeadStage | null = null;
@@ -1382,18 +1422,8 @@ export async function runAgentTurn(
           now: clock(),
           sleep: deps.sleep,
           lgpd,
-          send: (finalBody: string) => {
-            seq += 1;
-            return channel.send({
-              tenantId,
-              leadId,
-              jobId: job.id,
-              seq,
-              conversationId: input.conversationId,
-              body: finalBody,
-              template: { name: template_name, language, values },
-            });
-          },
+          send: (finalBody: string) =>
+            sendThroughChannel(finalBody, { name: template_name, language, values }),
         });
 
         if (chain.status === 'vetoed') {
@@ -1508,17 +1538,7 @@ export async function runAgentTurn(
                 maxChars: agentConfig?.splitMaxChars ?? 600,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
                 jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
-                send: (bubble): Promise<ChannelSendResult> => {
-                  seq += 1;
-                  return channel.send({
-                    tenantId,
-                    leadId,
-                    jobId: job.id,
-                    seq,
-                    conversationId: input.conversationId,
-                    body: bubble,
-                  });
-                },
+                send: (bubble): Promise<ChannelSendResult> => sendThroughChannel(bubble),
               }),
           };
           let chain = await runBeforeSend(beforeSendArgs);
@@ -2527,12 +2547,217 @@ export async function runAgentTurn(
  * mensagem. Ids de envio vêm do payload do drain (fonte confiável — F2-05); a
  * abertura é o ritual padrão, sem bloco temporal.
  */
+interface FoodserviceWindowRow {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  type: string;
+  body: string | null;
+  sent_at: string;
+}
+
+type FoodserviceFastPathOutcome = 'full_pipeline' | 'handled' | 'settled';
+
+export async function tryFoodserviceSalesFastPath(
+  deps: InboundTurnDeps,
+  job: JobRow,
+  pool: pg.Pool,
+  ctx: { workerId: string },
+  payload: z.infer<typeof inboundTurnPayloadSchema>,
+): Promise<FoodserviceFastPathOutcome> {
+  if (deps.knobs.foodserviceSalesFastPath !== true) return 'full_pipeline';
+
+  const startedAt = Date.now();
+  const dedupeHash = createHash('sha256')
+    .update(`${job.organization_id}:${payload.inbound_message_id}:assistant_primary`)
+    .digest('hex')
+    .slice(0, 16);
+  let decisionMs = 0;
+  let renderMs = 0;
+  let sendMs = 0;
+  let duplicateSuppressed = false;
+  let logged = false;
+  let matched = false;
+  let kind: 'party_size' | 'simple_sales' | null = null;
+  let reason = 'not_evaluated';
+
+  const emit = (fallbackToFullPipeline: boolean): void => {
+    if (logged) return;
+    logged = true;
+    deps.log.info('foodservice_fast_path', {
+      matched,
+      kind,
+      reason,
+      inbound_dedupe_key_hash: dedupeHash,
+      duplicate_suppressed: duplicateSuppressed,
+      llm_calls_before_send: 0,
+      decision_ms: decisionMs,
+      render_ms: renderMs,
+      send_ms: sendMs,
+      total_ms: Date.now() - startedAt,
+      fallback_to_full_pipeline: fallbackToFullPipeline,
+    });
+  };
+
+  try {
+    const { rows } = await pool.query<FoodserviceWindowRow>(
+      `select id, direction, type, body, sent_at::text as sent_at
+       from messages
+       where organization_id = $1 and conversation_id = $2
+         and direction in ('inbound', 'outbound')
+       order by sent_at desc, id desc
+       limit 8`,
+      [job.organization_id, payload.conversation_id],
+    );
+    const current = rows[0];
+    if (
+      current === undefined ||
+      current.id !== payload.inbound_message_id ||
+      current.direction !== 'inbound' ||
+      current.body === null
+    ) {
+      reason = 'inbound_not_latest_or_missing';
+      emit(true);
+      return 'full_pipeline';
+    }
+
+    const history: FoodserviceHistoryMessage[] = rows.slice(1).map((message) => ({
+      direction: message.direction,
+      body: message.body ?? '',
+      sentAt: message.sent_at,
+    }));
+    const contextResult = await getLeadContext(
+      pool,
+      deps.crmCfg,
+      {
+        tenantId: job.organization_id,
+        leadId: payload.contact_id,
+        conversationId: payload.conversation_id,
+      },
+      { historyLimit: Math.min(deps.knobs.historyLimit, 8), maxTokens: deps.knobs.maxContextTokens },
+    );
+    if (!contextResult.ok) {
+      reason = `context_${contextResult.error.code}`;
+      emit(true);
+      return 'full_pipeline';
+    }
+    if (
+      contextResult.context.contact.is_blocked ||
+      (await isLeadInHandoff(pool, job.organization_id, payload.contact_id))
+    ) {
+      reason = 'blocked_or_handoff';
+      emit(true);
+      return 'full_pipeline';
+    }
+
+    const decisionStarted = Date.now();
+    const decision = decideFoodserviceSalesFastPath({
+      enabled: true,
+      text: current.body,
+      messageType: current.type,
+      history,
+      contactName: contextResult.context.contact.name,
+      now: deps.clock?.() ?? new Date(),
+    });
+    decisionMs = Date.now() - decisionStarted;
+    reason = decision.reason;
+    matched = decision.matched;
+    kind = decision.kind;
+    if (!decision.matched) {
+      emit(true);
+      return 'full_pipeline';
+    }
+
+    const renderStarted = Date.now();
+    const response = decision.response;
+    renderMs = Date.now() - renderStarted;
+    const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool);
+    let physicalSendStarted = 0;
+    const chain = await runBeforeSend({
+      pool,
+      log: deps.log,
+      tenantId: job.organization_id,
+      leadId: payload.contact_id,
+      jobId: job.id,
+      channelSessionId: payload.channel_session_id,
+      body: response,
+      optedOutThisTurn: contextResult.context.contact.is_blocked,
+      crmDailyLimit: null,
+      now: deps.clock?.() ?? new Date(),
+      sleep: deps.sleep,
+      lgpd: contextResult.lgpd,
+      send: async (finalBody) => {
+        physicalSendStarted = Date.now();
+        const outcome = await channel.send({
+          tenantId: job.organization_id,
+          leadId: payload.contact_id,
+          jobId: job.id,
+          seq: 1,
+          inboundMessageId: payload.inbound_message_id,
+          logicalResponseSlot: 'assistant_primary',
+          conversationId: payload.conversation_id,
+          body: finalBody,
+        });
+        sendMs = Date.now() - physicalSendStarted;
+        duplicateSuppressed = outcome.kind === 'already_sent';
+        return outcome;
+      },
+    });
+    if (chain.status === 'vetoed') {
+      reason = `guard_veto_${chain.code}`;
+      emit(true);
+      return 'full_pipeline';
+    }
+
+    const outcome = chain.outcome;
+    if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+      emit(false);
+      return 'handled';
+    }
+    if (outcome.kind === 'blocked' || outcome.kind === 'queued') {
+      await applySendOutcome(
+        pool,
+        outcome.kind === 'queued'
+          ? {
+              kind: 'queued',
+              idempotencyKey: outcome.idempotencyKey,
+              crmMessageId: outcome.messageId,
+            }
+          : outcome,
+        {
+          jobId: job.id,
+          workerId: ctx.workerId,
+          tenantId: job.organization_id,
+          leadId: payload.contact_id,
+        },
+        { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
+      );
+      reason = outcome.kind;
+      emit(false);
+      return 'settled';
+    }
+
+    reason = `send_${outcome.kind}`;
+    emit(false);
+    throw new Error(`foodservice fast path: envio ${outcome.kind}`);
+  } catch (error) {
+    reason = reason === 'not_evaluated' ? 'internal_error' : reason;
+    emit(false);
+    throw error;
+  }
+}
+
 export function createInboundTurnHandler(deps: InboundTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
     const payload = inboundTurnPayloadSchema.parse(job.payload);
+    const fastPath = await tryFoodserviceSalesFastPath(deps, job, pool, ctx, payload);
+    if (fastPath === 'handled') return;
+    if (fastPath === 'settled') {
+      throw new JobSettledError('foodservice fast path encerrou o job na disposição do canal');
+    }
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: payload.channel_session_id,
       conversationId: payload.conversation_id,
+      inboundMessageId: payload.inbound_message_id,
       buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta, entregues }) =>
         buildOpeningMessage(previous, leadState, context, notesIndexBlock, projeta, entregues),
     });

@@ -87,7 +87,7 @@ const admin = {
                 return Promise.resolve({ data: null, error: null }).then(resolve);
               };
             }
-            return () => admin.from(tabela);
+            return () => cadeia(`select:${tabela}`);
           },
         }),
       insert: (payload: Record<string, unknown>) => {

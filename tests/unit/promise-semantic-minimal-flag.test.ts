@@ -14,8 +14,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PROMISE_SEMANTIC_FAST_SKIP,
-  PROMISE_SEMANTIC_INSTRUCTION,
-  PROMISE_SEMANTIC_MINIMAL_INSTRUCTION,
   hasPromiseKeyword,
 } from '../../lib/agent-engine/guardrails/promise/keywords';
 import {

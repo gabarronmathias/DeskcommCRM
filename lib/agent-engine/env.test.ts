@@ -28,6 +28,11 @@ describe("loadEnv — vazio é ausente (contrato BYOK do README)", () => {
     expect(env.QUEUE_POLL_INTERVAL_MS).toBe(1_000);
     expect(env.QUEUE_IDLE_POLL_MAX_INTERVAL_MS).toBe(5_000);
     expect(env.WEBHOOK_REPAIR_INTERVAL_MS).toBe(21_600_000);
+    expect(env.FOODSERVICE_SALES_FAST_PATH).toBe(false);
+  });
+
+  it("FOODSERVICE_SALES_FAST_PATH é opt-in explícito", () => {
+    expect(loadEnv({ ...REQUIRED, FOODSERVICE_SALES_FAST_PATH: "true" }).FOODSERVICE_SALES_FAST_PATH).toBe(true);
   });
 
   it("obrigatória VAZIA = erro claro nomeando a var (fail-fast preservado)", () => {
