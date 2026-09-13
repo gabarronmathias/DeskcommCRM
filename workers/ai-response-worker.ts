@@ -18,7 +18,7 @@ import { generateText } from "ai";
 
 import {
   DEFAULT_BOT_MODEL,
-  LlmProviderUnconfiguredError,
+  LlmProviderModelMismatchError,
   gatewayConfig,
   gatewayHeaders,
   isAiGatewayConfigured,
@@ -215,6 +215,19 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
     });
     return { status: "sent_to_dispatch", outbound_message_id: persisted.outbound_message_id };
   } catch (err) {
+    // Mismatch de provider/model é erro de CONFIG (não falha runtime) —
+    // não derruba Sarah; vira `skipped` instrutivo pra aparecer na inbox
+    // da org e o operador corrigir a config do agente (modelo do agente
+    // precisa bater com provider configurado no env).
+    if (err instanceof LlmProviderModelMismatchError) {
+      logger.warn("[ai-response-worker] provider/model mismatch; skipping turn", {
+        conversation_id: ctx.conversation_id,
+        message_id: ctx.message_id,
+        agent_model: ctx.agent.model,
+        reason: err.message,
+      });
+      return { status: "skipped", reason: "llm_provider_model_mismatch", detail: err.message };
+    }
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[ai-response-worker] invocation failed", {
       conversation_id: ctx.conversation_id,

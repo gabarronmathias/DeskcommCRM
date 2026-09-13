@@ -511,6 +511,11 @@ async function emitInboundEvents(admin: Admin, details: InboundEventDetails): Pr
     {
       p_event_type: "ai_agent.dispatch_requested",
       p_entity_kind: "message",
+      // FIX: a RPC canônica `public.emit_event` (migration 0093) exige
+      // 6 parâmetros incluindo `p_entity_id uuid`. Sem ele, PostgREST
+      // recusa o RPC e o webhook vira 503 → WAHA retry-loop. O id da
+      // mensagem inbound é a referência canônica da entidade.
+      p_entity_id: details.messageId,
       p_payload: {
         organization_id: details.organizationId,
         conversation_id: details.conversationId,
@@ -524,6 +529,9 @@ async function emitInboundEvents(admin: Admin, details: InboundEventDetails): Pr
       ? [{
           p_event_type: "media.persist_requested",
           p_entity_kind: "message",
+          // FIX: mesma assinatura canônica — entity_id = id da mensagem
+          // que pediu o persist.
+          p_entity_id: details.messageId,
           p_payload: {
             message_id: details.messageId,
             conversation_id: details.conversationId,

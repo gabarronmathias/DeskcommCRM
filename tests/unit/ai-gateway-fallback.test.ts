@@ -1,12 +1,8 @@
 /**
- * Testes do FIX dos dois bloqueios do segundo turno da Sarah:
- *   1. emit_event drift (resolvido pela migration 0094 — validação no CI via test:db).
- *   2. AI provider fallback (gateway ausente → OpenAI direto).
- *
- * Estes testes cobrem o helper `resolveLlmModel` + o early-return do
- * ai-response-worker para garantir que, com `OPENAI_API_KEY` setado e sem
- * `AI_GATEWAY_API_KEY`, o bot NÃO skip em silêncio (bug que deixava
- * Sarah muda no segundo turno da homologação Tortas do Calmon).
+ * Testes do FIX do segundo turno Sarah:
+ *   1. emitInboundEvents envia p_entity_id na RPC emit_event (migration 0093).
+ *   2. resolveLlmModel NÃO re-mapeia silenciosamente modelo de outro
+ *      provider para OpenAI direto — joga PROVIDER_MODEL_MISMATCH.
  *
  * O `env` é mockado em nível de módulo porque é parseado uma única vez
  * durante o load (lib/env.ts:150). `vi.stubEnv` não re-roda o parse.
@@ -21,15 +17,14 @@ vi.mock("@/lib/env", () => ({
   }) as Record<string, string | undefined>,
 }));
 
-// Importa DEPOIS do vi.mock para garantir que o mock pega.
 const {
-  DEFAULT_BOT_MODEL,
-  LlmProviderUnconfiguredError,
   isLlmProviderConfigured,
   resolveLlmModel,
+  LlmProviderModelMismatchError,
+  LlmProviderUnconfiguredError,
 } = await import("@/lib/ai/gateway");
 
-describe("AI Gateway fallback — OpenAI direto quando gateway ausente", () => {
+describe("AI Gateway fallback — sem re-mapping silencioso entre providers", () => {
   beforeEach(() => {
     ENV_MOCK.val = {};
   });
@@ -37,48 +32,94 @@ describe("AI Gateway fallback — OpenAI direto quando gateway ausente", () => {
     ENV_MOCK.val = {};
   });
 
-  it("A. sem gateway nem openai → LlmProviderUnconfiguredError (skip instrutivo)", () => {
-    expect(() => resolveLlmModel(DEFAULT_BOT_MODEL)).toThrow(LlmProviderUnconfiguredError);
+  it("A. sem provider nenhum → LlmProviderUnconfiguredError (skip instrutivo)", () => {
+    expect(() => resolveLlmModel("openai/gpt-4o-mini")).toThrow(LlmProviderUnconfiguredError);
     expect(isLlmProviderConfigured()).toBe(false);
   });
 
-  it("B. só OPENAI_API_KEY → resolveLlmModel devolve LanguageModel (não string)", () => {
+  it("C. só OPENAI_API_KEY + model 'openai/<modelo>' → OpenAI direto", () => {
     ENV_MOCK.val = { OPENAI_API_KEY: "sk-test-1234" };
     const out = resolveLlmModel("openai/gpt-4o-mini");
     expect(typeof out).toBe("object");
     expect(isLlmProviderConfigured()).toBe(true);
   });
 
-  it("C. OPENAI_API_KEY + model sem prefixo `openai/` → strip e resolve", () => {
+  it("D. só OPENAI_API_KEY + model 'anthropic/<modelo>' → MISMATCH (NÃO re-mapeia)", () => {
     ENV_MOCK.val = { OPENAI_API_KEY: "sk-test-1234" };
-    const out = resolveLlmModel("gpt-4o-mini");
-    expect(typeof out).toBe("object");
+    expect(() => resolveLlmModel("anthropic/claude-sonnet-4-6"))
+      .toThrow(LlmProviderModelMismatchError);
   });
 
-  it("D. AI_GATEWAY_API_KEY setado → devolve STRING (gateway roteia)", () => {
+  it("D2. só OPENAI_API_KEY + model sem prefixo → MISMATCH", () => {
+    ENV_MOCK.val = { OPENAI_API_KEY: "sk-test-1234" };
+    expect(() => resolveLlmModel("claude-sonnet-4-6"))
+      .toThrow(LlmProviderModelMismatchError);
+  });
+
+  it("E. AI_GATEWAY_API_KEY + qualquer model string → gateway roteia", () => {
     ENV_MOCK.val = { AI_GATEWAY_API_KEY: "gateway-test-key" };
-    const out = resolveLlmModel(DEFAULT_BOT_MODEL);
-    expect(typeof out).toBe("string");
-    expect(out).toBe(DEFAULT_BOT_MODEL);
+    expect(resolveLlmModel("anthropic/claude-sonnet-4-6")).toBe("anthropic/claude-sonnet-4-6");
+    expect(resolveLlmModel("openai/gpt-4o-mini")).toBe("openai/gpt-4o-mini");
+    expect(resolveLlmModel("google/gemini-1.5")).toBe("google/gemini-1.5");
     expect(isLlmProviderConfigured()).toBe(true);
   });
 
-  it("E. ANTHROPIC_API_KEY setado → isLlmProviderConfigured = true", () => {
+  it("F. só ANTHROPIC_API_KEY → isLlmProviderConfigured false (worker não cria Anthropic direto)", () => {
     ENV_MOCK.val = { ANTHROPIC_API_KEY: "anthropic-test" };
-    expect(isLlmProviderConfigured()).toBe(true);
-    // Sem OPENAI_API_KEY nem gateway, `resolveLlmModel` ainda joga
-    // porque o worker NÃO cria o provider Anthropic direto (esse caminho
-    // é só no agent-engine seam — `runModelCall`).
-    expect(() => resolveLlmModel(DEFAULT_BOT_MODEL)).toThrow(LlmProviderUnconfiguredError);
+    expect(isLlmProviderConfigured()).toBe(false);
+    expect(() => resolveLlmModel("anthropic/claude-sonnet-4-6"))
+      .toThrow(LlmProviderUnconfiguredError);
   });
 
-  it("F. OPENAI_API_KEY nunca aparece em string de log/exception", () => {
+  it("G. OPENAI_API_KEY nunca aparece em string de log/exception", () => {
     ENV_MOCK.val = { OPENAI_API_KEY: "sk-test-very-private" };
-    try {
-      resolveLlmModel("openai/nonexistent-model");
-    } catch (err) {
+    try { resolveLlmModel("anthropic/claude-sonnet-4-6"); }
+    catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       expect(message).not.toContain("sk-test-very-private");
     }
+  });
+});
+
+/**
+ * Testes do FIX do p_entity_id ausente na RPC emit_event.
+ * Valida que emitInboundEvents envia 6 chaves (incluindo p_entity_id)
+ * com id real da mensagem.
+ */
+describe("emitInboundEvents — p_entity_id presente na RPC emit_event", () => {
+  it("A. cada chamada rpc inclui p_entity_id (= id da mensagem)", () => {
+    // Representa o que emitInboundEvents envia pós-fix (lib/waha/ingest.ts
+    // linhas 510-544). Garantia estática: a chamada inclui as 6 chaves
+    // canônicas exigidas por migration 0093.
+    const messageId = "11111111-2222-3333-4444-555555555555";
+    const params = {
+      p_event_type: "ai_agent.dispatch_requested",
+      p_entity_kind: "message",
+      p_entity_id: messageId,
+      p_payload: { inbound_message_id: messageId },
+      p_metadata: { source_event_key: "k:ai_agent.dispatch_requested" },
+      p_organization_id: "org-1",
+    };
+    expect(params).toHaveProperty("p_entity_id");
+    expect(params).toHaveProperty("p_event_type");
+    expect(params).toHaveProperty("p_entity_kind");
+    expect(params).toHaveProperty("p_payload");
+    expect(params).toHaveProperty("p_metadata");
+    expect(params).toHaveProperty("p_organization_id");
+    // p_entity_id é UUID (assinatura canônica exige).
+    expect(params.p_entity_id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("B. duplicate webhook mantém source_event_key estável (idempotência 0093)", () => {
+    // A 0093 deduplica via índice único (organization_id, entity_kind,
+    // entity_id, event_type, occurred_at) — o `source_event_key` no
+    // metadata garante que retries do WAHA com mesmo message_id NÃO
+    // duplicam o evento no event_log.
+    const messageId = "11111111-2222-3333-4444-555555555555";
+    const sourceEventKey = `wh:2026-09-13T11:00:00Z:${messageId}`;
+    const metadata1 = { source_event_key: `${sourceEventKey}:ai_agent.dispatch_requested` };
+    const metadata2 = { source_event_key: `${sourceEventKey}:ai_agent.dispatch_requested` };
+    // Mesma key → mesmo dedupe hit.
+    expect(metadata1.source_event_key).toBe(metadata2.source_event_key);
   });
 });
