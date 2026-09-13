@@ -1160,36 +1160,36 @@ export async function runAgentTurn(
   // ROW do job fechados dentro (regra dura nº 1) — resolvido pelo seam agnóstico. undefined =
   // camada off (gate no-op). CUSTO: uma chamada de modelo POR ENVIO quando ligada.
   //
-  // Fast-skip determinístico (briefing latência Sarah 2026-09-12 — achado 4): se a
-  // candidata NÃO contém nenhuma keyword típica de promessa/compromisso em texto
-  // livre, é certeza razoável de "sem promessa" — a camada determinística F4-01
-  // (preço/desconto estruturado) já rodou antes do gate 5. Pula a chamada de LLM
-  // inteira (~12.2s por envio). Falha segura: regex sem match → fail-open p/
-  // {isPromise: false}. Regex COM match → classificador LLM ainda roda, pra
-  // desambiguar falsos positivos (slogans tipo "garantimos qualidade"). Ver
-  // `lib/agent-engine/guardrails/promise/keywords.ts` (testada em
-  // tests/unit/promise-semantic-fast-skip.test.ts).
+  // Gate 5 da cadeia (F4-02/F4-08): closure do classificador semântico com tenant/lead/job da
+  // ROW do job fechados dentro (regra dura nº 1) — resolvido pelo seam agnóstico. undefined =
+  // camada off (gate no-op). CUSTO: uma chamada de modelo POR ENVIO quando ligada.
   //
-  // Modo encerramento 2026-09-13: regex é só ESCALONAMENTO POSITIVO. Sem match
-  // → não chama LLM (otimização, NÃO prova de ausência). Com match → chama
-  // LLM com prompt MÍNIMO (a regex já fez o trabalho de detecção) + modelo
-  // default da org (configurável via PROMISE_SEMANTIC_MODEL).
+  // Modo encerramento 2026-09-13 (BLOCO 1): regex de keywords
+  // (lib/agent-engine/guardrails/promise/keywords.ts) é só ESCALONAMENTO POSITIVO.
+  // Quando a regex CASA, o classificador LLM é chamado com prompt MÍNIMO (a regex
+  // já fez o trabalho de detecção, o LLM só valida/classifica). Quando a regex
+  // NÃO CASA, o classificador LLM é chamado COM PROMPT PADRÃO — ausência de match
+  // lexical NÃO prova ausência de promessa. O classificador nunca é pulado.
+  // Ver tests/unit/promise-semantic-minimal-flag.test.ts.
   const semanticClassifier =
     camadaLigada(camadas.promessa_semantica, deps.knobs.promiseSemantic?.enabled === true)
       ? (candidate: string) =>
-          PROMISE_SEMANTIC_FAST_SKIP.test(candidate)
-            ? classifyPromise(
-                pool,
-                deps.llmCfg,
-                { tenantId, leadId, jobId: job.id },
-                {
+          classifyPromise(
+            pool,
+            deps.llmCfg,
+            { tenantId, leadId, jobId: job.id },
+            PROMISE_SEMANTIC_FAST_SKIP.test(candidate)
+              ? {
                   candidate,
                   minimal: true,
                   ...argsAux(deps.knobs.promiseSemantic?.model),
+                }
+              : {
+                  candidate,
+                  ...argsAux(deps.knobs.promiseSemantic?.model),
                 },
-                { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
-              )
-            : Promise.resolve({ isPromise: false, suspectPhrase: null })
+            { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+          )
       : undefined;
   let outOfTablePromiseAttempted = false;
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE

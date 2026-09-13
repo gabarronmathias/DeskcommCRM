@@ -160,16 +160,21 @@ describe('resolveTurnAgent', () => {
     expect(out.config?.agentId).toBe('agent-fallback');
   });
 
-  it('7. sem match + SEM fallback → no_match e config null (genérico)', async () => {
+  it('7. sem match + SEM fallback → no_match com config do agente DA SESSÃO (regra 5 portada do 35eb014d)', async () => {
     const r = router({ sticky: false, fallbackAgentId: null });
     const loadActiveRouter = vi.fn().mockResolvedValue(r);
     const classifyIntent = vi.fn().mockResolvedValue({ intentName: null, confidence: 0.1 });
     const loadPublishedAgentConfigById = vi.fn();
+    const loadPublishedAgentConfig = vi.fn().mockResolvedValue(fakeConfig('agent-da-sessao'));
     const out = await resolveTurnAgent({} as never, {} as never,
       { ...baseInput, signal: 'blablabla', stickyAgentId: null, stickyIntent: null },
-      makeDeps({ loadActiveRouter, classifyIntent, loadPublishedAgentConfigById }));
+      makeDeps({ loadActiveRouter, classifyIntent, loadPublishedAgentConfigById, loadPublishedAgentConfig }));
     expect(out.outcome).toBe('no_match');
-    expect(out.config).toBeNull();
+    // Regra 5 portada do fix 35eb014d (briefing latência Sarah 2026-09-13 — bloco 1):
+    // sem fallback declarado, quem atende é o agente PUBLICADO DA SESSÃO (não
+    // genérico config:null). Só cai no genérico quando nem o agente da sessão
+    // existe (ver test E em resolve-turn-agent-empty-router.test.ts).
+    expect(out.config?.agentId).toBe('agent-da-sessao');
     expect(loadPublishedAgentConfigById).not.toHaveBeenCalled();
   });
 
