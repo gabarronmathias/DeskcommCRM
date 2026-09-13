@@ -51,8 +51,24 @@ export const PROMISE_SEMANTIC_INSTRUCTION =
   '{"isPromise": true|false, "suspectPhrase": "<trecho literal da promessa na mensagem>"|null}. ' +
   'suspectPhrase é null quando isPromise=false.';
 
-function buildPromiseMessage(candidate: string): string {
-  return ['## Mensagem candidata (que o vendedor quer enviar ao lead)', candidate, '', PROMISE_SEMANTIC_INSTRUCTION].join(
+/**
+ * Instrução MÍNIMA do classificador — usada quando a regex de fast-skip (keywords.ts)
+ * já sinalizou POTENCIAL promessa na candidata. Prompt compacto pra reduzir tokens de
+ * input/output no classificador auxiliar (modelo barato, ex.: haiku). A decisão final
+ * ainda é binária e a saída ainda é JSON com os mesmos campos.
+ *
+ * Por que MÍNIMO quando já tem sinal positivo da regex: o regex já fez o trabalho de
+ * detectar keyword de promessa; o LLM só precisa CONFIRMAR/CATEGORIZAR. Sem repetir a
+ * definição de "o que é promessa" (já implícita na keyword casada).
+ */
+export const PROMISE_SEMANTIC_MINIMAL_INSTRUCTION =
+  'Classificador binário de promessa/compromisso. A regex de keywords já sinalizou POTENCIAL ' +
+  'promessa na candidata. Confirme se é promessa concreta (isPromise=true) ou inocente (false). ' +
+  'Slogans genéricos ("garantimos qualidade") = false. Compromisso concreto (prazo, gratuidade, ' +
+  'cortesia) = true. Responda SOMENTE JSON: {"isPromise": true|false, "suspectPhrase": "<trecho>"|null}.';
+
+function buildPromiseMessage(candidate: string, instruction: string = PROMISE_SEMANTIC_INSTRUCTION): string {
+  return ['## Mensagem candidata (que o vendedor quer enviar ao lead)', candidate, '', instruction].join(
     '\n',
   );
 }
@@ -95,14 +111,20 @@ export function parsePromiseClassification(text: string, log?: Logger): PromiseC
  * Roda o classificador semântico pelo seam agnóstico (purpose 'promise_semantic'; budget da
  * org checado ANTES da chamada dentro de runModelCall). Injetável (registry) para testes
  * determinísticos com MockLanguageModelV4. Devolve o veredito binário + a frase suspeita.
+ *
+ * `args.minimal = true` troca a instrução pelo `PROMISE_SEMANTIC_MINIMAL_INSTRUCTION` —
+ * usado quando a regex de fast-skip (keywords.ts) JÁ sinalizou keyword de promessa na
+ * candidata, então o classificador só precisa CONFIRMAR/CATEGORIZAR. Reduz tokens de
+ * input e o tempo até o primeiro byte.
  */
 export async function classifyPromise(
   db: pg.Pool,
   cfg: LlmEdgeConfig,
   ids: { tenantId: string; leadId?: string | null; jobId?: string },
-  args: { candidate: string; model?: string; llmOverride?: LlmResolveOverride },
+  args: { candidate: string; model?: string; llmOverride?: LlmResolveOverride; minimal?: boolean },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<PromiseClassification> {
+  const instruction = args.minimal === true ? PROMISE_SEMANTIC_MINIMAL_INSTRUCTION : PROMISE_SEMANTIC_INSTRUCTION;
   const call = await runModelCall(
     db,
     cfg,
@@ -113,7 +135,7 @@ export async function classifyPromise(
       purpose: 'promise_semantic',
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
-      messages: [{ role: 'user', content: buildPromiseMessage(args.candidate) }],
+      messages: [{ role: 'user', content: buildPromiseMessage(args.candidate, instruction) }],
     },
     { registry: deps.registry, log: deps.log },
   );

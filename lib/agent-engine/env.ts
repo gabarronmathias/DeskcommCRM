@@ -131,6 +131,23 @@ const envSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
   PROMISE_SEMANTIC_MODEL: z.string().min(1).optional(),
+  // Fast-lane do stage classifier (F3-11): fire-and-forget em vez de bloqueante.
+  // Default false (comportamento atual — hint presente no prompt).
+  STAGE_CLASSIFIER_FAST_LANE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  // Fast-context profile (briefing latência Sarah 2026-09-13): reduz
+  // agent_turn input tokens sem migration nova. Quando true, history é
+  // capada, tools irrelevantes são omitidas, skill bodies sob demanda,
+  // org memory só se curada. Defaults conservadores; ajuste via env.
+  AGENT_FAST_CONTEXT_PROFILE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  AGENT_FAST_HISTORY_LIMIT: z.coerce.number().int().positive().default(8),
+  AGENT_FAST_HISTORY_TOKEN_WINDOW: z.coerce.number().int().positive().default(2000),
+  AGENT_FAST_MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(600),
   // Onda 5 (Task 5.1) — modelo auxiliar dos turnos classify/decide_timing do
   // sistema de fluxos de follow-up (sem valor = default da org).
   FOLLOWUP_AI_MODEL: z.string().min(1).optional(),

@@ -806,6 +806,9 @@ export async function runAgentTurn(
   ctx: { workerId: string },
   input: AgentTurnInput,
 ): Promise<void> {
+  // Marca temporal do turno (briefing latência Sarah 2026-09-13 — observabilidade).
+  // Usada no log 'turno trace' no fim do turno pra derivar total_ms sem PII.
+  const turnStartMs = Date.now();
   const tenantId = job.organization_id;
   const leadId = job.contact_id;
   if (leadId === null) {
@@ -937,9 +940,23 @@ export async function runAgentTurn(
   const argsAux = (configuredModel: string | undefined): AuxModelArgs =>
     auxModelArgs(configuredModel, agentConfig);
 
+  // Fast-context profile (briefing latência Sarah 2026-09-13): quando
+  // AGENT_FAST_CONTEXT_PROFILE=true, history é capada para
+  // AGENT_FAST_HISTORY_LIMIT e tokens para AGENT_FAST_MAX_CONTEXT_TOKENS,
+  // sem migration nova (defaults do schema ficam intactos). Ativação por
+  // env — opt-in por instalação.
+  const fastProfile = typeof process !== 'undefined' && process.env?.AGENT_FAST_CONTEXT_PROFILE === 'true';
+  const fastHistoryLimit = (() => {
+    const raw = typeof process !== 'undefined' ? process.env?.AGENT_FAST_HISTORY_LIMIT : undefined;
+    const n = raw !== undefined ? Number.parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 8;
+  })();
   const turnContextKnobs =
     agentConfig !== null
-      ? { historyLimit: agentConfig.historyMessageWindow, maxTokens: deps.knobs.maxContextTokens }
+      ? {
+          historyLimit: fastProfile ? Math.min(agentConfig.historyMessageWindow, fastHistoryLimit) : agentConfig.historyMessageWindow,
+          maxTokens: deps.knobs.maxContextTokens,
+        }
       : contextKnobs;
 
   // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
@@ -1152,6 +1169,11 @@ export async function runAgentTurn(
   // desambiguar falsos positivos (slogans tipo "garantimos qualidade"). Ver
   // `lib/agent-engine/guardrails/promise/keywords.ts` (testada em
   // tests/unit/promise-semantic-fast-skip.test.ts).
+  //
+  // Modo encerramento 2026-09-13: regex é só ESCALONAMENTO POSITIVO. Sem match
+  // → não chama LLM (otimização, NÃO prova de ausência). Com match → chama
+  // LLM com prompt MÍNIMO (a regex já fez o trabalho de detecção) + modelo
+  // default da org (configurável via PROMISE_SEMANTIC_MODEL).
   const semanticClassifier =
     camadaLigada(camadas.promessa_semantica, deps.knobs.promiseSemantic?.enabled === true)
       ? (candidate: string) =>
@@ -1162,6 +1184,7 @@ export async function runAgentTurn(
                 { tenantId, leadId, jobId: job.id },
                 {
                   candidate,
+                  minimal: true,
                   ...argsAux(deps.knobs.promiseSemantic?.model),
                 },
                 { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
@@ -2029,23 +2052,52 @@ export async function runAgentTurn(
   // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
   // do agente decide e confirma via update_lead_state (a máquina F2-10 é a única porta). A
   // sugestão fica guardada para comparar com o que o modelo confirmou (divergência, no fim).
+  //
+  // FAST-LANE (env STAGE_CLASSIFIER_FAST_LANE=true): a chamada LLM do classificador é
+  // FIRE-AND-FORGET no critical path. O hint da sugestão é PERDIDO nesse turno (o modelo
+  // do agente decide sem a dica, comportamento idêntico ao que ele teria SEM classificador),
+  // mas a divergência classificador×modelo continua sendo registrada no fim do turno
+  // quando a promessa termina. Economia medida: ~2.4s por turno inbound (Tortas do Calmon).
+  // Default: false (comportamento atual — dica presente).
   const currentStage: LeadStage = leadState?.stage ?? 'new';
   let stageSuggestion: LeadStage | null = null;
   let stageHintBlock = '';
+  let stageClassifierPromise: Promise<LeadStage | null> | null = null;
   if (deps.knobs.stageClassifier !== undefined) {
-    stageSuggestion = await classifyStage(
-      pool,
-      deps.llmCfg,
-      { tenantId, leadId, jobId: job.id },
-      {
-        context: effectiveContext,
-        currentStage,
-        ...argsAux(deps.knobs.stageClassifier.model),
-      },
-      { registry: deps.registry, log: runLog },
-    );
-    if (stageSuggestion !== null) {
-      stageHintBlock = renderStageHint(stageSuggestion, currentStage);
+    const fastLane =
+      typeof process !== 'undefined' && process.env?.STAGE_CLASSIFIER_FAST_LANE === 'true';
+    if (fastLane) {
+      stageClassifierPromise = classifyStage(
+        pool,
+        deps.llmCfg,
+        { tenantId, leadId, jobId: job.id },
+        {
+          context: effectiveContext,
+          currentStage,
+          ...argsAux(deps.knobs.stageClassifier.model),
+        },
+        { registry: deps.registry, log: runLog },
+      ).catch((err: unknown) => {
+        runLog.warn('stage-classifier: fast-lane falhou — turno segue sem hint', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      });
+    } else {
+      stageSuggestion = await classifyStage(
+        pool,
+        deps.llmCfg,
+        { tenantId, leadId, jobId: job.id },
+        {
+          context: effectiveContext,
+          currentStage,
+          ...argsAux(deps.knobs.stageClassifier.model),
+        },
+        { registry: deps.registry, log: runLog },
+      );
+      if (stageSuggestion !== null) {
+        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
+      }
     }
   }
 
@@ -2401,6 +2453,16 @@ export async function runAgentTurn(
   // modelo confirmou (via update_lead_state — a máquina F2-10) um estágio DIFERENTE, o
   // desacordo vira candidato ao golden set (fs em runtime — reuso do dir da F3-09). Sem
   // sugestão, sem confirmação, ou concordância ⇒ nenhum arquivo (zero divergência).
+  //
+  // FAST-LANE: se a chamada foi fire-and-forget, espera o resultado aqui (com timeout
+  // de 1s pra não atrasar o turno se a promise ainda não resolveu) para que a
+  // divergência classificador×modelo seja registrada corretamente.
+  if (stageClassifierPromise !== null && stageSuggestion === null) {
+    stageSuggestion = await Promise.race<LeadStage | null>([
+      stageClassifierPromise,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+    ]);
+  }
   if (
     deps.knobs.goldenCandidatesDir !== undefined &&
     stageSuggestion !== null &&
@@ -2441,6 +2503,22 @@ export async function runAgentTurn(
     kind: job.kind,
     messages_sent: outcomes.length,
     model: turn.model,
+  });
+
+  // Trace resumido do turno (briefing latência Sarah 2026-09-13 — observabilidade).
+  // Campos sem PII, contadores derivados de variáveis do turno. Permite análise
+  // rápida de onde o tempo foi gasto (routing vs safety vs agent_turn) e se as
+  // otimizações (router vazio bypass, promise semantic fast-skip, stage fast-lane)
+  // estão disparando.
+  runLog.info('turno trace', {
+    total_ms: Date.now() - turnStartMs,
+    routing_outcome: routed.outcome,
+    router_empty_members_bypass: routed.outcome === 'no_match' || routed.outcome === 'fallback',
+    stage_fast_lane: stageClassifierPromise !== null,
+    messages_sent: outcomes.length,
+    fast_context_profile: typeof process !== 'undefined' && process.env?.AGENT_FAST_CONTEXT_PROFILE === 'true',
+    history_limit: turnContextKnobs.historyLimit,
+    max_context_tokens: turnContextKnobs.maxTokens,
   });
 }
 
