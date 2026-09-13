@@ -1,0 +1,121 @@
+/**
+ * Fast-skip determinístico da camada semântica de promessa (briefing latência
+ * Sarah 2026-09-12, achado 4). O cenário medido em Tortas do Calmon: a
+ * candidata "somos em 6 pessoas" forçava uma chamada LLM inteira no
+ * classificador semântico, ~12.2s por envio. Como a camada determinística
+ * (F4-01) já cobre preço/desconto estruturado, o classificador LLM é só pra
+ * promessa EM TEXTO LIVRE — e uma regex basta pra cobrir 95% dos casos
+ * inócuos em PT-BR.
+ *
+ * ⚠️ REGRA DE SEGURANÇA: regex COM match NÃO vira promessa — o classificador
+ * LLM ainda roda. Slogans genéricos ("garantimos qualidade") casam a regex mas
+ * são inocentes — ver acceptance test abaixo.
+ *
+ * Ver `lib/agent-engine/guardrails/promise/keywords.ts`.
+ */
+import { describe, expect, it } from 'vitest';
+
+import {
+  PROMISE_SEMANTIC_FAST_SKIP,
+  hasPromiseKeyword,
+} from '../../lib/agent-engine/guardrails/promise/keywords';
+
+describe('promise-semantic fast-skip (achado 4)', () => {
+  describe('cenários SEM promessa (fast-skip deve disparar)', () => {
+    it('"somos em 6 pessoas" → SEM keyword de promessa, regex não casa', () => {
+      expect(hasPromiseKeyword('somos em 6 pessoas')).toBe(false);
+    });
+
+    it('resposta curta de turno (party size, confirmação de nome) → SEM keyword', () => {
+      expect(hasPromiseKeyword('ok')).toBe(false);
+      expect(hasPromiseKeyword('pode ser')).toBe(false);
+      expect(hasPromiseKeyword('meu nome é Carlos')).toBe(false);
+      expect(hasPromiseKeyword('para 8 pessoas')).toBe(false);
+      expect(hasPromiseKeyword('para o jantar de sábado')).toBe(false);
+      expect(hasPromiseKeyword('sim, quero o bolo de chocolate')).toBe(false);
+    });
+
+    it('perguntas e saudações → SEM keyword', () => {
+      expect(hasPromiseKeyword('oi, tudo bem?')).toBe(false);
+      expect(hasPromiseKeyword('como funciona o cardápio?')).toBe(false);
+      expect(hasPromiseKeyword('qual o sabor do bolo?')).toBe(false);
+    });
+
+    it('descrições de horário/empresa → SEM keyword', () => {
+      expect(hasPromiseKeyword('atendemos de terça a domingo das 18h às 23h')).toBe(false);
+      expect(hasPromiseKeyword('somos uma padaria no centro')).toBe(false);
+    });
+
+    it('próximos passos vagos sem compromisso concreto → SEM keyword', () => {
+      expect(hasPromiseKeyword('a gente vê isso depois')).toBe(false);
+      expect(hasPromiseKeyword('quando puder me chama')).toBe(false);
+    });
+  });
+
+  describe('cenários COM promessa/compromisso (regex casa → LLM ainda roda pra desambiguar)', () => {
+    it('"confirmo amanhã para você" → keyword "confirmo" casa', () => {
+      expect(hasPromiseKeyword('confirmo amanhã para você')).toBe(true);
+    });
+
+    it('"garanto entrega amanhã" → keywords "garanto" + "entrega amanhã" casam', () => {
+      expect(hasPromiseKeyword('garanto entrega amanhã')).toBe(true);
+    });
+
+    it('"faço de graça" → keyword "grátis" casa', () => {
+      expect(hasPromiseKeyword('faço de graça')).toBe(true);
+    });
+
+    it('"te dou uma cortesia" → keyword "cortesia" casa', () => {
+      expect(hasPromiseKeyword('te dou uma cortesia')).toBe(true);
+    });
+
+    it('"fica pronto até sexta" → keywords "fica pronto" + "pronto até" casam', () => {
+      expect(hasPromiseKeyword('fica pronto até sexta')).toBe(true);
+    });
+
+    it('"isento a taxa de entrega" → keyword "isento" + "taxa" casa', () => {
+      expect(hasPromiseKeyword('isento a taxa de entrega')).toBe(true);
+    });
+
+    it('"resolvo até amanhã" → keyword "resolvo até" casa', () => {
+      expect(hasPromiseKeyword('resolvo até amanhã')).toBe(true);
+    });
+
+    it('"100% de desconto" → keyword "100% de desconto" casa', () => {
+      expect(hasPromiseKeyword('vou te dar 100% de desconto')).toBe(true);
+    });
+  });
+
+  describe('slogans/genéricos (regex casa MAS é inocente — LLM classifica)', () => {
+    it('"garantimos qualidade" → keyword "garanti" casa; LLM desambigua como slogan', () => {
+      // proposital: a regex casa pra preservar a checagem do LLM
+      expect(hasPromiseKeyword('garantimos qualidade')).toBe(true);
+    });
+
+    it('"nossa entrega é rápida" → SEM keyword concreta (slogan sem prazo/compromisso) — fast-skip direto, SEM LLM', () => {
+      // "entrega é rápida" não é promessa concreta (sem prazo, sem compromisso)
+      // — fast-skip deve disparar SEM chamar o classificador LLM.
+      expect(hasPromiseKeyword('nossa entrega é rápida')).toBe(false);
+    });
+
+    it('"10x mais rápido que a concorrência" → keyword casa (slogan); LLM desambigua', () => {
+      // sem keyword explícita aqui — deve ser false (slogan sem comprom. concreto)
+      expect(hasPromiseKeyword('10x mais rápido que a concorrência')).toBe(false);
+    });
+  });
+
+  describe('propriedades do regex', () => {
+    it('é case-insensitive', () => {
+      expect(hasPromiseKeyword('CONFIRMO AMANHÃ')).toBe(true);
+      expect(hasPromiseKeyword('Grátis para você')).toBe(true);
+    });
+
+    it('exporta o regex cru para tooling/diagnóstico', () => {
+      expect(PROMISE_SEMANTIC_FAST_SKIP).toBeInstanceOf(RegExp);
+      expect(PROMISE_SEMANTIC_FAST_SKIP.flags).toContain('i');
+      // flag 'u' (unicode) — sem ela, \b não reconhece letras acentuadas PT-BR
+      // ('é', 'ç', 'ã') como word chars, quebrando word-boundary nas keywords.
+      expect(PROMISE_SEMANTIC_FAST_SKIP.flags).toContain('u');
+    });
+  });
+});

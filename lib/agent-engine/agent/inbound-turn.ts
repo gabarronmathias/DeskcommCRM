@@ -107,6 +107,7 @@ import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
 import { classifyPromise } from '../guardrails/promise/semantic';
+import { PROMISE_SEMANTIC_FAST_SKIP } from '../guardrails/promise/keywords';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import { diffCheckpoint } from '@/lib/leads/checkpoint-diff';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
@@ -1141,19 +1142,31 @@ export async function runAgentTurn(
   // Gate 5 da cadeia (F4-02/F4-08): closure do classificador semântico com tenant/lead/job da
   // ROW do job fechados dentro (regra dura nº 1) — resolvido pelo seam agnóstico. undefined =
   // camada off (gate no-op). CUSTO: uma chamada de modelo POR ENVIO quando ligada.
+  //
+  // Fast-skip determinístico (briefing latência Sarah 2026-09-12 — achado 4): se a
+  // candidata NÃO contém nenhuma keyword típica de promessa/compromisso em texto
+  // livre, é certeza razoável de "sem promessa" — a camada determinística F4-01
+  // (preço/desconto estruturado) já rodou antes do gate 5. Pula a chamada de LLM
+  // inteira (~12.2s por envio). Falha segura: regex sem match → fail-open p/
+  // {isPromise: false}. Regex COM match → classificador LLM ainda roda, pra
+  // desambiguar falsos positivos (slogans tipo "garantimos qualidade"). Ver
+  // `lib/agent-engine/guardrails/promise/keywords.ts` (testada em
+  // tests/unit/promise-semantic-fast-skip.test.ts).
   const semanticClassifier =
     camadaLigada(camadas.promessa_semantica, deps.knobs.promiseSemantic?.enabled === true)
       ? (candidate: string) =>
-          classifyPromise(
-            pool,
-            deps.llmCfg,
-            { tenantId, leadId, jobId: job.id },
-            {
-              candidate,
-              ...argsAux(deps.knobs.promiseSemantic?.model),
-            },
-            { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
-          )
+          PROMISE_SEMANTIC_FAST_SKIP.test(candidate)
+            ? classifyPromise(
+                pool,
+                deps.llmCfg,
+                { tenantId, leadId, jobId: job.id },
+                {
+                  candidate,
+                  ...argsAux(deps.knobs.promiseSemantic?.model),
+                },
+                { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+              )
+            : Promise.resolve({ isPromise: false, suspectPhrase: null })
       : undefined;
   let outOfTablePromiseAttempted = false;
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE
