@@ -93,6 +93,52 @@ describe("playbook platform.md — persona Sarah (foodservice)", () => {
     expect(platformMd).toMatch(/uma pergunta comercial/i);
   });
 
+  it("REGRA CRÍTICA: NÃO reenviar o URL/cardápio depois do turno 1", () => {
+    // Bug observado no WhatsApp real (Tortas do Calmon, segundo turno):
+    // Sarah repetia o URL após o cliente dar "somos em 6 pessoas". A regra
+    // explícita impede a LLM de incluir o URL em turns 2+ da conversa.
+    expect(platformMd).toMatch(/n[ãa]o reenviar o url|n[ãa]o reenviar.*card[áa]pio/i);
+    expect(platformMd.toLowerCase()).toMatch(/n[ãa]o.*repetir.*url|n[ãa]o.*repetir.*card[áa]pio/);
+    // Reenvio só em casos específicos
+    expect(platformMd).toMatch(/manda o link|n[ãa]o consegui abrir|erro operacional/i);
+  });
+
+  it("REGRA CRÍTICA: NÃO pedir permissão para vender (sem 'quer que eu sugira?', 'se quiser, posso?')", () => {
+    // Anti-pattern "Quer que eu sugira?" / "Se quiser, posso..." transfere
+    // a condução para o cliente. Sarah deve assumir a postura comercial.
+    expect(platformMd).toMatch(/n[ãa]o pedir permiss[ãa]o para vender|n[ãa]o pedir permiss[ãa]o/i);
+    // Os anti-patterns devem estar listados como ERRADO
+    expect(platformMd).toMatch(/Quer que eu sugira\?|Posso te indicar\?|Gostaria que eu/i);
+    // Exemplo de forma CORRETA deve existir (condução afirmativa)
+    expect(platformMd).toMatch(/CERTO|vou te (orientar|ajudar)|voc[êe]s preferem/i);
+  });
+
+  it("REGRA: não repetir perguntas já respondidas (party_size, ocasião, etc.)", () => {
+    // Regra reforçada após bug do segundo turno (LLM perguntava de novo
+    // "Vocês são 6 pessoas, certo?").
+    expect(platformMd.toLowerCase()).toMatch(/n[ãa]o repetir perguntas|j[áa] (informou|respondeu|disse)/);
+    expect(platformMd).toMatch(/party_size|party_size|pessoas.*j[áa] (informou|disse)/i);
+  });
+
+  it("define sequência pós-cardápio (turn 2/3/N) com comportamentos esperados", () => {
+    // A LLM precisa de uma sequência explícita: depois de enviar o URL,
+    // cada turno tem um comportamento padrão (não repetir, conduzir,
+    // oferecer complemento, etc.).
+    expect(platformMd).toMatch(/condu[çc][ãa]o p[óo]s-?card[áa]pio|p[óo]s-?card[áa]pio/i);
+    // Cobrir os 5 cenários da sequência: contexto extra, escolha, indecisão, recusa, fechamento
+    expect(platformMd.toLowerCase()).toMatch(/cliente (deu|escolheu|indeciso|disse|quer fechar)/);
+  });
+
+  it("regra: não inventar produto/preço/tamanho — sem fonte, sem citação específica", () => {
+    // Regra explícita anti-invenção.
+    expect(platformMd.toLowerCase()).toContain("não inventar");
+    expect(platformMd.toLowerCase()).toMatch(/n[ãa]o inventar produto|produto.*pre[çc]o.*tamanho/);
+  });
+
+  it("regra: no máximo UMA pergunta principal por mensagem", () => {
+    expect(platformMd).toMatch(/M[ÁA]XIMO UMA pergunta|m[áa]ximo uma [úu]nica pergunta|uma [úu]nica pergunta principal/);
+  });
+
   it("não repete regras em N lugares — centraliza na plataforma", () => {
     // Verifica que NÃO há uma segunda camada "persona" no diretório playbooks/.
     // (Hoje só existe platform.md; tenant/campaign vivem no DB.)
