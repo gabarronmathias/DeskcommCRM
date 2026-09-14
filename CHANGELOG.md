@@ -10,6 +10,16 @@ Se você roda o G&M CRM numa VPS, **leia a seção da versão para a qual está 
 
 ### Adicionado
 
+- **API de audiência de campanha por recência de compra** (EPIC-21 Athos PARTE 3). `GET /api/v1/customers/purchase-recency` retorna candidatos elegíveis cujo último pedido ocorreu há `inactive_days` ou mais (reativação) ou que nunca compraram (`has_orders=false`, cold lead). Filtros opcionais: `min_orders`, `min_spent_cents`, `status`, `limit` (1-500), `cursor`, `has_orders`. LGPD tratada dentro da RPC: `is_blocked`, `is_anonymized` e contatos sem opt-in explícito de marketing (`consent.marketing.granted_at IS NULL`) são excluídos antes de devolver. Mesma RPC `fn_customers_by_purchase_recency` serve a API REST e a MCP tool `crm_list_customers_by_purchase_recency` — a Sarah consulta durante a conversa para montar uma campanha sem precisar rodar query ad-hoc.
+- **Helper `crm_get_customer_last_order`**: wrapper fino sobre `fn_orders_customer_history` com `limit=1`. Sarah pergunta "qual foi o último pedido de Maria?" sem pagar o custo de trazer a lista inteira.
+- **Migration `20260913210000_0177_customers_by_purchase_recency_rpc.sql`** + apêndice idempotente no `baseline.sql` (issue #128 — `revoke ... from public, anon, authenticated` + `grant ... to authenticated, service_role`).
+- **Teste invariant** (`tests/invariants/customers-by-purchase-recency.test.ts`): cenários B, C, D, E, F, G, H, L do briefing — inatividade, cancelado não conta como última compra, isolamento multi-tenant, LGPD (blocked/anonymized/opt-out/empty consent), paginação cursor, validação de bordas (`inactive_days` fora de faixa, ACL anon).
+- **Doc `docs/integracoes/athos-historical-sync.md`**: contrato de ingestão do histórico Athos (PARTE 5/6 do briefing). Define endpoints de backfill batch + webhook incremental + LGPD + idempotência — pré-requisito para `ATHOS_CAMPAIGN_DATA_READY=SIM`. Hoje = NAO: existe apenas 1 pedido stub `external_provider='athos'` no banco de produção, sem import/backfill implementado.
+
+### Não alterado
+
+- `crm_list_contact_orders` e `crm_get_customer_order_history` da migration 0176 (EPIC-21 PARTE 1/2): preservados como ancestrais da base.
+
 - **Sarah Production V1 RC:** configuração oficial do worker com o tuning homologado,
   scripts genéricos de deploy/healthcheck/smoke/rollback, golden tests para continuidade,
   exactly-once e provider OpenAI, checklist de novo tenant e política de retenção da VPS.

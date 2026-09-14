@@ -16096,6 +16096,247 @@ create index if not exists orders_org_contact_ordered_idx
   where contact_id is not null;
 
 
+-- ---- 20260913210000_0177_customers_by_purchase_recency_rpc ----
+-- EPIC-21 (Athos) PARTE 3: audiencia de campanha por recorrencia de compra.
+-- Filtra contatos elegiveis (nao bloqueado, nao anonimizado, opt-in de
+-- marketing explicito) cujo ultimo pedido elegivel ocorreu ha
+-- p_inactive_days ou mais. Retorna agregados + ultimo pedido com itens
+-- resumidos + top-5 produtos. SECURITY INVOKER + STABLE + filtro manual de
+-- `organization_id`. ACL: revoke public/anon/authenticated + grant
+-- authenticated/service_role (issue #128).
+create or replace function public.fn_customers_by_purchase_recency(
+  p_org uuid,
+  p_inactive_days int,
+  p_min_orders int default 0,
+  p_min_spent_cents bigint default 0,
+  p_status text default 'not_cancelled',
+  p_limit int default 100,
+  p_cursor text default null,
+  p_has_orders boolean default true,
+  p_now timestamptz default now()
+) returns jsonb
+language plpgsql
+stable
+security invoker
+set search_path to 'public', 'pg_temp'
+as $fn$
+declare
+  v_limit int := greatest(1, least(coalesce(p_limit, 100), 500));
+  v_statuses text[] := case
+    when p_status is null or p_status = '' or p_status = 'not_cancelled' then
+      array['pending','paid','fulfilled','shipped','delivered','refunded']::text[]
+    when p_status = 'completed' then
+      array['paid','fulfilled','shipped','delivered']::text[]
+    else
+      array[p_status]::text[]
+  end;
+  v_threshold timestamptz := p_now - make_interval(days => p_inactive_days);
+  v_cursor_ts timestamptz;
+  v_cursor_id uuid;
+  v_candidates jsonb;
+  v_next_cursor text;
+begin
+  if p_inactive_days is null or p_inactive_days < 0 or p_inactive_days > 3650 then
+    raise exception 'inactive_days_out_of_range' using errcode = '22023';
+  end if;
+
+  if p_cursor is not null then
+    begin
+      declare
+        v_decoded text;
+      begin
+        v_decoded := convert_from(decode(p_cursor, 'base64'), 'UTF8');
+        v_cursor_ts := split_part(v_decoded, '|', 1)::timestamptz;
+        v_cursor_id := split_part(v_decoded, '|', 2)::uuid;
+      end;
+    exception when others then
+      raise exception 'cursor_invalid' using errcode = '22023';
+    end;
+  end if;
+
+  with eligible_contacts as (
+    select
+      c.id as contact_id,
+      c.display_name,
+      c.phone_number,
+      c.last_activity_at,
+      c.tags,
+      (c.consent -> 'marketing' ->> 'granted_at') is not null as has_marketing_consent
+    from public.contacts c
+    where c.organization_id = p_org
+      and c.is_merged_into is null
+      and c.is_blocked = false
+      and c.is_anonymized = false
+  ),
+  orders_agg as (
+    select
+      o.contact_id,
+      count(*) as total_orders,
+      coalesce(sum(o.total_cents) filter (where o.status not in ('cancelled','refunded')), 0)::bigint as total_spent_cents,
+      max(o.ordered_at) as last_order_at,
+      (
+        select o2.id
+          from public.orders o2
+         where o2.organization_id = p_org
+           and o2.contact_id = o.contact_id
+           and o2.status = any(v_statuses)
+         order by o2.ordered_at desc, o2.id desc
+         limit 1
+      ) as last_order_id
+    from public.orders o
+    where o.organization_id = p_org
+      and o.status = any(v_statuses)
+    group by o.contact_id
+  ),
+  filtered as (
+    select
+      ec.contact_id,
+      ec.display_name,
+      ec.phone_number,
+      ec.last_activity_at,
+      ec.tags,
+      ec.has_marketing_consent,
+      coalesce(oa.total_orders, 0) as total_orders,
+      coalesce(oa.total_spent_cents, 0) as total_spent_cents,
+      oa.last_order_at,
+      oa.last_order_id,
+      case
+        when oa.last_order_at is null then null
+        else greatest(0, extract(epoch from (p_now - oa.last_order_at))::bigint / 86400)
+      end as days_since_last_order
+    from eligible_contacts ec
+    left join orders_agg oa on oa.contact_id = ec.contact_id
+    where
+      (
+        (p_has_orders = true  and oa.last_order_at is not null and oa.last_order_at <= v_threshold)
+        or
+        (p_has_orders = false and oa.last_order_at is null)
+      )
+      and coalesce(oa.total_orders, 0) >= p_min_orders
+      and coalesce(oa.total_spent_cents, 0) >= p_min_spent_cents
+  ),
+  page_raw as (
+    select f.*
+      from filtered f
+     where
+       p_cursor is null
+       or (f.last_order_at, f.contact_id) < (v_cursor_ts, v_cursor_id)
+     order by
+       case when p_has_orders then f.last_order_at end desc nulls last,
+       f.contact_id desc
+     limit v_limit + 1
+  ),
+  page as (
+    select * from page_raw limit v_limit
+  ),
+  has_more as (
+    select count(*) > v_limit as more from page_raw
+  ),
+  last_row as (
+    select contact_id,
+           coalesce(last_order_at::text, 'cold') as cursor_ts_part
+      from page
+     order by
+       case when p_has_orders then last_order_at end desc nulls last,
+       contact_id desc
+     limit 1
+  )
+  select
+    coalesce(jsonb_agg(row_to_json(p)), '[]'::jsonb),
+    case
+      when (select more from has_more) then
+        encode(convert_to(
+          (select cursor_ts_part from last_row) || '|' || (select contact_id::text from last_row),
+          'UTF8'
+        ), 'base64')
+      else null
+    end
+    into v_candidates, v_next_cursor
+    from (
+      select
+        page.contact_id,
+        page.display_name,
+        page.phone_number,
+        page.last_activity_at,
+        coalesce(page.tags, '{}'::text[]) as tags,
+        page.has_marketing_consent,
+        page.total_orders,
+        page.total_spent_cents,
+        case
+          when page.total_orders = 0 then 0
+          else round(page.total_spent_cents::numeric / page.total_orders::numeric)::bigint
+        end as avg_ticket_cents,
+        page.last_order_at,
+        page.last_order_id,
+        page.days_since_last_order,
+        (
+          select coalesce(jsonb_agg(row_to_json(li)), '[]'::jsonb)
+            from (
+              select
+                foi.product_name_snapshot as product_name,
+                foi.quantity,
+                foi.line_total_cents,
+                foi.unit_price_cents,
+                foi.selected_modifiers
+                from public.food_order_items foi
+               where foi.organization_id = p_org
+                 and foi.order_id = page.last_order_id
+               order by foi.created_at
+               limit 10
+            ) li
+        ) as last_order_items,
+        (
+          select coalesce(jsonb_agg(row_to_json(p2)), '[]'::jsonb)
+            from (
+              select
+                foi.product_name_snapshot as product_name,
+                sum(foi.quantity)::int as quantity,
+                count(distinct foi.order_id)::int as order_count
+                from public.food_order_items foi
+                join public.orders o on o.id = foi.order_id and o.organization_id = foi.organization_id
+               where foi.organization_id = p_org
+                 and o.contact_id = page.contact_id
+                 and o.status = any(v_statuses)
+               group by foi.product_name_snapshot
+               order by quantity desc, order_count desc, foi.product_name_snapshot asc
+               limit 5
+            ) p2
+        ) as favorite_products,
+        (
+          select jsonb_build_object(
+            'external_id', o.external_id,
+            'external_provider', o.external_provider,
+            'status', o.status,
+            'total_cents', o.total_cents,
+            'currency', coalesce(o.currency, 'BRL')
+          )
+            from public.orders o
+           where o.id = page.last_order_id
+             and o.organization_id = p_org
+        ) as last_order_meta
+      from page
+    ) p;
+
+  return jsonb_build_object(
+    'candidates', v_candidates,
+    'next_cursor', v_next_cursor,
+    'inactive_days', p_inactive_days,
+    'min_orders', p_min_orders,
+    'min_spent_cents', p_min_spent_cents,
+    'has_orders', p_has_orders,
+    'queried_at', p_now
+  );
+end;
+$fn$;
+
+revoke execute on function public.fn_customers_by_purchase_recency(
+  uuid, int, int, bigint, text, int, text, boolean, timestamptz
+) from public, anon, authenticated;
+grant execute on function public.fn_customers_by_purchase_recency(
+  uuid, int, int, bigint, text, int, text, boolean, timestamptz
+) to authenticated, service_role;
+
+
 -- ---- VARREDURA anon: fechamento auto-curativo do baseline ----
 -- O dump concede EXECUTE em funções novas a anon por default. Como o baseline
 -- cresce por apêndice, este fechamento precisa permanecer depois de TODA DDL

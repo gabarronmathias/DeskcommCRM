@@ -38,6 +38,26 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["vender", "atender"],
   },
   {
+    name: "crm_get_customer_last_order",
+    category: "read",
+    rotulo: "Ver o ultimo pedido do cliente",
+    explicacao:
+      "Devolve o ultimo pedido do cliente pelo telefone - data, valor, itens e quantos dias fazem. Mais barato que pedir o historico inteiro, para responder 'quando foi a ultima compra?' sem pesar a conversa.",
+    oQueToca: "Ultimo pedido do cliente",
+    risco: "seguro",
+    pacotes: ["vender", "atender"],
+  },
+  {
+    name: "crm_list_customers_by_purchase_recency",
+    category: "read",
+    rotulo: "Listar audiencia por tempo sem comprar",
+    explicacao:
+      "Lista clientes da loja que estao ha X dias sem comprar (reativacao) ou que nunca compraram (aquisicao). A lista ja vem com LGPD aplicada: bloqueado, anonimizado e sem opt-in de marketing sao excluidos antes de devolver. Use para montar campanhas - nao dispara mensagem sozinho.",
+    oQueToca: "Audiencia de campanha por recorrencia",
+    risco: "seguro",
+    pacotes: ["vender", "reter"],
+  },
+  {
     name: "crm_list_privacy_requests",
     category: "read",
     rotulo: "Ver pedidos de privacidade",
