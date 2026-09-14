@@ -87,6 +87,12 @@ function semear(): void {
       ('${USER_A}', '${ORG_A}', 'admin'),
       ('${USER_B}', '${ORG_B}', 'admin');
 
+    -- Produtos tenant-scoped exigidos pela FK composta de food_order_items.
+    insert into public.food_products (id, organization_id, name, slug, price_cents) values
+      ('${productId(1)}', '${ORG_A}', 'Pizza Margherita', 'pizza-margherita', 1500),
+      ('${productId(2)}', '${ORG_A}', 'Hamburguer', 'hamburguer', 2500),
+      ('${productId(3)}', '${ORG_A}', 'Sushi Combo', 'sushi-combo', 1000);
+
     insert into public.contacts (id, organization_id, display_name, phone_number) values
       ('${CONTACT_A}', '${ORG_A}', 'Cliente A',  '${PHONE_E164}'),
       ('${CONTACT_B}', '${ORG_B}', 'Cliente B',  '${PHONE_E164}');
