@@ -95,3 +95,74 @@ export const customerPhoneParamSchema = z
   .max(32)
   .regex(/^[\d\s()+.-]+$/, "Use apenas dígitos e separadores comuns (+, espaço, -, (, )).");
 export type CustomerPhoneParam = z.infer<typeof customerPhoneParamSchema>;
+
+/**
+ * Query params de `GET /api/v1/customers/purchase-recency` (EPIC-21 PARTE 3).
+ *
+ * Caso de uso principal: Sarah consulta "clientes que não compram há X dias"
+ * pra campanha de reativação. `inactive_days` é obrigatório — é o que define
+ * a audiência. Os demais filtros estreitam a janela sem mudar a semântica.
+ *
+ * LGPD é tratada dentro da RPC (ela já exclui `is_blocked`, `is_anonymized`
+ * e contatos sem `consent.marketing.granted_at`). Não duplicamos o filtro
+ * aqui — duplicar dá margem pra divergência se a regra mudar.
+ *
+ * Paginação: cursor opaco retornado por chamada anterior. Limite máximo 500
+ * (combina com `greatest(1, least(coalesce(p_limit, 100), 500))` da RPC) —
+ * Sarah normalmente consome página por página enquanto conversa; campanhas
+ * batch podem puxar páginas até esgotar.
+ */
+export const purchaseRecencyQuerySchema = z.object({
+  inactive_days: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(3650)
+    .describe(
+      "Janela mínima de inatividade em dias. 0 = audiência vazia (ninguém tem last_order_at <= now).",
+    ),
+  min_orders: z.coerce.number().int().min(0).max(10000).default(0),
+  min_spent_cents: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
+  status: z
+    .enum([
+      "pending",
+      "paid",
+      "cancelled",
+      "fulfilled",
+      "shipped",
+      "delivered",
+      "refunded",
+      "not_cancelled",
+      "completed",
+    ])
+    .default("not_cancelled")
+    .describe("Filtro dos pedidos elegíveis para o agregado."),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  cursor: z.string().min(1).max(512).optional(),
+  has_orders: z
+    .union([z.literal("true"), z.literal("false")])
+    .default("true")
+    .transform((v) => v === "true")
+    .describe(
+      "true (default) = reativação: só quem TEM pedido e está inativo. " +
+        "false = aquisição: só quem NUNCA comprou (cold lead).",
+    ),
+});
+export type PurchaseRecencyQuery = z.infer<typeof purchaseRecencyQuerySchema>;
+
+/**
+ * Input do MCP tool `crm_get_customer_last_order` (helper thin sobre
+ * `fn_orders_customer_history` com limit=1). Reutiliza o schema de telefone
+ * já existente.
+ */
+export const customerLastOrderInputSchema = z.object({
+  phone: z
+    .string()
+    .trim()
+    .min(8)
+    .max(32)
+    .describe(
+      "Telefone do cliente em qualquer formato comum. A RPC normaliza para E.164.",
+    ),
+});
+export type CustomerLastOrderInput = z.infer<typeof customerLastOrderInputSchema>;
