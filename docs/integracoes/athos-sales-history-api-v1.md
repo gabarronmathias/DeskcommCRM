@@ -12,11 +12,19 @@ de clientes elegíveis para campanhas de reativação.
 
 ## 1. Base URL
 
+**Ambiente disponível agora para testes — Homologação:**
+
+```
+https://homologacao-crm.gabarronmathias.com
+```
+
+Todas as rotas e exemplos abaixo usam exclusivamente esse ambiente.
+
+**Produção — liberar somente após homologação; não utilizar ainda:**
+
 ```
 https://crm.gabarronmathias.com
 ```
-
-Todas as rotas abaixo são prefixadas por essa base.
 
 ---
 
@@ -70,7 +78,7 @@ frequência).
 ```bash
 curl -sS \
   -H "Authorization: Bearer $TOKEN" \
-  "https://crm.gabarronmathias.com/api/v1/customers/+5511999998888/order-history?limit=10&status=completed"
+  "https://homologacao-crm.gabarronmathias.com/api/v1/customers/+5511999998888/order-history?limit=10&status=completed"
 ```
 
 ### 3.4 Exemplo de resposta (200)
@@ -211,7 +219,7 @@ está (ou deixou de estar) na lista.
 ```bash
 curl -sS \
   -H "Authorization: Bearer $TOKEN" \
-  "https://crm.gabarronmathias.com/api/v1/customers/purchase-recency?inactive_days=30&limit=100"
+  "https://homologacao-crm.gabarronmathias.com/api/v1/customers/purchase-recency?inactive_days=30&limit=100"
 ```
 
 ### 4.4 Exemplo de resposta (200)

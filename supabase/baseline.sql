@@ -12466,7 +12466,9 @@ alter table public.orders
     'nuvemshop'::text,
     'vtex'::text,
     'shopify'::text,
-    'deskcomm_food'::text
+    'deskcomm_food'::text,
+    'gm_crm_food'::text,
+    'athos'::text
   ]));
 
 create unique index if not exists orders_id_org_uq
@@ -16335,6 +16337,12 @@ revoke execute on function public.fn_customers_by_purchase_recency(
 grant execute on function public.fn_customers_by_purchase_recency(
   uuid, int, int, bigint, text, int, text, boolean, timestamptz
 ) to authenticated, service_role;
+
+
+-- ---- 20260913220000_0178_orders_external_provider_athos ----
+-- 0178_orders_external_provider_athos
+-- O valor 'athos' ja esta consolidado no unico bloco que cria
+-- orders_external_provider_check; nao reconstruir constraints no apendice.
 
 
 -- ---- VARREDURA anon: fechamento auto-curativo do baseline ----
