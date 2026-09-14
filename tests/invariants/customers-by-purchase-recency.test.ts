@@ -101,23 +101,23 @@ function semear(): void {
     -- slot 7: happy path, opt-in, ultimo pedido 29 dias atras -> FORA (ainda recente)
     -- slot 8: happy path, opt-in, ultimo pedido 30 dias atras -> DENTRO (limite)
     insert into public.contacts
-      (id, organization_id, display_name, phone_number, is_blocked, is_anonymized, consent)
+      (id, organization_id, display_name, phone_number, is_blocked, is_anonymized, anonymized_at, consent)
     values
-      ('${contactId(1)}', '${ORG_A}', 'Happy 60d',     '${PHONE_E164}',       false, false,
+      ('${contactId(1)}', '${ORG_A}', 'Happy 60d',     '${PHONE_E164}',       false, false, null,
         '{"marketing":{"granted_at":"2026-01-01T00:00:00Z","source":"web","version":"1"}}'::jsonb),
-      ('${contactId(2)}', '${ORG_A}', 'Blocked',         '${PHONE_BLOCKED}',    true,  false,
+      ('${contactId(2)}', '${ORG_A}', 'Blocked',         '${PHONE_BLOCKED}',    true,  false, null,
         '{"marketing":{"granted_at":"2026-01-01T00:00:00Z","source":"web","version":"1"}}'::jsonb),
-      ('${contactId(3)}', '${ORG_A}', 'Anonymized',      '${PHONE_ANON}',       false, true,
+      ('${contactId(3)}', '${ORG_A}', 'Anonymized',      '${PHONE_ANON}',       false, true, '${P_NOW}',
         '{"marketing":{"granted_at":"2026-01-01T00:00:00Z","source":"web","version":"1"}}'::jsonb),
-      ('${contactId(4)}', '${ORG_A}', 'OptOut',          '${PHONE_OPTOUT}',     false, false,
+      ('${contactId(4)}', '${ORG_A}', 'OptOut',          '${PHONE_OPTOUT}',     false, false, null,
         '{"marketing":{"granted_at":null,"source":null,"version":null}}'::jsonb),
-      ('${contactId(5)}', '${ORG_A}', 'ColdLead',        '+5511888880001',      false, false,
+      ('${contactId(5)}', '${ORG_A}', 'ColdLead',        '+5511888880001',      false, false, null,
         '{"marketing":{"granted_at":"2026-01-01T00:00:00Z","source":"web","version":"1"}}'::jsonb),
-      ('${contactId(6)}', '${ORG_A}', 'Recent10d',       '+5511888880002',      false, false,
+      ('${contactId(6)}', '${ORG_A}', 'Recent10d',       '+5511888880002',      false, false, null,
         '{"marketing":{"granted_at":"2026-01-01T00:00:00Z","source":"web","version":"1"}}'::jsonb),
-      ('${contactId(7)}', '${ORG_A}', 'Recent29d',       '+5511888880003',      false, false,
+      ('${contactId(7)}', '${ORG_A}', 'Recent29d',       '+5511888880003',      false, false, null,
         '{"marketing":{"granted_at":"2026-01-01T00:00:00Z","source":"web","version":"1"}}'::jsonb),
-      ('${contactId(8)}', '${ORG_A}', 'Edge30d',         '+5511888880004',      false, false,
+      ('${contactId(8)}', '${ORG_A}', 'Edge30d',         '+5511888880004',      false, false, null,
         '{"marketing":{"granted_at":"2026-01-01T00:00:00Z","source":"web","version":"1"}}'::jsonb);
 
     -- contato da org B (NAO pode aparecer em audiencia de org A)
