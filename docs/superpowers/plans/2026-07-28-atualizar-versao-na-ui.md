@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** O dono de uma instalação self-host atualiza o DeskcommCRM clicando num botão na própria tela, sem abrir terminal nem SSH.
+**Goal:** O dono de uma instalação self-host atualiza o G&M CRM clicando num botão na própria tela, sem abrir terminal nem SSH.
 
 **Architecture:** O app roda em container sem acesso ao host, então ele não executa a atualização — ele **publica uma intenção** em duas tabelas de instância. Um agente no host (`agent.sh`, cron a cada 5 min, mesmo mecanismo do cron do `event-log-drain` que já existe) faz `POST` de heartbeat para o app, lê na resposta se alguém pediu atualização e, se sim, roda `bash update.sh --to <tag>` sob `flock`, reportando cada passo. O que atravessa a fronteira é um booleano, nunca um comando.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Worktree:** `~/DeskcommCRM-update`, branch `feat/atualizar-pela-ui` (já criada a partir de `origin/main`). Não trabalhe no clone principal — ele está sujo com trabalho de outra sessão.
+- **Worktree:** `~/G&M CRM-update`, branch `feat/atualizar-pela-ui` (já criada a partir de `origin/main`). Não trabalhe no clone principal — ele está sujo com trabalho de outra sessão.
 - **Idioma:** toda cópia de tela, mensagem de erro e comentário em **pt-BR**, para pessoa que não programa. Sem jargão de container/deploy na UI.
 - **Wrappers obrigatórios:** toda rota `/api/v1/*` usa `ok()` / `fail()` de `lib/api/wrappers.ts`. `ok()` já envelopa em `{data}` — nunca `ok({data: x})`. A assinatura de `fail` é **posicional no status**: `fail(code, message, status, opts?)`, onde `opts` aceita `{ details, requestId, headers }`.
 - **Auth:** sempre `loadAuthUser()` (que usa `supabase.auth.getUser()`); **nunca** `getSession()`.
@@ -211,7 +211,7 @@ Expected: PASS — os 3 casos novos verdes e nenhuma regressão nos demais invar
 - [ ] **Step 7: Commit**
 
 ```bash
-cd ~/DeskcommCRM-update
+cd ~/G&M CRM-update
 git add supabase/migrations/20260728120000_0085_system_self_update.sql \
         supabase/baseline.sql supabase/migrations/MANIFEST.md \
         tests/invariants/system-self-update.test.ts
@@ -279,7 +279,7 @@ Se você usa número próprio no WhatsApp, reconecte depois de atualizar.
 
 ## [1.0.0] — 2026-07-27
 
-Primeira versão marcada do DeskcommCRM.
+Primeira versão marcada do G&M CRM.
 `;
 
 describe("extractChangelogSection", () => {
@@ -1550,7 +1550,7 @@ import { apiClient } from "@/lib/api/client";
 import { useSystemVersion } from "@/hooks/system/useSystemVersion";
 import { Button } from "@/components/ui/button";
 
-const COMANDO_MANUAL = "cd DeskcommCRM && bash hostgator-setup-kit/update.sh";
+const COMANDO_MANUAL = "cd G&M CRM && bash hostgator-setup-kit/update.sh";
 
 const PASSOS = [
   { chave: "backup", texto: "Guardando uma cópia de segurança dos seus dados" },
@@ -1851,9 +1851,9 @@ report() { post "{\"kind\":\"run_progress\",\"run_id\":\"${RUN_ID}\",\"step\":\"
 PREV_IMAGE="$(docker compose -f "$COMPOSE" images -q app 2>/dev/null | head -1)"
 
 set +e
-DESKCOMM_AGENT_REPORT=1 \
-DESKCOMM_AGENT_PREV_IMAGE="$PREV_IMAGE" \
-DESKCOMM_AGENT_REPORT_CMD="$(declare -f report); report" \
+GMCRM_AGENT_REPORT=1 \
+GMCRM_AGENT_PREV_IMAGE="$PREV_IMAGE" \
+GMCRM_AGENT_REPORT_CMD="$(declare -f report); report" \
   bash "$(dirname "$0")/update.sh" --to "$LATEST_TAG" >"$LOG" 2>&1
 RC=$?
 set -e
@@ -1925,16 +1925,16 @@ fi
 4. No bloco 5, use a imagem versionada:
 ```bash
 step "Baixando a versão nova do app e reiniciando"
-export APP_IMAGE="ghcr.io/melgarafael/deskcommcrm:${TARGET_TAG#v}"
+export APP_IMAGE="ghcr.io/melgarafael/gm-crm:${TARGET_TAG#v}"
 docker compose -f "$COMPOSE" pull
 docker compose -f "$COMPOSE" up -d
 ```
 
 5. Depois de cada um dos três passos, informe o agente quando ele estiver dirigindo:
 ```bash
-[ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" backup   # após o backup
-[ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" codigo   # após o checkout
-[ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" banco    # após o baseline
+[ -n "${GMCRM_AGENT_REPORT:-}" ] && eval "${GMCRM_AGENT_REPORT_CMD}" backup   # após o backup
+[ -n "${GMCRM_AGENT_REPORT:-}" ] && eval "${GMCRM_AGENT_REPORT_CMD}" codigo   # após o checkout
+[ -n "${GMCRM_AGENT_REPORT:-}" ] && eval "${GMCRM_AGENT_REPORT_CMD}" banco    # após o baseline
 ```
 
 6. No bloco 6, faça o script **sair com código diferente de zero** quando o app não voltar saudável — é o que dispara o rollback no agente:

@@ -3,7 +3,7 @@
 // Uso: node loop/update-feature.ts --id G1-01 --passes true --verification '<json>'
 //
 // Altera SOMENTE os campos "passes" e "verification" da feature indicada.
-// Qualquer outra mutação do plano é ato humano (DESKCOMM_GOV_PLAN_EDIT=1) —
+// Qualquer outra mutação do plano é ato humano (GMCRM_GOV_PLAN_EDIT=1) —
 // e o pre-commit (loop/hooks/validate-features.sh) revalida o diff de qualquer forma.
 //
 // Notas de runtime (decisão documentada):

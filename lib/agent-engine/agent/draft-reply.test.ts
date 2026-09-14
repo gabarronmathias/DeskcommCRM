@@ -27,7 +27,7 @@ const input = {
 const AGENT: PublishedAgentConfig = {
   agentId: "agent-1",
   versionId: "version-1",
-  agentName: "Bot Deskcomm",
+  agentName: "Bot Sarah",
   systemPrompt: "Você é a vendedora da loja X.",
   provider: "anthropic",
   model: "claude-sonnet-4-6",

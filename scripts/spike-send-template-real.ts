@@ -9,7 +9,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTemplate } from "@/lib/channels/meta/send-template";
 
-const TEMPLATE = "deskcomm_prova_webhook_0088";
+const TEMPLATE = "gm_crm_prova_webhook_0088";
 const IDIOMA = "pt_BR";
 const DESTINO = "5531998966398";
 

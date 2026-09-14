@@ -44,12 +44,12 @@ que quase sempre é esquecida: **como isto chega a um clone que JÁ RODA e vai a
 
 | | |
 |---|---|
-| **Worktree** | `/Users/rafaelmelgaco/DeskcommCRM-marca` |
+| **Worktree** | `/Users/rafaelmelgaco/G&M CRM-marca` |
 | **Branch** | `feat/marca-propria`, criada de `origin/main` @ `f9abedd0` |
 | **Banco** | Supabase local `127.0.0.1:54321` — **compartilhado com outras sessões**, checar antes de DDL |
 | **Blueprint** | https://claude.ai/code/artifact/1aa1b097-d6f4-4aff-b388-194b1e546ca2 |
 
-> ⚠️ O worktree principal (`/Users/rafaelmelgaco/DeskcommCRM`) é de **outra sessão** —
+> ⚠️ O worktree principal (`/Users/rafaelmelgaco/G&M CRM`) é de **outra sessão** —
 > mudou de `fix/alertas-de-seguranca-github` para `fix/issues-triadas` no meio desta.
 > Não commitar lá.
 
@@ -107,7 +107,7 @@ de um agente que rodou o cálculo — e está marcado de propósito.
 
 | Defeito | Evidência | Fase que conserta |
 |---|---|---|
-| **Gate de marca verde enquanto a marca vaza** — `/Deskcomm/` case-**sensitive** | `tests/unit/branding.test.ts:90`; passam `support@deskcomm.com.br` (`app/account-suspended/page.tsx:17`), `suporte@deskcomm.app` (`app/app/settings/billing/page.tsx:26`), `deskcommcrm-recovery-codes.txt` (`components/auth/RecoveryCodesPanel.tsx:34`) | 1 |
+| **Gate de marca verde enquanto a marca vaza** — `/G&M CRM/` case-**sensitive** | `tests/unit/branding.test.ts:90`; passam `support@gabarronmathias.com.br` (`app/account-suspended/page.tsx:17`), `suporte@gabarronmathias.com.br` (`app/app/settings/billing/page.tsx:26`), `gm-crm-recovery-codes.txt` (`components/auth/RecoveryCodesPanel.tsx:34`) | 1 |
 | **Colisão de cor Δ=0,0° no tema escuro** — `--color-success` é a mesma string de `--color-accent-400` | `app/globals.css:167` e `:193`, ambos `#82a077` | 1 |
 | **Corrida no `settings` jsonb** — SELECT→spread→UPDATE sem `.select()`; `visibility_mode` mora no mesmo jsonb | `app/actions/settings/updateTenant.ts:56-83` | 3 |
 | **`[data-theme="light"]` não existe** — `:root` casa só `<html>`, então tema claro não é escopável em subárvore | `grep -c 'data-theme="light"' app/globals.css` = 0 | 1 |
@@ -222,7 +222,7 @@ está **verde**: toda spec do disco está declarada em alguma das três listas.
 
 ## Uma armadilha da suíte e2e que vale além deste épico
 
-`scripts/seed-e2e-system-update.ts:52-68` **promove `e2e-admin@deskcomm.test` a
+`scripts/seed-e2e-system-update.ts:52-68` **promove `e2e-admin@gabarronmathias.test` a
 `platform_admin`** — insere, e reativa se estiver revogado. **Nenhum seed do repo
 revoga**: o único `revoked_at` que existe é em `seed-e2e-agente-mcp.ts`, sobre tokens de
 API. Como as duas partes do job `e2e` compartilham o mesmo banco sem reset, **toda a
@@ -230,7 +230,7 @@ parte 2 roda com esse admin já promovido**.
 
 Consequência para qualquer spec que queira provar comportamento de **admin de tenant**:
 usar o `e2e-admin` mede o produto errado e passa verde. Por isso a Fase 3 cria
-`e2e-marca-admin@deskcomm.test`, sem linha em `platform_admins`, e a spec **afirma a
+`e2e-marca-admin@gabarronmathias.test`, sem linha em `platform_admins`, e a spec **afirma a
 precondição** (zero linhas ativas) antes de medir — senão verde é resultado de
 instrumento morto.
 
@@ -428,7 +428,7 @@ não remover da build. Grep sobre arquivo inexistente devolve vazio, indistingu�
 
 `lib/lgpd/pdf-renderer.tsx:277` imprime, no documento entregue ao **titular de dados**:
 
-> `DeskcommCRM · Relatório LGPD Art. 18 II · DPO: contato via canal oficial do controlador`
+> `G&M CRM · Relatório LGPD Art. 18 II · DPO: contato via canal oficial do controlador`
 
 Dois defeitos. O primeiro é o vazamento de marca (ângulo 3 pega). O segundo ninguém tocou:
 **o sistema já sabe o DPO e não o imprime** — `lib/env.ts:134` tem `LGPD_DPO_EMAIL` e
@@ -472,9 +472,9 @@ da própria razão social, aí sim é campo novo, e a razão estará escrita aqu
 
 | Achado | Evidência |
 |---|---|
-| **Todo projeto Supabase do revendedor nasce chamado "DeskcommCRM"** | `install.sh:918` usa `${APP_NAME:-DeskcommCRM}`; `APP_NAME` só é coletado em `:1024` — **106 linhas depois** |
+| **Todo projeto Supabase do revendedor nasce chamado "G&M CRM"** | `install.sh:918` usa `${APP_NAME:-G&M CRM}`; `APP_NAME` só é coletado em `:1024` — **106 linhas depois** |
 | **O primeiro e-mail que o cliente do revendedor recebe diz o nome do nosso produto** | `supabase/templates/confirmation.html:4` e `recovery.html:4`; e **nenhum script sobe esses templates** — só `config.toml` (Supabase local) e um teste |
-| **A tela de dinheiro entrega nosso contato ao cliente do revendedor** | `lib/navigation/registry.ts:453` (porta de 1ª classe, "Billing") → `app/app/settings/billing/page.tsx:26` mostra `suporte@deskcomm.app` |
+| **A tela de dinheiro entrega nosso contato ao cliente do revendedor** | `lib/navigation/registry.ts:453` (porta de 1ª classe, "Billing") → `app/app/settings/billing/page.tsx:26` mostra `suporte@gabarronmathias.com.br` |
 
 ---
 
@@ -750,7 +750,7 @@ Commits: `0513755c` (RPC atômica + invariante) · `032ba43a` (camada na pilha) 
 
 ### O que a tela mediu, com admin de tenant PURO
 
-**A precondição falhou primeiro, e era a armadilha prevista:** `e2e-admin@deskcomm.test`
+**A precondição falhou primeiro, e era a armadilha prevista:** `e2e-admin@gabarronmathias.test`
 **era** `platform_admin` (`seed-e2e-system-update.ts:52-68` promove e nada revoga). Medi
 `count = 1`, revoguei, reafirmei `count = 0`, e só então testei. Sem isso o teste teria
 passado verde medindo o produto errado.
@@ -788,7 +788,7 @@ aparecer, e o sintoma lê como "MFA quebrou". Fica registrado para a próxima se
 
 ### Estado deixado no banco local (compartilhado)
 
-- `e2e-admin@deskcomm.test` segue **revogado** de `platform_admins`. É o estado correto do
+- `e2e-admin@gabarronmathias.test` segue **revogado** de `platform_admins`. É o estado correto do
   seed base; quem precisa dele promovido é `seed-e2e-system-update.ts`, que repromove ao
   rodar. Restaurar seria propagar o defeito.
 - A marca da org de teste (`E2E Test Org`) ficou gravada com `#b3261e`.

@@ -35,7 +35,7 @@ exposes_contracts:
 status: pending
 created_at: 2026-05-05
 owner: Rafael Melgaço
-research_dossier: ~/tino-ai/Tino/research/pre-development/ai-agent-framework-deskcomm-whatsapp/
+research_dossier: ~/tino-ai/Tino/research/pre-development/ai-agent-framework-gm-crm-whatsapp/
 specs:
   - docs/specs/10-spec-ai-agents-runtime.md
   - docs/specs/11-spec-mcp-server-internal.md
@@ -50,7 +50,7 @@ specs:
 > - **Spec 10** (`docs/specs/10-spec-ai-agents-runtime.md`) — schema + endpoints + worker + runtime
 > - **Spec 11** (`docs/specs/11-spec-mcp-server-internal.md`) — catálogo MCP + auth + transport
 > - **Spec 12** (`docs/specs/12-spec-ai-agents-ui.md`) — telas, fluxos, wireframes
-> - **Research dossier** (`~/tino-ai/Tino/research/pre-development/ai-agent-framework-deskcomm-whatsapp/`) — decisão de stack e tradeoffs
+> - **Research dossier** (`~/tino-ai/Tino/research/pre-development/ai-agent-framework-gm-crm-whatsapp/`) — decisão de stack e tradeoffs
 >
 > **Decisões locked do dossier (não revisitar)**:
 > 1. Vercel AI SDK v6 direto. Sem Mastra, sem LangGraph, sem OpenAI Agents SDK.
@@ -73,7 +73,7 @@ specs:
 
 ## 1. Objetivo
 
-Entregar o **módulo de agentes configuráveis de IA** do DeskcommCRM: cada tenant configura N agentes com prompt + provider/model + chave BYO + tools MCP + sessão WhatsApp + gatilhos + prioridade. Um webhook WAHA inbound dispara o dispatcher que seleciona o agente top-priority cujo gatilho match, executa o `ToolLoopAgent` (Vercel AI SDK v6) contra MCP server interno (que expõe os endpoints REST existentes do CRM), e devolve a resposta via `WAHA sendText` na mesma sessão. UI permite Save/Publish com versionamento atômico, test mode com trace, log de execuções em realtime.
+Entregar o **módulo de agentes configuráveis de IA** do G&M CRM: cada tenant configura N agentes com prompt + provider/model + chave BYO + tools MCP + sessão WhatsApp + gatilhos + prioridade. Um webhook WAHA inbound dispara o dispatcher que seleciona o agente top-priority cujo gatilho match, executa o `ToolLoopAgent` (Vercel AI SDK v6) contra MCP server interno (que expõe os endpoints REST existentes do CRM), e devolve a resposta via `WAHA sendText` na mesma sessão. UI permite Save/Publish com versionamento atômico, test mode com trace, log de execuções em realtime.
 
 ## 2. Resultado esperado (Definition of Done do Epic)
 
@@ -1545,7 +1545,7 @@ exposes:
   - `docs/specs/11-spec-mcp-server-internal.md` — catálogo MCP, transport, auth
   - `docs/specs/12-spec-ai-agents-ui.md` — telas, fluxos, wireframes
 - **Research dossier** (decisão de stack):
-  - `~/tino-ai/Tino/research/pre-development/ai-agent-framework-deskcomm-whatsapp/00-brief.md` ... `09-handoff.md`
+  - `~/tino-ai/Tino/research/pre-development/ai-agent-framework-gm-crm-whatsapp/00-brief.md` ... `09-handoff.md`
 - **Specs de referência** (consumidos):
   - Spec 01 (auth/RBAC/api_tokens)
   - Spec 03 (WAHA + channel_sessions + webhook)

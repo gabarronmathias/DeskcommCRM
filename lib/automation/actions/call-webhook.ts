@@ -90,7 +90,7 @@ export async function executeCallWebhook(
   });
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Deskcomm-Event": ctx.event.event_type,
+    "X-GM-Event": ctx.event.event_type,
   };
   // secret_enc (cifrado at-rest, migration 0041) tem precedência; config.secret
   // plaintext fica só como legado pré-retrofit. Decrypt indisponível (chave da
@@ -101,7 +101,7 @@ export async function executeCallWebhook(
     secret = await decryptWebhookSecret(ctx.admin, config.secret_enc);
   }
   if (secret) {
-    headers["X-Deskcomm-Signature"] = createHmac("sha256", secret).update(body).digest("hex");
+    headers["X-GM-Signature"] = createHmac("sha256", secret).update(body).digest("hex");
   }
 
   const retryDelaysMs = opts.retryDelaysMs ?? RETRY_DELAYS_MS;

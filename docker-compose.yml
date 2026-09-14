@@ -1,4 +1,4 @@
-# Stack local de dependências externas para o DeskcommCRM.
+# Stack local de dependências externas para o G&M CRM.
 #
 # Sobe apenas o WAHA (Plus / NOWEB) pra desenvolvimento. Postgres + Auth + Storage
 # vêm do Supabase Cloud (ou supabase local CLI separadamente, conforme o time preferir).
@@ -20,7 +20,7 @@ services:
   waha:
     image: devlikeapro/waha:noweb
     platform: linux/amd64
-    container_name: deskcomm-waha
+    container_name: gm-crm-waha
     restart: unless-stopped
     ports:
       - "3030:3000"
@@ -61,7 +61,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: deskcomm-agent-worker
+    container_name: gm-crm-agent-worker
     restart: unless-stopped
     env_file:
       - .env

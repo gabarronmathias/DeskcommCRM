@@ -1,6 +1,6 @@
 # Doutrina de Packaging e Distribuição
 
-> Lei de arquitetura para tudo que roda no disco de quem instalou o DeskcommCRM: imagens,
+> Lei de arquitetura para tudo que roda no disco de quem instalou o G&M CRM: imagens,
 > composes, tags e o kit de instalação. Complementa [`sistema-vivo.md`](./sistema-vivo.md) —
 > não é aspiração, é critério de aceite. Amarrada ao item 15 do Definition of Done
 > (`CLAUDE.md`).
@@ -39,7 +39,7 @@ Se a resposta for "o cliente", a peça está errada e vira imagem publicada.
 
 | | **Nosso** | **Upstream** |
 |---|---|---|
-| Exemplos | `deskcommcrm`, `deskcomm-worker` | WAHA, Redis, Caddy, `serverless-redis-http`, `postgres` |
+| Exemplos | `gm-crm`, `gm-crm-worker` | WAHA, Redis, Caddy, `serverless-redis-http`, `postgres` |
 | Quem constrói | nosso CI, uma vez por versão | terceiro, fora do nosso controle |
 | O que fazemos | publicamos com procedência e versão | **referenciamos com tag pinada** (ver ressalva) |
 | O que **nunca** fazemos | publicar da máquina de um dev | republicar, embalar ou copiar |
@@ -73,7 +73,7 @@ worker:
 
 # CERTO — imagem publicada; o build fica ao lado, como escape
 worker:
-  image: ${WORKER_IMAGE:-ghcr.io/melgarafael/deskcomm-worker:stable}
+  image: ${WORKER_IMAGE:-ghcr.io/melgarafael/gm-crm-worker:stable}
   build: { context: ., dockerfile: Dockerfile.worker }
 ```
 
@@ -108,7 +108,7 @@ OCI — no mínimo `source`, `revision`, `version`, `licenses` — e é constru�
   > **ainda não está** na branch protection. Medido em 2026-08-13:
   >
   > ```console
-  > $ gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
+  > $ gh api repos/melgarafael/G&M CRM/branches/main/protection \
   >     --jq '.required_status_checks.contexts|join(", ")'
   > verify, build-and-size, invariants, e2e
   > ```
@@ -140,7 +140,7 @@ seria recusar instalar por não conseguir resolver um número:
    para quem não vai rodar a entrevista. `--yes` com o template preserva esse valor.
 
 O que **nenhum** caminho faz é pinar numa versão sem antes conferir que as três imagens
-existem lá: a tag do git nasce minutos antes das imagens, e `deskcomm-worker:1.2.1` nunca
+existem lá: a tag do git nasce minutos antes das imagens, e `gm-crm-worker:1.2.1` nunca
 vai existir porque a v1.2.1 é anterior à criação desse pacote.
 
 - **Por quê:** três consequências de uma só causa. **(a)** A versão do cliente para de mudar
@@ -226,7 +226,7 @@ default que preserva o comportamento anterior**; se ela precisa existir, quem a 
 `GET /api/v1/health` responde a versão real da imagem em execução.
 
 > **Vale a partir da próxima release.** Nenhuma imagem já publicada carrega
-> `APP_VERSION` — medido: `docker run --rm ghcr.io/melgarafael/deskcommcrm:1.2.1 node -e
+> `APP_VERSION` — medido: `docker run --rm ghcr.io/melgarafael/gm-crm:1.2.1 node -e
 > 'console.log(process.env.APP_VERSION)'` → `undefined`. Todo o parque instalado hoje
 > responde `desconhecido`, que é a resposta honesta e o motivo de o fallback não ser mais
 > um número plausível. O item 9 do checklist de release reprova contra a 1.2.1 de propósito.
@@ -321,7 +321,7 @@ do banco. É o passo que mais trava na estreia de uma imagem nova.
 [ ] 2. Nenhuma variável nova é obrigatória sem default (grep no diff de .env.example)
 [ ] 3. O número da versão NUNCA foi publicado antes:
        git tag --list 'vX.Y.Z'                     → vazio
-       ghcr_status deskcommcrm X.Y.Z               → 404
+       ghcr_status gm-crm X.Y.Z               → 404
 [ ] 4. Os pins upstream foram revisitados: `waha`, `srh`, `redis`, `caddy`, `postgres`.
        Bumpar ou confirmar que ficam — congelar sem revisar é como o `srh` ficou
        três versões atrás sem ninguém decidir isso
@@ -329,13 +329,13 @@ do banco. É o passo que mais trava na estreia de uma imagem nova.
 [ ] 6. O run de publicação ficou verde:
        gh run list --workflow=publish-image.yml --limit 3
 [ ] 7. As TRÊS imagens existem E são públicas nesta versão:
-       for i in deskcommcrm deskcomm-worker deskcomm-scheduler; do
+       for i in gm-crm gm-crm-worker gm-crm-scheduler; do
          echo "$i: $(ghcr_status $i X.Y.Z)"; done      → 200 nas três
        403 em alguma? Torne o pacote público ANTES de seguir
 [ ] 8. `stable` aponta para esta versão (mesmo digest de X.Y.Z):
-       ghcr_status deskcommcrm stable              → 200, e o digest bate
+       ghcr_status gm-crm stable              → 200, e o digest bate
 [ ] 9. A imagem reporta a versão certa:
-       docker run --rm ghcr.io/melgarafael/deskcommcrm:X.Y.Z \
+       docker run --rm ghcr.io/melgarafael/gm-crm:X.Y.Z \
          node -e 'console.log(process.env.APP_VERSION)'   → X.Y.Z
 [ ] 10. `gh release create vX.Y.Z` com as notas do CHANGELOG
 [ ] 11. Apagar tags de branch dos três pacotes — `docs-doutrina-packaging` e
@@ -376,10 +376,10 @@ parque instalado** percorre, e é o único que a suíte de CI não exercita.
 ## Decisões registradas
 
 **2026-08-13 — o namespace fica em `melgarafael`.** Uma consultoria externa recomendou criar
-uma org `deskcommcrm` e migrar, sob a premissa de que o compose apontava para uma org
+uma org `gm-crm` e migrar, sob a premissa de que o compose apontava para uma org
 desvinculada do repo. A premissa era falsa: o compose sempre apontou para
-`ghcr.io/melgarafael/deskcommcrm`, que é o que o CI publica e o que está gravado no `.env` de
-todo cliente instalado. A string `deskcommcrm/deskcommcrm` existia num único lugar — uma URL
+`ghcr.io/melgarafael/gm-crm`, que é o que o CI publica e o que está gravado no `.env` de
+todo cliente instalado. A string `gm-crm/gm-crm` existia num único lugar — uma URL
 de `git clone` em `docs/deploy-selfhost/README.md`, que retornava 404. O conserto proporcional
 ao defeito foi essa linha. Racional completo no ADR.
 

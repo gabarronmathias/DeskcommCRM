@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
+   G&M CRM — Design System tokens (Sage palette · density Aerada)
    Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
    Light + dark drawn separately (NOT inverted).
    ───────────────────────────────────────────────────────────────────────── */
@@ -53,6 +53,30 @@
   --color-neutral-800: #2e2c26;
   --color-neutral-900: #1c1a16;
   --color-neutral-950: #0e0d0a;
+
+  /* Gabarron & Mathias — brand shell.
+     NÃO substitui a rampa de accent (que vem da semente da marca em runtime e
+     sustenta o whitelabel): a sidebar e o brasão da G&M usam estes tokens, e o
+     accent continua derivando do `APP_ACCENT_HEX` do banco. Assim uma instalação
+     da G&M em outra máquina ou uma atualização não pintam nada errado, e o
+     white-label de outros revendedores não é contaminado. */
+  --color-navy-50:  #eef1f6;
+  --color-navy-100: #d3dae6;
+  --color-navy-200: #a7b4cb;
+  --color-navy-300: #7b8eaf;
+  --color-navy-400: #4f6893;
+  --color-navy-500: #2c4476;
+  --color-navy-600: #1f335d;
+  --color-navy-700: #16264a;
+  --color-navy-800: #0e1b37;
+  --color-navy-900: #071435;
+  --color-navy-950: #04091c;
+
+  --color-gold-300: #e6cd95;
+  --color-gold-400: #d6b46f;
+  --color-gold-500: #c9a866;
+  --color-gold-600: #a38649;
+  --color-gold-700: #7a6435;
 
   /* States (light) */
   --color-success: #5a8a5f;
@@ -348,12 +372,20 @@
   body {
     background-color: var(--color-bg);
     color: var(--color-text);
-    font-family: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
-      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--font-body), var(--font-atkinson), ui-sans-serif, system-ui,
+      -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+  }
+
+  /* Display serif p/ títulos (h1/h2/h3) — sem mexer em cada componente, e
+     respeitando o override de quem decidir usar font-sans num título. */
+  h1, h2, h3 {
+    font-family: var(--font-display), var(--font-body), ui-serif, Georgia, serif;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+    letter-spacing: -0.005em;
   }
 
   code, kbd, pre, samp {
@@ -453,7 +485,7 @@
    desenha para dentro da própria caixa e não depende do overflow do pai.
    Provado na tela nos três cenários (claro, escuro, reduce) —
    `evidence/wave3-pulso/`. */
-@keyframes deskcomm-card-pulse {
+@keyframes gm-crm-card-pulse {
   from {
     border-color: var(--color-accent);
   }
@@ -466,7 +498,7 @@
    evento (key = contador de pulsos), e é a remontagem que faz a animação
    recomeçar. Alternar classe no mesmo nó não reinicia animação em CSS. */
 .card-pulse {
-  animation: deskcomm-card-pulse var(--duration-slow) var(--ease-out) 1;
+  animation: gm-crm-card-pulse var(--duration-slow) var(--ease-out) 1;
   border: 2px solid transparent;
   border-radius: inherit;
   box-sizing: border-box;

@@ -5,7 +5,7 @@ import * as React from "react";
 export type Theme = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
-const STORAGE_KEY = "deskcomm-theme";
+const STORAGE_KEY = "gm-crm-theme";
 
 type ThemeContextValue = {
   /** User preference: light, dark, or system. */

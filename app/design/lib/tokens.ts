@@ -1,8 +1,8 @@
-// Design tokens for DeskcommCRM showcase.
+// Design tokens for G&M CRM showcase.
 // "Soft-tech / calmo" — neutros desaturados (greige/warm-gray), accent não-saturado.
 // 5-Constraint Rule applied: Shape, Color (exact hex), Typography, Motion, Layout.
 
-export type PaletteId = "sage" | "clay" | "mist" | "plum" | "olive";
+export type PaletteId = "sage" | "clay" | "mist" | "plum" | "olive" | "navy-gold";
 export type TypoId = "bricolage-jakarta" | "fraunces-manrope" | "atkinson" | "source-plex";
 export type DensityId = "aerada" | "equilibrada" | "compacta";
 export type ThemeId = "light" | "dark";
@@ -176,6 +176,34 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
     surfaces: {
       light: { bg: "#faf9f4", surface: "#ffffff", surfaceElevated: "#f3f0e3", text: "#191712", textMuted: "#534e3e", border: "#e3dfcc" },
       dark:  { bg: "#11100d", surface: "#181713", surfaceElevated: "#21201b", text: "#f3f1ea", textMuted: "#807a68", border: "#2c2a24" },
+    },
+  },
+  "navy-gold": {
+    id: "navy-gold",
+    name: "Navy + Gold",
+    description: "Azul-marinho executivo com dourado de destaque. Identidade Gabarron & Mathias.",
+    accent: {
+      50: "#eef1f6", 100: "#d3dae6", 200: "#a7b4cb", 300: "#7b8eaf",
+      400: "#4f6893", 500: "#2c4476", 600: "#1f335d", 700: "#16264a",
+      800: "#0e1b37", 900: "#071435", 950: "#04091c",
+    },
+    neutralLight: {
+      50: "#f5f1ea", 100: "#ebe6da", 200: "#ddd5c4", 300: "#c2b89f",
+      400: "#948c79", 500: "#6a6354", 600: "#46433b", 700: "#2e2c26",
+      800: "#1c1a16", 900: "#161210", 950: "#0a0907",
+    },
+    neutralDark: {
+      50: "#f5f4ef", 100: "#e6e4dc", 200: "#bbb8ac", 300: "#8e8b7f",
+      400: "#605e54", 500: "#444239", 600: "#33312a", 700: "#272620",
+      800: "#1d1c17", 900: "#161510", 950: "#0c0b08",
+    },
+    states: {
+      light: { success: "#2f7a4a", warning: "#b07a2b", error: "#a94a3c", info: "#2c4476" },
+      dark:  { success: "#82a077", warning: "#d09455", error: "#c87263", info: "#7da9bf" },
+    },
+    surfaces: {
+      light: { bg: "#f5f1ea", surface: "#ffffff", surfaceElevated: "#fbf8f2", text: "#161210", textMuted: "#46433b", border: "#ddd5c4" },
+      dark:  { bg: "#0a0907", surface: "#161210", surfaceElevated: "#1c1a16", text: "#f5f1ea", textMuted: "#948c79", border: "#2e2c26" },
     },
   },
 };

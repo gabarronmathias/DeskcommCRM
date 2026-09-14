@@ -11,7 +11,7 @@ O plano pede "Postgres PRÓPRIO no compose" E "configurar agente na tela". Os do
 juntos não fecham: o LOGIN da tela usa Supabase Auth (GoTrue) — com PG puro +
 stubs, a tela não autentica (gap já documentado da prova local). Opções:
 
-- **(A) RECOMENDADA — projeto Supabase NOVO dedicado** ("deskcomm-fusion-vps",
+- **(A) RECOMENDADA — projeto Supabase NOVO dedicado** ("gm-crm-fusion-vps",
   sa-east-1, criado via Management API na org do dono): é literalmente o caminho
   do README; a tela funciona; isolamento total do dev (banco zerado próprio).
   ⚠️ CUSTO: se a org do Supabase é Pro, projeto adicional pode custar ~US$10/mês
@@ -29,7 +29,7 @@ postgres no override e o prelude+baseline via docker exec.
 ```bash
 # A1. criar o projeto (Management API, org pzaxvazodcffkfkpyqtl), aguardar ACTIVE_HEALTHY
 POST https://api.supabase.com/v1/projects
-  {"name":"deskcomm-fusion-vps","organization_id":"pzaxvazodcffkfkpyqtl",
+  {"name":"gm-crm-fusion-vps","organization_id":"pzaxvazodcffkfkpyqtl",
    "region":"sa-east-1","db_pass":"<gerada openssl rand>"}
 
 # A2. schema no projeto NOVO (Supabase real: SEM prelude — README §2)
@@ -37,7 +37,7 @@ psql "$NEW_DB_URL" -v ON_ERROR_STOP=1 -f supabase/baseline.sql
 
 # A3. role dedicada do worker (README §2) + org/usuário admin de teste
 create role agent_worker login password '<gerada>' bypassrls; + grants do README
-# usuário via Auth Admin API (email deskcomm-vps-admin@..., senha gerada) +
+# usuário via Auth Admin API (email gm-crm-vps-admin@..., senha gerada) +
 # organizations + user_organizations (admin) via SQL
 ```
 
@@ -47,15 +47,15 @@ create role agent_worker login password '<gerada>' bypassrls; + grants do README
 # B1. transporte do código SEM push ao GitHub (git bundle — zero efeito externo)
 git bundle create /tmp/fusion.bundle vendaval-fusion                  # local
 scp -P 22022 -i ~/.ssh/fusion_testvps_ed25519 /tmp/fusion.bundle root@129.121.45.100:/opt/
-ssh ... 'mkdir -p /opt/deskcomm-fusion && git clone -b vendaval-fusion /opt/fusion.bundle /opt/deskcomm-fusion/app'
+ssh ... 'mkdir -p /opt/gm-crm-fusion && git clone -b vendaval-fusion /opt/fusion.bundle /opt/gm-crm-fusion/app'
 
 # B2. .env montado LOCALMENTE (segredos openssl gerados na hora + keys do Supabase
 #     novo + ANTHROPIC_API_KEY que o Maestro fornecer) e enviado com chmod 600:
-scp -P 22022 -i ~/.ssh/... /tmp/fusion-vps.env root@...:/opt/deskcomm-fusion/app/.env
-ssh ... 'chmod 600 /opt/deskcomm-fusion/app/.env && rm -f /opt/fusion.bundle'
+scp -P 22022 -i ~/.ssh/... /tmp/fusion-vps.env root@...:/opt/gm-crm-fusion/app/.env
+ssh ... 'chmod 600 /opt/gm-crm-fusion/app/.env && rm -f /opt/fusion.bundle'
 #     Valores-chave: NEXT_PUBLIC_APP_URL=http://129.121.45.100:18080
 #     WAHA_WEBHOOK_BASE_URL=http://app:3000  (webhook interno pela rede do compose)
-#     AGENT_DISPATCH_CONSUMER=engine · WAHA key + sha512 · APP_IMAGE=deskcomm-app:vps
+#     AGENT_DISPATCH_CONSUMER=engine · WAHA key + sha512 · APP_IMAGE=gm-crm-app:vps
 
 # B3. override de portas/isolamento (arquivo docker-compose.vps.yml enviado por scp):
 services:
@@ -63,10 +63,10 @@ services:
   worker: { ports: ["127.0.0.1:18787:8787"], environment: { WAHA_API_BASE_URL: "http://waha:3000" } }
   waha:   { ports: ["127.0.0.1:13030:3000"] }   # QR servido via túnel/página do Maestro
   caddy:  { profiles: ["disabled"] }             # HTTP direto (decisão do dono)
-# rede/volumes: os default do project-name deskcomm-fusion (nada da easypanel)
+# rede/volumes: os default do project-name gm-crm-fusion (nada da easypanel)
 
 # B4. build local na VPS (~10-20 min; 4 cores é ok)
-ssh ... 'cd /opt/deskcomm-fusion/app && docker compose -p deskcomm-fusion \
+ssh ... 'cd /opt/gm-crm-fusion/app && docker compose -p gm-crm-fusion \
   -f docker-compose.prod.yml -f docker-compose.build.yml -f docker-compose.vps.yml build app worker'
 
 # B5. subir (SÓ os serviços da fusão, project-name próprio)
@@ -75,7 +75,7 @@ ssh ... '... up -d app worker waha redis srh scheduler'
 # B6. verificações (read-only)
 curl http://129.121.45.100:18080/            # app 200
 ssh ... 'curl -s http://127.0.0.1:18787/healthz'   # worker ok contra o banco novo
-ssh ... 'docker compose -p deskcomm-fusion ... ps'  # tudo healthy; ss -tlnp → só as novas portas
+ssh ... 'docker compose -p gm-crm-fusion ... ps'  # tudo healthy; ss -tlnp → só as novas portas
 ```
 
 ## FASE C — prova final (gates humanos)
@@ -94,4 +94,4 @@ mudança: túnel ssh -L pro dono.
 ## O que eu NÃO farei (fronteira)
 Sem parar/reiniciar/prune de QUALQUER container existente; sem portas ocupadas;
 sem rede easypanel; sem Traefik/Coolify/Swarm; sem push ao GitHub; sem --permanent
-no firewall; rollback = `docker compose -p deskcomm-fusion down` (só a nossa stack).
+no firewall; rollback = `docker compose -p gm-crm-fusion down` (só a nossa stack).

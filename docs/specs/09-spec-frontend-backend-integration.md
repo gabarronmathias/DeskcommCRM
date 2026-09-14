@@ -17,7 +17,7 @@ owner: Rafael Melgaço
 
 # Spec 09 — Frontend ↔ Backend Integration Contract
 
-> Playbook operacional de comunicação ponta-a-ponta entre o frontend (Next.js 15 App Router) e o backend (Supabase + API Routes + Workers) do DeskcommCRM. Esta spec **fecha decisões** que estavam espalhadas pelas Specs 01–08 e consolida o contrato que todo dev frontend deve consultar **antes de codar qualquer tela**.
+> Playbook operacional de comunicação ponta-a-ponta entre o frontend (Next.js 15 App Router) e o backend (Supabase + API Routes + Workers) do G&M CRM. Esta spec **fecha decisões** que estavam espalhadas pelas Specs 01–08 e consolida o contrato que todo dev frontend deve consultar **antes de codar qualquer tela**.
 
 ---
 
@@ -867,7 +867,7 @@ Decisões fechadas. Mudar = ADR novo.
 
 - **ADR-01: TanStack Query como cache layer único.** Justificativa: cache cross-rota, devtools, optimistic API estável, suporte a `setQueryData` granular (essencial pros patches in-place do realtime). Alternativas descartadas: SWR (cache mais limitado, sem `setQueryData` granular), Apollo (over-engineering, peso, voltado a GraphQL).
 - **ADR-02: Server Actions pra forms simples; API routes pra mutations complexas.** Critério: se a mutation precisa de optimistic UI, retry custom, idempotency-key explícita ou é chamada de múltiplos lugares — vai pra API route. Senão — Server Action.
-- **ADR-03: Zod no boundary de TODA API route.** Não-negociável. Toda `route.ts` faz `schema.safeParse` no body. Se faltar, lint custom (`eslint-plugin-deskcomm`) barra.
+- **ADR-03: Zod no boundary de TODA API route.** Não-negociável. Toda `route.ts` faz `schema.safeParse` no body. Se faltar, lint custom (`eslint-plugin-gm-crm`) barra.
 - **ADR-04: Supabase Realtime como mecanismo único de push.** Não usar WebSocket próprio nem SSE custom. Justificativa: RLS aplicada nos eventos, escala gerenciada, custo zero adicional.
 - **ADR-05: Phosphor Icons como pacote único de ícones.** Não misturar com Lucide ou Heroicons. Justificativa: consistência visual, single bundle.
 - **ADR-06: Atalhos de teclado obrigatórios em telas operacionais.** Inbox, Kanban, Audit, Admin Inbox — atendente vira máquina. Mapa em §9 e em `08-accessibility.md`. Ferramenta: `react-hotkeys-hook`.

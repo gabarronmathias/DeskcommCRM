@@ -27,7 +27,7 @@ case "$tool" in
         # Arquivo pré-existente é congelado; escrita de arquivo NOVO passa
         # (G1-03 e fases seguintes criam invariantes).
         if [ -f "$path" ]; then
-          deny "tests/invariants/** é congelado — invariante existente não se edita (flip legítimo de test.fails: sessão humana com DESKCOMM_GOV_INVARIANTS_EDIT=1 no commit)."
+          deny "tests/invariants/** é congelado — invariante existente não se edita (flip legítimo de test.fails: sessão humana com GMCRM_GOV_INVARIANTS_EDIT=1 no commit)."
         fi
         ;;
     esac

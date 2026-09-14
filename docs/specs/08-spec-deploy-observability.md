@@ -44,9 +44,9 @@ referencias:
 ### 1.3 Estados e ambientes
 | Ambiente | Branch | Domínio | Supabase | WAHA | Sentry env |
 |---|---|---|---|---|---|
-| Production | `main` | `app.deskcomm.com.br` + `admin.deskcomm.com.br` | projeto Pro `deskcomm-prod` | `waha.deskcomm.com.br` (Hostgator) | `production` |
-| Staging | `staging` | `staging.deskcomm.com.br` | projeto Free `deskcomm-staging` | `waha-staging.deskcomm.com.br` (Hostgator mesmo VPS, container separado) | `staging` |
-| Preview | qualquer PR | `*.vercel.app` | projeto Free `deskcomm-preview` (compartilhado) | mock/staging | `preview` |
+| Production | `main` | `app.gabarronmathias.com.br` + `admin.gabarronmathias.com.br` | projeto Pro `gm-crm-prod` | `waha.gabarronmathias.com.br` (Hostgator) | `production` |
+| Staging | `staging` | `staging.gabarronmathias.com.br` | projeto Free `gm-crm-staging` | `waha-staging.gabarronmathias.com.br` (Hostgator mesmo VPS, container separado) | `staging` |
+| Preview | qualquer PR | `*.vercel.app` | projeto Free `gm-crm-preview` (compartilhado) | mock/staging | `preview` |
 | Local dev | local | `localhost:3000` | `supabase start` (Docker) | `localhost:3000` (compose) | `development` |
 
 ---
@@ -69,7 +69,7 @@ referencias:
 - **Plano:** Pro ($25/mês) + add-ons conforme necessidade (compute upgrade `Small → Medium` quando p95 DB >100ms; PITR addon $100/mês opcional).
 - **Região:** `sa-east-1` (São Paulo). Mesmo provider da Vercel `gru1` minimiza RTT (~5ms).
 - **Componentes ativos:**
-  - Postgres 15 (`deskcomm-prod`)
+  - Postgres 15 (`gm-crm-prod`)
   - Supabase Auth (email/password + OAuth Google opcional + MFA TOTP)
   - Supabase Realtime (postgres_changes habilitado nas tabelas listadas em §4.5)
   - Supabase Storage (buckets `whatsapp-media` privado, `lgpd-exports` privado)
@@ -105,7 +105,7 @@ referencias:
 
 #### Sentry (errors + performance)
 - **Plano:** Team ($26/mês) — 50k errors/mês + 100k performance units. Suficiente pro MVP.
-- **Project:** `deskcomm-app` (Next.js) + `deskcomm-mcp` (MCP server fase 2).
+- **Project:** `gm-crm-app` (Next.js) + `gm-crm-mcp` (MCP server fase 2).
 - **Features ativas:** Errors, Performance (tracing), Session Replay desligado no MVP (custo + LGPD), Profiling desligado.
 - **PII scrubbing** ativado server-side + `beforeSend` custom (§9.1).
 
@@ -188,8 +188,8 @@ Linux/WSL: equivalentes via `apt` ou Docker oficial. Windows nativo não é supo
 
 ### 3.2 Clone + install + .env.local
 ```bash
-git clone git@github.com:deskcomm/deskcommcrm.git
-cd deskcommcrm
+git clone git@github.com:deskcomm/gm-crm.git
+cd gm-crm
 pnpm install                  # instala root + workspaces (app, mcp futuro)
 cp .env.example .env.local    # template versionado; .env.local é gitignored
 ```
@@ -272,7 +272,7 @@ Migrations ficam em `supabase/migrations/YYYYMMDDHHMMSS_*.sql`. Seed em `supabas
 services:
   waha:
     image: devlikeapro/waha-plus:latest
-    container_name: deskcomm-waha-dev
+    container_name: gm-crm-waha-dev
     restart: unless-stopped
     ports:
       - "3001:3000"
@@ -317,7 +317,7 @@ docker compose down -v               # apaga volumes (logout total das sessões)
 WAHA precisa enviar webhook pra URL pública mesmo em dev. Solução padrão:
 ```bash
 ngrok config add-authtoken <token>
-ngrok http 3000 --domain=deskcomm-dev.ngrok.dev   # plano pago dá domínio fixo
+ngrok http 3000 --domain=gm-crm-dev.ngrok.dev   # plano pago dá domínio fixo
 ```
 
 Domínio fixo é importante porque mudar URL de webhook a cada `ngrok` reconecta = reconfigurar todas sessões WAHA. Sem domínio fixo, usar script `scripts/dev/update-waha-webhook.sh` que pega URL atual e atualiza WAHA via API.
@@ -366,10 +366,10 @@ create extension if not exists btree_gin      with schema extensions;  -- tags i
 Configuração via Supabase Dashboard ou `supabase/config.toml`:
 ```toml
 [auth]
-site_url = "https://app.deskcomm.com.br"
+site_url = "https://app.gabarronmathias.com.br"
 additional_redirect_urls = [
-  "https://app.deskcomm.com.br/auth/callback",
-  "https://admin.deskcomm.com.br/auth/callback",
+  "https://app.gabarronmathias.com.br/auth/callback",
+  "https://admin.gabarronmathias.com.br/auth/callback",
 ]
 jwt_expiry = 3600                          # 1h, refresh token rotation ativa
 refresh_token_rotation_enabled = true
@@ -506,7 +506,7 @@ export default config;
 
 Estratégia:
 - **Production:** vars setadas no Dashboard Vercel scope `Production` apenas. Encryption keys reais. Tokens Nuvemshop reais.
-- **Preview:** vars setadas em scope `Preview` apontando pra projeto Supabase `deskcomm-preview` compartilhado, WAHA mock ou staging, AI Gateway com `MOCK_AI=true` por default.
+- **Preview:** vars setadas em scope `Preview` apontando pra projeto Supabase `gm-crm-preview` compartilhado, WAHA mock ou staging, AI Gateway com `MOCK_AI=true` por default.
 - **Development (Vercel CLI):** `vercel env pull .env.local` puxa vars Preview pra rodar local com infra remota quando precisar.
 
 Vars NUNCA commitadas: tudo prefixado `*_KEY`, `*_SECRET`, `*_TOKEN`, `DATABASE_URL`, `*_DSN`. Pre-commit gitleaks bloqueia (§7.5).
@@ -573,7 +573,7 @@ Não usado no MVP. Rate limit fica no Upstash, feature flags ficam em `tenant_se
 services:
   waha:
     image: devlikeapro/waha-plus:latest
-    container_name: deskcomm-waha
+    container_name: gm-crm-waha
     restart: always
     networks:
       - waha-net
@@ -587,7 +587,7 @@ services:
       WAHA_DASHBOARD_ENABLED: "false"     # desabilita em prod
       WAHA_SWAGGER_ENABLED: "false"
       WHATSAPP_DEFAULT_ENGINE: NOWEB
-      WHATSAPP_HOOK_URL: https://app.deskcomm.com.br/api/webhooks/waha
+      WHATSAPP_HOOK_URL: https://app.gabarronmathias.com.br/api/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message.any,session.status,message.ack,call.received,group.v2.join,group.v2.leave"
       WHATSAPP_HOOK_HMAC_ALGORITHM: SHA512
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_WEBHOOK_HMAC_KEY}
@@ -622,7 +622,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: deskcomm-nginx
+    container_name: gm-crm-nginx
     restart: always
     networks:
       - waha-net
@@ -640,7 +640,7 @@ services:
 
   certbot:
     image: certbot/certbot:latest
-    container_name: deskcomm-certbot
+    container_name: gm-crm-certbot
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
@@ -700,7 +700,7 @@ tar czf "$BACKUP_DIR/sessions-$TS.tar.gz" -C /srv/waha sessions
 docker compose -f /srv/deskcomm/docker-compose.yml start waha
 # Upload pro Wasabi/R2
 aws s3 cp "$BACKUP_DIR/sessions-$TS.tar.gz" \
-  "s3://deskcomm-backups/waha-sessions/sessions-$TS.tar.gz" \
+  "s3://gm-crm-backups/waha-sessions/sessions-$TS.tar.gz" \
   --endpoint-url=https://s3.wasabisys.com
 # Limpar locais >7d
 find "$BACKUP_DIR" -name 'sessions-*.tar.gz' -mtime +7 -delete
@@ -720,7 +720,7 @@ upstream waha_upstream {
 # HTTP → HTTPS redirect + ACME challenge
 server {
     listen 80;
-    server_name waha.deskcomm.com.br;
+    server_name waha.gabarronmathias.com.br;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -732,10 +732,10 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name waha.deskcomm.com.br;
+    server_name waha.gabarronmathias.com.br;
 
-    ssl_certificate     /etc/letsencrypt/live/waha.deskcomm.com.br/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/waha.deskcomm.com.br/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/waha.gabarronmathias.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/waha.gabarronmathias.com.br/privkey.pem;
     include             /etc/nginx/snippets/ssl-hardening.conf;
 
     # Apenas Vercel egress IPs + IPs do dev team
@@ -779,7 +779,7 @@ Bootstrap inicial certbot (1ª vez, fora do compose):
 ```bash
 docker run --rm -v /etc/letsencrypt:/etc/letsencrypt -v /var/www/certbot:/var/www/certbot \
   -p 80:80 certbot/certbot certonly --standalone \
-  -d waha.deskcomm.com.br --email ops@deskcomm.com.br --agree-tos --no-eff-email
+  -d waha.gabarronmathias.com.br --email ops@gabarronmathias.com.br --agree-tos --no-eff-email
 ```
 
 ### 6.4 Firewall
@@ -892,7 +892,7 @@ repos:
 - Deploy protection: branch `main` requer (a) PR aprovado, (b) checks verdes, (c) 1 reviewer mínimo.
 
 ### 8.2 Preview deployments
-- 1 deploy por commit. URL `deskcomm-app-git-{branch}-{team}.vercel.app`.
+- 1 deploy por commit. URL `gm-crm-app-git-{branch}-{team}.vercel.app`.
 - Cada Preview cria uma branch Supabase (`supabase branch create --name preview-{pr}`) automaticamente via GitHub Action.
 - Comentário automático no PR com URL Preview + link Sentry environment.
 
@@ -1021,7 +1021,7 @@ export const log = pino({
     censor: "[REDACTED]",
   },
   base: {
-    service: "deskcomm-app",
+    service: "gm-crm-app",
     env: process.env.VERCEL_ENV,
     region: process.env.VERCEL_REGION,
     commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7),
@@ -1041,7 +1041,7 @@ Sample event:
 ```json
 {
   "level":"info","time":"2026-04-28T14:32:11.234Z",
-  "service":"deskcomm-app","env":"production","commit":"a1b2c3d",
+  "service":"gm-crm-app","env":"production","commit":"a1b2c3d",
   "event":"waha.message.received",
   "tenant_id":"3f1e...","conversation_id":"...", "external_id":"...",
   "duration_ms":42,
@@ -1088,7 +1088,7 @@ Lista canônica de métricas:
 
 ### 9.4 Dashboards essenciais
 
-**Sentry Dashboard "DeskcommCRM Ops":**
+**Sentry Dashboard "G&M CRM Ops":**
 - Errors per hour by environment
 - p50/p95/p99 latência por endpoint top-20
 - Top issues últimos 7d
@@ -1159,13 +1159,13 @@ UptimeRobot externo (free tier) pinga `/api/v1/health` a cada 1min. Falha 2 cons
 
 | # | Sinal | Threshold | Canal | Severidade | Owner |
 |---|---|---|---|---|---|
-| A1 | Sentry novo issue (unhandled exception em prod) | 1ª ocorrência | Slack #deskcomm-alerts | warn | dev on-call |
+| A1 | Sentry novo issue (unhandled exception em prod) | 1ª ocorrência | Slack #gm-crm-alerts | warn | dev on-call |
 | A2 | Sentry issue volume spike | >50 events/h | Slack + PagerDuty | crit | dev on-call |
-| A3 | WAHA session FAILED | qualquer | Slack #deskcomm-ops + email tenant | crit | DevOps |
-| A4 | WAHA session STARTING >5min | sustentado | Slack #deskcomm-ops | warn | DevOps |
-| A5 | LGPD `data_request` SLA D+5 | cron diário | Slack #deskcomm-lgpd + email DPO | warn | LGPD owner |
+| A3 | WAHA session FAILED | qualquer | Slack #gm-crm-ops + email tenant | crit | DevOps |
+| A4 | WAHA session STARTING >5min | sustentado | Slack #gm-crm-ops | warn | DevOps |
+| A5 | LGPD `data_request` SLA D+5 | cron diário | Slack #gm-crm-lgpd + email DPO | warn | LGPD owner |
 | A6 | LGPD `data_request` SLA D+6 | cron diário | PagerDuty | crit | LGPD owner |
-| A7 | Rate limit Nuvemshop estourado | >5 429s/min | Slack #deskcomm-ops | warn | dev on-call |
+| A7 | Rate limit Nuvemshop estourado | >5 429s/min | Slack #gm-crm-ops | warn | dev on-call |
 | A8 | Audit log lag (event_log unconsumed) >5min | gauge | Slack | crit | dev on-call |
 | A9 | API p95 >300ms (rolling 15min) | sustentado 30min | Slack | warn | dev on-call |
 | A10 | API p99 >2s | sustentado 15min | Slack + PagerDuty | crit | dev on-call |
@@ -1193,13 +1193,13 @@ Configuração: Sentry → Slack via integração nativa. Slack → PagerDuty vi
 **Sintoma.** Alerta A19 disparado. Sessão `FAILED`, logs WAHA com erro `phone_banned` ou `not_authorized`.
 
 **Diagnóstico.**
-1. Confirmar via WAHA dashboard interno (port-forward ssh) ou `docker exec deskcomm-waha curl localhost:3000/api/sessions`.
+1. Confirmar via WAHA dashboard interno (port-forward ssh) ou `docker exec gm-crm-waha curl localhost:3000/api/sessions`.
 2. Validar que não é falso positivo (network glitch). Tentar reconectar via UI: se falha imediata após QR scan, é ban.
 3. Pesquisar logs últimos 7d: enviou >500 msgs/dia? campanha não-warmed? muitas STOP recebidas?
 
 **Ação.**
 1. **Imediata (<10min):** marcar `channel_sessions.status='banned'` + `is_active=false`. Trigger UI: tenant vê banner "Número fora de operação".
-2. **Comunicação:** email ao admin do tenant + Slack #deskcomm-ops com root-cause hypothesis.
+2. **Comunicação:** email ao admin do tenant + Slack #gm-crm-ops com root-cause hypothesis.
 3. **Substituição:** ativar número backup pré-aquecido (todo tenant deve ter 2º número em warm-up contínuo). UI tenant: "Conectar número de backup" → re-QR no novo.
 4. **Migration de conversas:** novas mensagens vão pro novo número; histórico permanece linkado a session antiga (read-only).
 
@@ -1216,9 +1216,9 @@ Configuração: Sentry → Slack via integração nativa. Slack → PagerDuty vi
 
 **Diagnóstico.**
 ```bash
-ssh ops@waha.deskcomm.com.br
-docker logs deskcomm-waha --tail 200 | grep -i "session-{id}"
-docker exec deskcomm-waha ls /app/.sessions/{sessionId}
+ssh ops@waha.gabarronmathias.com.br
+docker logs gm-crm-waha --tail 200 | grep -i "session-{id}"
+docker exec gm-crm-waha ls /app/.sessions/{sessionId}
 ```
 Geralmente: arquivo `creds.json` ou diretório `.sessions/{sessionId}` corrompido (timeout durante init).
 
@@ -1352,7 +1352,7 @@ Feature flag `READ_ONLY_MODE` em Edge Config. Quando ativada:
 Trigger: manual via super-admin. Auto-trigger desligado (risco de flap).
 
 ### 13.3 Fallback strategies adicionais
-- **WAHA banimento generalizado da conta DeskcommCRM (modelo BPO):** plano de migração pra API oficial Meta documentado no PRD-03 (Fase 2.5).
+- **WAHA banimento generalizado da conta G&M CRM (modelo BPO):** plano de migração pra API oficial Meta documentado no PRD-03 (Fase 2.5).
 - **Nuvemshop deprecação de webhook:** adapter pattern + assinar feed de release notes; testes de contrato no CI dão alerta.
 
 ---

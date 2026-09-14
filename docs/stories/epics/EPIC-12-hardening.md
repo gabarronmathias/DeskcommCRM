@@ -46,8 +46,8 @@ Endurecer o produto pra produção: error boundaries em todos os layouts, págin
 - Epics 02, 03, 04, 05, 06, 07, 08, 09, 10, 11 completos (todas as 5 jornadas implementadas e funcionando em dev)
 - Migrations 0001-NNNN aplicadas em staging Supabase
 - Playwright instalado (vem do EPIC-00 S-00.06) e MCP Playwright conectado
-- Sentry org `deskcomm` com projetos `deskcomm-app` (DSN em env) — criar se não existir
-- Vercel project `deskcomm-staging` linkado e fazendo deploy de PRs
+- Sentry org `deskcomm` com projetos `gm-crm-app` (DSN em env) — criar se não existir
+- Vercel project `gm-crm-staging` linkado e fazendo deploy de PRs
 - Variáveis de env em staging: `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, todas do MVP
 - Dev server local em `localhost:3001`
 
@@ -824,7 +824,7 @@ Onboarding de novo dev deve completar em 5 minutos: clone → install → .env �
 1. README sections: Visão (1 parágrafo), Quickstart (numbered 6 passos), Stack (tabela com versão), Estrutura (tree top-level), Comandos (dev, build, test, e2e, db), Suporte (links docs)
 2. Quickstart deve incluir snippet copy-paste 100% funcional em macOS/Linux:
    ```
-   git clone … && cd deskcommcrm
+   git clone … && cd gm-crm
    pnpm install
    cp .env.example .env.local && cat scripts/dev/seed-secrets.sh
    supabase start && supabase db reset
@@ -907,7 +907,7 @@ exposes:
 1. Smoke specs separados de E2E suite — leves (<2 min total), rodam contra URL externa (`PLAYWRIGHT_BASE_URL` env)
 2. Workflow `preview-smoke.yml` listen em `deployment_status` event onde `state=success` → roda `pnpm smoke` com BASE_URL=preview URL
 3. `/api/health` retorna 200 com `{ status: "ok", deps: { supabase: "ok", upstash: "ok", waha: "ok|degraded", sentry: "ok" }, version: <git sha> }`; smoke só passa se `status=ok`
-4. Checklist pré-go-live (markdown verificável): env vars production setadas (lista §7.1), secrets rotacionados (Sentry token, Supabase service role, encryption keys), backup verificado (último restore drill em staging), monitoring (Sentry + Vercel Analytics), DNS configurado (`app.deskcomm.com.br` + `admin.`), TLS válido, status page criada, runbooks acessíveis pra on-call, MFA forçado pra super-admin, LGPD política publicada
+4. Checklist pré-go-live (markdown verificável): env vars production setadas (lista §7.1), secrets rotacionados (Sentry token, Supabase service role, encryption keys), backup verificado (último restore drill em staging), monitoring (Sentry + Vercel Analytics), DNS configurado (`app.gabarronmathias.com.br` + `admin.`), TLS válido, status page criada, runbooks acessíveis pra on-call, MFA forçado pra super-admin, LGPD política publicada
 5. Rafael (humano) executa checklist antes de promover staging→prod
 
 #### Acceptance Criteria
@@ -1024,7 +1024,7 @@ exposes:
 - **Wave 2 — 404/403/500/503 pages**: `app/not-found.tsx`, polished `app/403/page.tsx`, new `app/500/page.tsx`, `app/503/page.tsx`. Copy PT-BR canônico (B1-B4). All linked to "/" or "/app/inbox" via `next/link`.
 - **Wave 3 — Empty states catalog**: `components/empty/EmptyState.tsx` base + 10 specialized variants (Inbox, Kanban, Contacts, Audit, Pipeline, Team, ApiTokens, Timeline, MergeQueue, FilterResults). Wired into kanban picker, contacts list, inbox conversation list (3 sites).
 - **Wave 4 — Loading skeletons**: `app/app/loading.tsx`, `app/app/inbox/loading.tsx`, `app/app/kanban/loading.tsx`, `app/app/contacts/loading.tsx`, `app/app/audit/loading.tsx` — each renders shadcn `Skeleton` matching the route's layout.
-- **Wave 5 — Sentry hardening**: `beforeSend` added to `sentry.server.config.ts`, `sentry.edge.config.ts`, `instrumentation-client.ts` — scrubs `Authorization`/`Cookie`/`x-api-key`/`x-waha-api-key`/`x-nuvemshop-token`/`x-deskcomm-token` headers and CPF/email/phone patterns from message + exception values. `sendDefaultPii: false`. `lib/logger.ts` zero-deps structured JSON logger.
+- **Wave 5 — Sentry hardening**: `beforeSend` added to `sentry.server.config.ts`, `sentry.edge.config.ts`, `instrumentation-client.ts` — scrubs `Authorization`/`Cookie`/`x-api-key`/`x-waha-api-key`/`x-nuvemshop-token`/`x-gm-crm-token` headers and CPF/email/phone patterns from message + exception values. `sendDefaultPii: false`. `lib/logger.ts` zero-deps structured JSON logger.
 - **Wave 6 — Web Vitals budget**: `next.config.ts` updated with `experimental.optimizePackageImports` for phosphor-icons, lucide-react, date-fns. Performance budget block documented inline. `.github/workflows/perf.yml` reports build output sizes to GHA Step Summary. Lighthouse CI + bundle-analyzer thresholds **deferred** (follow-up).
 - **Wave 7 — E2E golden paths**: `tests/e2e/auth.spec.ts` (anon redirect, invalid creds, keyboard tab order, axe-core a11y check on /login), `tests/e2e/error-pages.spec.ts` (404/403/500/503). Installed `@axe-core/playwright`. /app/* E2E **deferred** (requires MFA bypass strategy).
 - **Wave 8 — Keyboard nav verification**: tab-order test on /login (email → password → submit) integrated into `auth.spec.ts`. Atalhos documentados em README.

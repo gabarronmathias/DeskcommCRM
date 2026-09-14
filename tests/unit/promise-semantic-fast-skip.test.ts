@@ -1,15 +1,10 @@
 /**
- * Fast-skip determinístico da camada semântica de promessa (briefing latência
- * Sarah 2026-09-12, achado 4). No cenário foodservice homologado, a
- * candidata "somos em 6 pessoas" forçava uma chamada LLM inteira no
- * classificador semântico, ~12.2s por envio. Como a camada determinística
- * (F4-01) já cobre preço/desconto estruturado, o classificador LLM é só pra
- * promessa EM TEXTO LIVRE — e uma regex basta pra cobrir 95% dos casos
- * inócuos em PT-BR.
- *
- * ⚠️ REGRA DE SEGURANÇA: regex COM match NÃO vira promessa — o classificador
- * LLM ainda roda. Slogans genéricos ("garantimos qualidade") casam a regex mas
- * são inocentes — ver acceptance test abaixo.
+ * Testes do escalonamento positivo por regex de keywords PT-BR (briefing latência
+ * Sarah 2026-09-12, achado 4 / 2026-09-13 bloco 1). A regex casa POTENCIAL
+ * promessa em texto livre; quando casa, o classificador LLM é chamado com
+ * prompt MÍNIMO (escalonamento positivo). Quando NÃO casa, o classificador LLM
+ * ainda é chamado COM PROMPT PADRÃO — ausência de match lexical NÃO prova
+ * ausência de promessa. O classificador NUNCA é pulado.
  *
  * Ver `lib/agent-engine/guardrails/promise/keywords.ts`.
  */
@@ -20,8 +15,8 @@ import {
   hasPromiseKeyword,
 } from '../../lib/agent-engine/guardrails/promise/keywords';
 
-describe('promise-semantic fast-skip (achado 4)', () => {
-  describe('cenários SEM promessa (fast-skip deve disparar)', () => {
+describe('promise-semantic escalonamento por regex (achado 4 / bloco 1)', () => {
+  describe('cenários SEM match (classificador LLM ainda roda com prompt PADRÃO — fail-open proibido)', () => {
     it('"somos em 6 pessoas" → SEM keyword de promessa, regex não casa', () => {
       expect(hasPromiseKeyword('somos em 6 pessoas')).toBe(false);
     });

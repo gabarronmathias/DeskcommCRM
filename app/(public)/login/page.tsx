@@ -14,21 +14,21 @@ export default async function LoginPage({
   return (
     <div className="space-y-5">
       <div className="text-center">
-        <div className="relative mx-auto mb-3 flex h-[200px] w-full items-center justify-center sm:h-[215px]">
+        <div className="relative mx-auto mb-3 flex h-[248px] w-full items-center justify-center sm:h-[270px]">
           <div
             aria-hidden="true"
             className="absolute h-32 w-56 rounded-full bg-[#c9a866]/10 blur-3xl"
           />
 
-          <div className="relative z-10 h-[195px] w-[195px] overflow-hidden rounded-full bg-[#071435] sm:h-[210px] sm:w-[210px]">
+          <div className="relative z-10 h-[238px] w-[238px] sm:h-[260px] sm:w-[260px]">
             {/* Asset estático já versionado em /public: não depende de rota, auth, CSP ou data URI. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/branding/gabarron-mathias-logo.jpg?v=20260822-1"
+              src="/branding/gabarron-mathias-logo.png?v=20260825-1"
               alt="Gabarron & Mathias"
               width={1080}
               height={1080}
-              className="absolute inset-0 h-full w-full scale-[1.48] object-contain mix-blend-lighten contrast-[1.08] saturate-[1.08]"
+              className="absolute inset-0 h-full w-full object-contain"
               draggable={false}
             />
           </div>

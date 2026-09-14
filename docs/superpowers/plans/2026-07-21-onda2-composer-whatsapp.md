@@ -1164,7 +1164,7 @@ git commit -m "feat(composer): emoji picker lazy estilo WhatsApp (emoji-mart, lo
 - Modify: `HANDOFF-inbox-multimodal.md`
 - Evidência: `.superpowers/evidence/inbox-multimodal-onda2-*.png`
 
-- [ ] **Step 1: Ambiente** — dev server + WAHA up (religar se caiu: `npm run dev` bg; container `deskcomm-waha`); sessão `e2e-wave12-…` WORKING; login admin E2E.
+- [ ] **Step 1: Ambiente** — dev server + WAHA up (religar se caiu: `npm run dev` bg; container `gm-crm-waha`); sessão `e2e-wave12-…` WORKING; login admin E2E.
 
 - [ ] **Step 2: Envio real pelo CRM (Playwright)** — na conversa real: (a) enviar IMAGEM com caption pelo "+"; (b) enviar PDF; (c) gravar e enviar ÁUDIO (conceder permissão de mic via Playwright `--use-fake-ui-for-media-stream` ou permissão do contexto); (d) inserir emoji pelo picker num texto e enviar. Screenshots de cada etapa (menu aberto, preview com caption, gravação com timer, picker aberto).
 

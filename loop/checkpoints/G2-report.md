@@ -28,7 +28,7 @@ Screenshot: `loop/checkpoints/evidence/G2/G2-02-team-role-selector.png`.
 
 **Gate "invariantes de RBAC de G1 todos verdes (flip dos test.fails)"** — os 2
 `it.fails` GAP(G2) de `tests/invariants/gov-1-rbac.test.ts` flipados para testes
-normais na G2-03 (commit f3954ab com `DESKCOMM_GOV_INVARIANTS_EDIT=1` citando o
+normais na G2-03 (commit f3954ab com `GMCRM_GOV_INVARIANTS_EDIT=1` citando o
 flip) após a migration 0030 (tripla completa: migrations/ + apêndice baseline +
 MANIFEST; `check-migration-triple.sh` exit 0; NNNN 0030 inédito nas 10 branches).
 `pnpm test:db`: install (ON_ERROR_STOP=1) + update (re-apply) verdes; **35/35

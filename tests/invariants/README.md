@@ -16,7 +16,7 @@ seus containers existentes.
 ## O contrato do harness (`scripts/test-db.sh`)
 
 1. Sobe um container **efêmero** `pgvector/pgvector:pg17` (nome único
-   `deskcomm-test-db-<pid>`, porta local `54329`, override via `TEST_DB_PORT`).
+   `gm-crm-test-db-<pid>`, porta local `54329`, override via `TEST_DB_PORT`).
 2. Aplica um **prelude** com os stubs mínimos do Supabase que um Postgres cru não
    tem: roles `anon`/`authenticated`/`service_role`, schemas `auth`/`extensions`,
    `auth.users`, `auth.uid()` (lê o claim `sub` de `request.jwt.claims`),

@@ -1,5 +1,5 @@
 /**
- * LGPD domain types for DeskcommCRM.
+ * LGPD domain types for G&M CRM.
  * Mapped from docs/specs/01-spec-platform-base.md §8.1 and Spec 06 §5.6.
  */
 

@@ -21,16 +21,19 @@ import {
   PROMISE_SEMANTIC_MINIMAL_INSTRUCTION as INSTRUCTION_MIN,
 } from '../../lib/agent-engine/guardrails/promise/semantic';
 
-describe('promise-semantic gate 2 — minimal prompt quando regex casa', () => {
-  it('"somos em 6 pessoas" → zero LLM (regex não casa, fail-open)', () => {
+describe('promise-semantic gate 2 — minimal prompt quando regex casa; classificador nunca é pulado', () => {
+  it('"somos em 6 pessoas" → regex não casa, classificador LLM AINDA RODA com prompt PADRÃO (não é prova de ausência)', () => {
+    // ⚠️ BLOCO 1 (modo encerramento 2026-09-13): ausência de match lexical NÃO
+    // prova ausência de promessa. A regex é só escalonamento positivo; quando
+    // não casa, o classificador LLM é chamado com prompt PADRÃO.
     expect(hasPromiseKeyword('somos em 6 pessoas')).toBe(false);
   });
 
-  it('"confirmo amanhã para você" → regex casa, LLM com prompt mínimo é chamado', () => {
+  it('"confirmo amanhã para você" → regex casa, LLM com prompt MÍNIMO é chamado', () => {
     expect(hasPromiseKeyword('confirmo amanhã para você')).toBe(true);
   });
 
-  it('"nossa entrega é rápida" → zero LLM (slogan sem keyword concreta)', () => {
+  it('"nossa entrega é rápida" → regex não casa (slogan sem keyword concreta), classificador LLM AINDA RODA', () => {
     expect(hasPromiseKeyword('nossa entrega é rápida')).toBe(false);
   });
 

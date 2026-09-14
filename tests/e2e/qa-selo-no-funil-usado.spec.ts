@@ -35,7 +35,7 @@ const creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
 function sql(query: string): string {
   return execFileSync(
     "docker",
-    ["exec", "-i", "supabase_db_deskcomm-crm", "psql", "-U", "postgres", "-d", "postgres", "-t", "-c", query],
+    ["exec", "-i", "supabase_db_gm-crm", "psql", "-U", "postgres", "-d", "postgres", "-t", "-c", query],
     { encoding: "utf8" },
   );
 }

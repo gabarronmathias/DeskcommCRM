@@ -134,10 +134,10 @@ export default function FoodStorefrontPage() {
   const checkoutKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("deskcomm-food-session");
+    const saved = window.localStorage.getItem("gm-crm-food-session");
     const key = saved && saved.length >= 6 ? saved : randomKey();
     sessionKeyRef.current = key;
-    if (!saved) window.localStorage.setItem("deskcomm-food-session", key);
+    if (!saved) window.localStorage.setItem("gm-crm-food-session", key);
   }, []);
 
   useEffect(() => {
@@ -365,7 +365,7 @@ const quickCards =
 
     if (!sessionKeyRef.current) {
       sessionKeyRef.current = randomKey();
-      window.localStorage.setItem("deskcomm-food-session", sessionKeyRef.current);
+      window.localStorage.setItem("gm-crm-food-session", sessionKeyRef.current);
     }
     if (!checkoutKeyRef.current) checkoutKeyRef.current = randomKey();
 

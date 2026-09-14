@@ -8,7 +8,7 @@
 > construiu o worker na máquina, como acontece na instalação de um cliente.
 >
 > **O que passou:** o worker migrou de imagem local (`2174fb4f`) para a publicada
-> (`ghcr.io/…/deskcomm-worker`, `revision=31096584…`); as três imagens ficaram pinadas
+> (`ghcr.io/…/gm-crm-worker`, `revision=31096584…`); as três imagens ficaram pinadas
 > na mesma versão; o volume do WAHA, a customização do operador no `.env` e o banco
 > sobreviveram (69 → 73 tabelas, a migração esperada).
 >
@@ -43,8 +43,8 @@ agente ficava parado.
 
 | serviço | imagem | criada |
 |---|---|---|
-| app | `ghcr.io/melgarafael/deskcommcrm:1.2.1` (registry) | 2026-08-12 |
-| worker | `deskcommcrm-worker` (local, sem labels OCI) | **2026-07-31** |
+| app | `ghcr.io/melgarafael/gm-crm:1.2.1` (registry) | 2026-08-12 |
+| worker | `gm-crm-worker` (local, sem labels OCI) | **2026-07-31** |
 
 O contêiner do worker havia sido **reiniciado naquele mesmo dia** e continuava rodando a
 imagem de 31/07 — restart não reconstrói.
@@ -72,7 +72,7 @@ atendeu o tempo todo; atendeu com o agente de dois meses atrás.
 Read-only, seguro em produção, não precisa de clone:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/diagnostico.sh | bash
+curl -fsSL https://raw.githubusercontent.com/melgarafael/G&M CRM/main/hostgator-setup-kit/diagnostico.sh | bash
 ```
 
 Ou, se o operador já tem o projeto no disco:
@@ -111,8 +111,8 @@ cd /caminho/do/projeto
 # 1. anote o estado atual, para poder voltar
 docker compose -f docker-compose.prod.yml ps --format '{{.Service}}|{{.Image}}' > /root/estado-antes.txt
 # 2. aponte SÓ o worker para a imagem publicada da versão que o app já roda
-grep '^APP_IMAGE=' .env            # → confirme a versão, ex.: …deskcommcrm:1.2.1
-printf 'WORKER_IMAGE=ghcr.io/melgarafael/deskcomm-worker:<a-mesma-versão>\n' >> .env
+grep '^APP_IMAGE=' .env            # → confirme a versão, ex.: …gm-crm:1.2.1
+printf 'WORKER_IMAGE=ghcr.io/melgarafael/gm-crm-worker:<a-mesma-versão>\n' >> .env
 printf 'WORKER_PULL_POLICY=missing\n' >> .env
 # 3. recrie apenas o worker
 docker compose -f docker-compose.prod.yml up -d --no-deps worker
@@ -157,7 +157,7 @@ e ele só sabe gravar `APP_IMAGE`; o worker cai no default do compose novo, `:st
 naquele momento não resolvia:
 
 ```
-dc pull → Error: ghcr.io/…/deskcomm-worker:stable: not found
+dc pull → Error: ghcr.io/…/gm-crm-worker:stable: not found
 worker  → antes 2174fb4f · depois 2174fb4f   (NÃO mudou)
 ```
 
@@ -165,8 +165,8 @@ worker  → antes 2174fb4f · depois 2174fb4f   (NÃO mudou)
 o worker**, e o digest bate com o da release:
 
 ```
-worker → antes deskcomm-u6c-worker (local, 7f53521f)
-         depois ghcr.io/…/deskcomm-worker:stable
+worker → antes gm-crm-u6c-worker (local, 7f53521f)
+         depois ghcr.io/…/gm-crm-worker:stable
          sha256:3fe292cad2bd…  revision=9bd59e93  version=1.3.0
 ```
 
@@ -174,7 +174,7 @@ worker → antes deskcomm-u6c-worker (local, 7f53521f)
 
 ```
 .env depois da 1ª execução:
-  APP_IMAGE=ghcr.io/melgarafael/deskcommcrm:1.3.0     ← pinado
+  APP_IMAGE=ghcr.io/melgarafael/gm-crm:1.3.0     ← pinado
   WORKER_IMAGE                                        ← AUSENTE
 ```
 
@@ -276,21 +276,21 @@ U6-b precisa confirmar.**
 
 ## 6. Evidência do ensaio (U6-b, 2026-08-13)
 
-**Ambiente.** VPS real, num diretório isolado (`deskcomm-ensaio`, projeto compose próprio,
+**Ambiente.** VPS real, num diretório isolado (`gm-crm-ensaio`, projeto compose próprio,
 sem publicar portas), lado a lado com uma instalação de produção que **não foi tocada** —
 confirmado antes e depois: 7 contêineres, mesmo uptime, Caddy respondendo 308.
 
 **Estado legado reproduzido, não simulado.** Clone no commit `ee520110` (2026-07-31), o
 mesmo em que `docker-compose.prod.yml` tinha o worker `build:`-only; `baseline.sql`
 daquela época aplicado (69 tabelas); `docker compose up -d` construiu o worker na
-máquina — imagem `deskcomm-ensaio-worker` (`2174fb4f`), **sem labels OCI**, diferente da
+máquina — imagem `gm-crm-ensaio-worker` (`2174fb4f`), **sem labels OCI**, diferente da
 imagem da produção, provando que foi construída ali e não reaproveitada.
 
 **Sintoma confirmado antes de consertar:** `diagnostico.sh` → exit 1, "ESTÁ afetada".
 
 | Verificação | Antes | Depois | |
 |---|---|---|---|
-| imagem do worker | `deskcomm-ensaio-worker` (`2174fb4f`, sem labels) | `ghcr.io/…/deskcomm-worker:docs-doutrina-packaging` (`2082c65e`, `revision=31096584…`) | ✅ |
+| imagem do worker | `gm-crm-ensaio-worker` (`2174fb4f`, sem labels) | `ghcr.io/…/gm-crm-worker:docs-doutrina-packaging` (`2082c65e`, `revision=31096584…`) | ✅ |
 | `.env` — as três imagens | só `APP_IMAGE` | as três na mesma versão, `pull_policy: missing` | ✅ |
 | marcador no volume `waha-data` | presente | **presente** | ✅ |
 | customização do operador no `.env` | presente | **presente** | ✅ |
@@ -304,13 +304,13 @@ imagem da produção, provando que foi construída ali e não reaproveitada.
 Restaurar o `.env` anterior (sem `WORKER_IMAGE`) e subir **não devolve o estado exato**.
 O compose no disco já é o novo, então o worker volta ao default `:stable`; como `stable`
 não existia, o Compose **construiu localmente e taggeou a imagem como
-`ghcr.io/melgarafael/deskcomm-worker:stable`**.
+`ghcr.io/melgarafael/gm-crm-worker:stable`**.
 
 O resultado é uma imagem local **com nome de registry** — que parece publicada e não é:
 
 ```
 revision: []                                          ← vazio: não veio do CI
-source:   [https://github.com/melgarafael/DeskcommCRM] ← veio do LABEL do Dockerfile
+source:   [https://github.com/melgarafael/G&M CRM] ← veio do LABEL do Dockerfile
 está no registry de verdade? NAO
 ```
 
@@ -329,7 +329,7 @@ diferença: o canal `stable` passou a existir. **Uma única execução** do `upd
 
 | Pergunta | Resposta medida |
 |---|---|
-| O worker trocou numa execução só? | **Sim.** `deskcomm-u6c-worker` (local, `7f53521f`) → `ghcr.io/…/deskcomm-worker:stable`, `sha256:3fe292cad2bd…`, `revision=9bd59e93`, `version=1.3.0` — o digest bate com o da release |
+| O worker trocou numa execução só? | **Sim.** `gm-crm-u6c-worker` (local, `7f53521f`) → `ghcr.io/…/gm-crm-worker:stable`, `sha256:3fe292cad2bd…`, `revision=9bd59e93`, `version=1.3.0` — o digest bate com o da release |
 | O `.env` ficou pinado? | **Não.** `APP_IMAGE=…:1.3.0`, e `WORKER_IMAGE` **ausente** — o worker segue o canal móvel |
 | `diagnostico.sh` | **exit 0** (não afetada), com a nota de que o `.env` ainda não fixa a versão |
 | O rollback produz imagem local disfarçada de registry? | **Não.** Com `stable` existindo, o Compose puxa em vez de construir — o efeito colateral do U6-b desapareceu |
@@ -352,7 +352,7 @@ U6-c com exatidão** — o ensaio previu o campo, que é o que dá valor ao ensa
 
 | | antes | depois da 1ª | depois da 2ª |
 |---|---|---|---|
-| worker | `deskcommcrm-worker` local, `fb42e47c`, de **31/07** | `deskcomm-worker:stable` `3fe292cad2bd` `version=1.3.0` | `deskcomm-worker:1.3.0` |
+| worker | `gm-crm-worker` local, `fb42e47c`, de **31/07** | `gm-crm-worker:stable` `3fe292cad2bd` `version=1.3.0` | `gm-crm-worker:1.3.0` |
 | `.env` | sem `WORKER_IMAGE` | ainda **sem pin** (como o U6-c previu) | as três em `1.3.0`, `pull_policy: missing` |
 | `/api/v1/health` | `0.1.0` | — | **`1.3.0`, healthy** |
 | detector | exit 1 | exit 0 + aviso de tag móvel | **exit 0, sem ressalva** |

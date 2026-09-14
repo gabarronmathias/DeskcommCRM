@@ -11,7 +11,7 @@ import type { FlowGraph } from "@/lib/followup/graph-schema";
 
 /**
  * Task 8.1 — gatilho de silêncio (varredura TIME-DRIVEN no cron) contra
- * Postgres real. DESKCOMM_GOV_INVARIANTS_EDIT=1 — arquivo NOVO desta sessão
+ * Postgres real. GMCRM_GOV_INVARIANTS_EDIT=1 — arquivo NOVO desta sessão
  * (tests/invariants/** está congelado pro resto, não para arquivos próprios).
  *
  * Congela: (1) pointer silence habilitado no gate + contato silêncio >

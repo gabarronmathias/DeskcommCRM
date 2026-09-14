@@ -841,7 +841,7 @@ exposes:
 | Drag-drop com leitor de tela | Média | `@hello-pangea/dnd` tem ARIA built-in; QA com axe-core obrigatório |
 | Bulk action de 50 demora demais e UI trava | Média | Server processa em transação rápida; loading state + toast progressivo |
 | Realtime channel zumbi após navegação | Alta | `useRealtimeChannel` cleanup canônico (EPIC-00); test de cleanup em S-04.04 |
-| Vocabulary inconsistente (string hardcoded em PT) | Baixa | Linter `eslint-plugin-deskcomm/no-hardcoded-pt-in-kanban` (regra P-07) — adicionar em S-04.06 se ausente |
+| Vocabulary inconsistente (string hardcoded em PT) | Baixa | Linter `eslint-plugin-gm-crm/no-hardcoded-pt-in-kanban` (regra P-07) — adicionar em S-04.06 se ausente |
 
 ## 8. Decisões arquiteturais novas que este epic introduz
 
@@ -880,7 +880,7 @@ Concluído em 2026-04-28 via Mode A inline orchestration. Combo splits:
 | 9 | S-04.09 BulkActionBar + useBulkAction | ✅ | `29c5ee6` |
 | 10 | S-04.10 Pipeline page + picker + seed | ✅ | `29c5ee6` |
 
-### Seed data (org `deskcomm-admin`)
+### Seed data (org `gm-crm-admin`)
 - Pipeline `Pedidos` (já existia via trigger org-init); 8 stages canônicos
 - 12 leads inseridos via Supabase MCP: 10 open (varied stages) + 1 won + 1 lost
 - Lost reason canônica: `cancelled_by_customer` (do enum DB trigger)

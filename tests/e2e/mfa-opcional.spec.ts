@@ -23,7 +23,7 @@ const svc = createClient(
   { auth: { persistSession: false } },
 );
 
-const SENHA = "MfaOpcional!2026#Deskcomm";
+const SENHA = "MfaOpcional!2026#G&M CRM";
 const email = `mfa-${randomUUID().slice(0, 8)}@qa.local`;
 
 let userId = "";

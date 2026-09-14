@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const FIXTURE = join(process.cwd(), "tests/fixtures/sample-text.pdf");
-const TEXTO_ESPERADO = "DeskcommCRM RAG fixture";
+const TEXTO_ESPERADO = "G&M CRM RAG fixture";
 
 afterEach(() => {
   vi.resetModules();

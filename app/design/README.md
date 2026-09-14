@@ -6,7 +6,7 @@
 > underscore). Se preferir o prefixo, renomeia e adicione um redirect
 > em `next.config.ts`.
 
-Painel navegável e isolado para iterar a direção visual do DeskcommCRM antes de
+Painel navegável e isolado para iterar a direção visual do G&M CRM antes de
 aplicar ao app real. Não toca em `app/layout.tsx` global; tem o seu próprio
 `layout.tsx` com `<VariantProvider>` e CSS escopado em `showcase.css`.
 
@@ -25,7 +25,7 @@ A rota é pública (sem auth) e tem `robots: noindex`.
    Densidade, Componentes, Padrões, Motion, Iconografia.
 2. **Top bar** — switcher para trocar **paleta + tipografia + densidade + tema**
    em runtime via CSS Custom Properties. Tudo persiste em
-   `localStorage` sob a key `deskcomm.designshowcase.v1`.
+   `localStorage` sob a key `G&M.designshowcase.v1`.
 3. **Canvas central** — seção ativa, com botões "Aplicar X" embutidos em cada
    variante para trocar diretamente do conteúdo (não só do switcher).
 

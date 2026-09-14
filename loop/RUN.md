@@ -3,9 +3,9 @@
 O loop é o mesmo em qualquer modo: uma sessão descartável executa `loop/LOOP.md`
 do zero, guiada só pelo estado em disco. O que muda é quem aperta o botão.
 
-**Onde o loop RODA: no checkout principal — `/Users/rafaelmelgaco/DeskcommCRM`
+**Onde o loop RODA: no checkout principal — `/Users/rafaelmelgaco/G&M CRM`
 (`loop/loop.config.json → main_checkout`) — DEPOIS que a branch `gov/setup` for
-mergeada em `main`.** O worktree `DeskcommCRM-gov` existe só para montar a
+mergeada em `main`.** O worktree `G&M CRM-gov` existe só para montar a
 maquinaria sem tocar o checkout principal; ele não é a casa do loop.
 
 ## Pré-requisitos (uma vez, no checkout principal pós-merge)
@@ -20,9 +20,9 @@ maquinaria sem tocar o checkout principal; ele não é a casa do loop.
   ```
   Isso arma via `core.hooksPath`: `pre-commit` (imutabilidade do features.json —
   só `passes`/`verification` mudam fora de sessão humana com
-  `DESKCOMM_GOV_PLAN_EDIT=1`; tripla de migration com NNNN validado contra todas
+  `GMCRM_GOV_PLAN_EDIT=1`; tripla de migration com NNNN validado contra todas
   as branches locais; freeze de `tests/invariants/**`) e `pre-push` (push só com
-  `DESKCOMM_GOV_PHASE_MERGE=1`, exportada só pelo ritual de virada).
+  `GMCRM_GOV_PHASE_MERGE=1`, exportada só pelo ritual de virada).
 - **Guard PreToolUse do Claude Code** (merge ADITIVO no `.claude/settings.json`
   local — preserva hooks já existentes, ex.: do Lina Space):
   ```bash
@@ -42,14 +42,14 @@ maquinaria sem tocar o checkout principal; ele não é a casa do loop.
   ```json
   {
     "max_sessions_per_day": 12,
-    "main_checkout": "/Users/rafaelmelgaco/DeskcommCRM",
+    "main_checkout": "/Users/rafaelmelgaco/G&M CRM",
     "parallel_ui_lane": false,
     "smoke": "pnpm typecheck && pnpm lint && pnpm test:unit"
   }
   ```
   ("hoje" do teto diário é no fuso America/Sao_Paulo.)
-- Slash command (modo interativo): `.claude/commands/deskcomm-gov-loop.md`.
-  **`/deskcomm-gov-loop`, não `/loop`** — `/loop` colide com a skill built-in
+- Slash command (modo interativo): `.claude/commands/gmcrm-gov-loop.md`.
+  **`/gmcrm-gov-loop`, não `/loop`** — `/loop` colide com a skill built-in
   `loop` e com o plugin `ralph-loop` instalados na máquina do dono; disparar o
   mecanismo errado é risco real.
 - **G1-06 é `human_input`** (as 5 decisões de produto do dono): a fase G1 pode
@@ -58,11 +58,11 @@ maquinaria sem tocar o checkout principal; ele não é a casa do loop.
 ## Modo interativo (você olhando)
 
 ```bash
-cd /Users/rafaelmelgaco/DeskcommCRM && claude
-> /deskcomm-gov-loop
+cd /Users/rafaelmelgaco/G&M CRM && claude
+> /gmcrm-gov-loop
 ```
 Uma sessão = uma feature. Quer outra feature, abra OUTRA sessão (`claude` de novo
-ou `/clear` antes de `/deskcomm-gov-loop`). Nunca encadeie duas features na mesma
+ou `/clear` antes de `/gmcrm-gov-loop`). Nunca encadeie duas features na mesma
 conversa — contexto acumulado é exatamente o estado-fora-do-disco que o loop proíbe.
 
 Bom para: as primeiras ~5 sessões de cada fase (calibrar acceptance e briefings
@@ -77,7 +77,7 @@ agendar) e agende com cadência ≥2h:
 ```bash
 #!/usr/bin/env bash
 set -u
-REPO="/Users/rafaelmelgaco/DeskcommCRM"; cd "$REPO" || exit 1
+REPO="/Users/rafaelmelgaco/G&M CRM"; cd "$REPO" || exit 1
 
 [ -f loop/STOP ] && exit 0
 # gate barato em bash: checkpoint pendente ou recusado => nem invoca o modelo
@@ -91,7 +91,7 @@ done
 
 # lock portátil: flock NÃO existe no macOS stock. mkdir é atômico em POSIX;
 # o trap devolve o lock na saída (não usar exec).
-LOCKDIR="/tmp/deskcomm-gov-loop.lock.d"
+LOCKDIR="/tmp/gmcrm-gov-loop.lock.d"
 mkdir "$LOCKDIR" 2>/dev/null || exit 0
 trap 'rmdir "$LOCKDIR"' EXIT
 
@@ -104,7 +104,7 @@ claude -p "Leia loop/LOOP.md e execute o protocolo à risca." \
 
 **launchd (macOS — a máquina do dono)** — mesmo padrão do vendaval-loop:
 `~/Library/LaunchAgents/com.deskcomm.gov-loop.plist` com `ProgramArguments`
-`/bin/bash -lc '/Users/rafaelmelgaco/DeskcommCRM/loop/run-session.sh'` e
+`/bin/bash -lc '/Users/rafaelmelgaco/G&M CRM/loop/run-session.sh'` e
 `StartCalendarInterval` de 2 em 2 horas na janela 7h-23h. Em Linux/VPS, cron
 (`CRON_TZ=America/Sao_Paulo` + `0 7-23/2 * * *`) ou systemd timer.
 
@@ -116,7 +116,7 @@ profundidade).
 ## Regras de segurança do loop (invioláveis — e ENFORÇADAS, não só escritas)
 
 1. **Nunca `git push` sem checkpoint aprovado — enforcement físico**: o hook
-   `loop/hooks/pre-push` recusa qualquer push sem `DESKCOMM_GOV_PHASE_MERGE=1`, e
+   `loop/hooks/pre-push` recusa qualquer push sem `GMCRM_GOV_PHASE_MERGE=1`, e
    essa variável só é exportada pelo ritual de virada de fase (CHECKPOINT.md), que
    só dispara com `.approved` do dono. Nada sai da máquina sem gate humano — por
    construção, não por obediência. (Alternativa do dono: abrir PR — CHECKPOINT.md.)
@@ -131,11 +131,11 @@ profundidade).
 5. **Imutabilidade do plano — enforcement físico**: o pre-commit
    (`loop/hooks/validate-features.sh`) rejeita commit que altere qualquer campo de
    `plan/features.json` além de `passes`/`verification` — a menos que
-   `DESKCOMM_GOV_PLAN_EDIT=1` (sessão humana). E a mutação legítima é SÓ via
+   `GMCRM_GOV_PLAN_EDIT=1` (sessão humana). E a mutação legítima é SÓ via
    `node loop/update-feature.ts` (o PreToolUse barra Edit/Write direto).
 6. **`tests/invariants/**` semi-congelado — enforcement físico**: PreToolUse
    bloqueia Edit/Write em arquivo existente; pre-commit (`freeze-invariants.sh`)
-   bloqueia M/D sem `DESKCOMM_GOV_INVARIANTS_EDIT=1`. Adição (A) passa livre —
+   bloqueia M/D sem `GMCRM_GOV_INVARIANTS_EDIT=1`. Adição (A) passa livre —
    é assim que a suíte cresce. O flip test.fails→normal é a exceção documentada.
 7. **Migration em tripla — enforcement físico**: `check-migration-triple.sh` exige
    baseline.sql + MANIFEST.md no mesmo commit da migration nova e NNNN inédito em

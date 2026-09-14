@@ -1,4 +1,4 @@
-# Guia de Setup — DeskcommCRM
+# Guia de Setup — G&M CRM
 
 > **Pra quem é este doc?** Você acabou de clonar o repo, copiou `.env.example` pra `.env.local`, abriu o arquivo e bateu o desespero: "o que é cada uma dessas chaves e onde eu pego?". Este guia resolve isso. Sem pular etapas, sem assumir que você já configurou nada antes.
 >
@@ -38,7 +38,7 @@
 - **Cartão de crédito** 💳 — alguns serviços pedem só pra "comprovar identidade" mesmo no plano grátis (Supabase, Sentry). Se ficar dentro do free tier, **não cobram nada**.
 
 **Como o `.env.local` funciona:**
-- Fica na **raiz do projeto**: `/seu-caminho/DeskcommCRM/.env.local`.
+- Fica na **raiz do projeto**: `/seu-caminho/G&M CRM/.env.local`.
 - Cada linha é `NOME_DA_VARIAVEL=valor` — sem espaço antes/depois do `=`.
 - Strings com caracteres especiais: envolva em aspas duplas (`"valor com espaço"`).
 - Variáveis com `NEXT_PUBLIC_` no nome são **expostas no browser** — nunca coloque secret aí.
@@ -79,7 +79,7 @@ Se você quer rodar o app o mais rápido possível com o mínimo viável:
 
 1. Acesse <https://supabase.com> → **Start your project** → faça login com GitHub.
 2. No dashboard, clique **New project**.
-   - **Name:** `deskcomm-dev` (ou o que quiser).
+   - **Name:** `gm-crm-dev` (ou o que quiser).
    - **Database password:** clique no ícone de dado pra gerar. **Salve essa senha num gerenciador (1Password, Bitwarden)** — você vai precisar pra rodar migrations e nunca verá ela de novo no dashboard.
    - **Region:** `South America (São Paulo)` — latência mínima pro Brasil.
    - **Pricing plan:** Free.
@@ -145,7 +145,7 @@ No menu lateral → **Storage** → **New bucket**:
 
 1. Acesse <https://upstash.com> → **Sign up** com GitHub.
 2. No dashboard, clique **Create Database**.
-   - **Name:** `deskcomm-dev`
+   - **Name:** `gm-crm-dev`
    - **Type:** Regional (mais barato que Global pra dev)
    - **Region:** `sa-east-1` (São Paulo) — ou `us-east-1` se SP não estiver disponível no free tier.
    - **Eviction:** habilitado (default).
@@ -258,7 +258,7 @@ Confira em <http://localhost:3030/dashboard/> que o WAHA está respondendo (UI d
 
 1. Acesse <https://vercel.com> → faça login.
 2. No dashboard → **AI** (no menu lateral) → **Get started with AI Gateway**.
-3. Clique **Create API Key** → nome `deskcomm-dev` → copie a chave.
+3. Clique **Create API Key** → nome `gm-crm-dev` → copie a chave.
 
 ```env
 AI_GATEWAY_API_KEY=<chave-do-gateway>
@@ -272,7 +272,7 @@ VERCEL_AI_GATEWAY_URL=https://ai-gateway.vercel.sh/v1
 
 1. Acesse <https://console.anthropic.com> → **Sign Up**. 💳
 2. Adicione método de pagamento (eles dão $5 de crédito grátis).
-3. **Settings → API Keys → Create Key** → nome `deskcomm-dev` → copie.
+3. **Settings → API Keys → Create Key** → nome `gm-crm-dev` → copie.
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-api03-...
@@ -288,7 +288,7 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 
 1. Acesse <https://platform.openai.com> → **Sign up**. 💳
 2. Adicione método de pagamento (eles não dão mais crédito grátis em conta nova).
-3. **API Keys → Create new secret key** → nome `deskcomm-dev-embeddings` → copie.
+3. **API Keys → Create new secret key** → nome `gm-crm-dev-embeddings` → copie.
 
 ```env
 OPENAI_API_KEY=sk-proj-...
@@ -304,7 +304,7 @@ OPENAI_API_KEY=sk-proj-...
 2. Crie um workspace (ou use o pessoal) → **Create Project**.
    - **Platform:** `Next.js`
    - **Alert frequency:** "Alert me on every new issue"
-   - **Project name:** `deskcomm-dev`
+   - **Project name:** `gm-crm-dev`
 3. Após criar, o Sentry mostra o **DSN** numa tela de quickstart. É uma URL tipo `https://abc123@o456.ingest.sentry.io/789`.
 4. Se você fechou a tela: **Project Settings → Client Keys (DSN)** → copie o "DSN" público.
 
@@ -322,7 +322,7 @@ SENTRY_DSN=https://abc123@o456.ingest.sentry.io/789
 
 1. Acesse <https://resend.com> → **Sign up** com GitHub.
 2. **API Keys → Create API Key**:
-   - **Name:** `deskcomm-dev`
+   - **Name:** `gm-crm-dev`
    - **Permission:** `Sending access` (não `Full access`).
    - **Domain:** `All domains` (em dev) — em prod, restrinja ao domínio verificado.
 3. Copie a chave (começa com `re_...`). **Ela só aparece uma vez.**
@@ -348,7 +348,7 @@ RESEND_FROM_EMAIL=onboarding@resend.dev
 
 1. Acesse <https://partners.tiendanube.com/> → **Sign up** como parceiro (gratuito).
 2. No dashboard de parceiro → **Apps → Create new app**.
-   - **App name:** `DeskcommCRM Dev`.
+   - **App name:** `G&M CRM Dev`.
    - **Redirect URI:** `https://<sua-url-ngrok>.ngrok-free.app/api/v1/integrations/nuvemshop/callback` (mesmo ngrok do WAHA, ou outro).
    - **Scopes:** marque tudo relacionado a `read_orders`, `read_customers`, `read_products`, `write_orders` (pra atualizar status).
 3. Após criar, a tela do app mostra:
@@ -478,7 +478,7 @@ Provável: você botou o **hash** em `WAHA_API_KEY` em vez do **plaintext**. Con
 - O ngrok está rodando? (`ngrok http 3000`)
 - A URL do ngrok atual está em `WAHA_WEBHOOK_BASE_URL`? (muda a cada restart no plano free).
 - Você reiniciou o `pnpm dev` depois de mudar o `.env.local`? Variáveis de ambiente são lidas no boot.
-- Confira logs do container: `docker logs deskcomm-waha`.
+- Confira logs do container: `docker logs gm-crm-waha`.
 
 ### Porta 3000 já em uso
 Algum outro processo rodando. Mata com `lsof -ti:3000 | xargs kill -9` ou roda o Next em outra porta: `pnpm dev -- -p 3001` (e atualize `WAHA_WEBHOOK_BASE_URL` no ngrok pra apontar pra nova porta).
@@ -507,8 +507,8 @@ Com tudo verde no `/api/v1/health`:
 3. Leia [`CLAUDE.md`](../CLAUDE.md) pra convenções do projeto.
 4. Veja [`tasks/todo.md`](../tasks/todo.md) pra entender o backlog atual.
 
-Bem-vindo ao DeskcommCRM. 🛠️
+Bem-vindo ao G&M CRM. 🛠️
 
 ---
 
-> **Achou um erro neste guia?** Abra uma [issue](https://github.com/melgarafael/DeskcommCRM/issues) ou mande um PR — esse doc vive da contribuição da comunidade.
+> **Achou um erro neste guia?** Abra uma [issue](https://github.com/melgarafael/G&M CRM/issues) ou mande um PR — esse doc vive da contribuição da comunidade.

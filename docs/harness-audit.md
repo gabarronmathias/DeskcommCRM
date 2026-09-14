@@ -1,6 +1,6 @@
 ---
 type: harness-audit
-project: DeskcommCRM
+project: G&M CRM
 status: draft
 last_updated: 2026-07-29
 generated_by: auditoria documental (Claude Code) — verificação de arquivos, CI e configs
@@ -8,7 +8,7 @@ confidence: alta (todos os itens verificados por leitura direta de arquivo/confi
 audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-27)
 ---
 
-# Auditoria do harness — DeskcommCRM
+# Auditoria do harness — G&M CRM
 
 "Harness" = a infraestrutura que permite a um humano ou agente instalar, entender,
 alterar e **verificar** o projeto com segurança. Um harness fraco não impede o trabalho;

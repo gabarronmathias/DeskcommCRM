@@ -41,7 +41,7 @@ const CT_B = "50d0c222-0000-4000-8000-00000000000b";
 function psql(script: string): string {
   return execFileSync(
     "docker",
-    ["exec", "-i", "supabase_db_deskcomm-crm", "psql", "-U", "postgres", "-d", "postgres", "-tA"],
+    ["exec", "-i", "supabase_db_gm-crm", "psql", "-U", "postgres", "-d", "postgres", "-tA"],
     { input: script, encoding: "utf8" },
   );
 }

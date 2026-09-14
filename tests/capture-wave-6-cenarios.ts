@@ -1113,7 +1113,7 @@ async function main(): Promise<void> {
       // join aceito, binding confirmado, entrega negada em silêncio — e o
       // "defeito" seria a RLS fazendo o trabalho dela, certo.
       const { data: usuarios } = await admin.auth.admin.listUsers();
-      const manager = (usuarios?.users ?? []).find((u) => u.email === "e2e-manager@deskcomm.test");
+      const manager = (usuarios?.users ?? []).find((u) => u.email === "e2e-manager@gabarronmathias.test");
       const mesmoUsuario = manager?.id === subDoCanal;
       console.info(
         `[D21 diag] token do canal: ${validade} · sub=${subDoCanal.slice(0, 8)} · ` +

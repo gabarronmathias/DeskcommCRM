@@ -29,8 +29,8 @@ owner: Rafael Melgaço
 ## 2. Pré-requisitos
 
 1. Acesso SSH ao VPS (Hostgator entrega via cPanel ou root SSH; preferir SSH-only).
-2. Domínio com DNS gerenciado em Cloudflare (ou outro provider) — ex.: `waha.deskcomm.com.br`.
-3. Conta Backblaze B2 com bucket `deskcomm-waha-backup` (R$0,06/GB/mês ≈ $0.005/GB).
+2. Domínio com DNS gerenciado em Cloudflare (ou outro provider) — ex.: `waha.gabarronmathias.com.br`.
+3. Conta Backblaze B2 com bucket `gm-crm-waha-backup` (R$0,06/GB/mês ≈ $0.005/GB).
 4. Licença ativa **WAHA Plus** (`https://waha.devlike.pro` — ~$30/mês).
 5. Vercel project com env vars `WAHA_API_BASE_URL`, `WAHA_API_KEY`, `WAHA_WEBHOOK_BASE_URL`, `WAHA_HMAC_SECRET` configurados (ainda apontando pra dev — atualizamos no fim).
 
@@ -86,7 +86,7 @@ sudo ufw enable
 ### 3.4 Fail2ban (SSH + Nginx 401)
 
 ```bash
-sudo tee /etc/fail2ban/jail.d/deskcomm.conf > /dev/null <<'EOF'
+sudo tee /etc/fail2ban/jail.d/gmcrm.conf > /dev/null <<'EOF'
 [sshd]
 enabled = true
 maxretry = 3
@@ -106,12 +106,12 @@ sudo systemctl restart fail2ban
 
 No Cloudflare (ou seu DNS provider):
 
-- `waha.deskcomm.com.br` → A record → IP do VPS Hostgator
+- `waha.gabarronmathias.com.br` → A record → IP do VPS Hostgator
 - Proxy = **DNS only** (cinza). Cloudflare Proxy (laranja) interfere em SSE/WebSocket que o WAHA usa.
 
 ```bash
-sudo certbot --nginx -d waha.deskcomm.com.br \
-  --non-interactive --agree-tos -m ops@deskcomm.com.br
+sudo certbot --nginx -d waha.gabarronmathias.com.br \
+  --non-interactive --agree-tos -m ops@gabarronmathias.com.br
 ```
 
 Certbot já injeta SSL no `/etc/nginx/sites-available/default`.
@@ -123,12 +123,12 @@ Certbot já injeta SSL no `/etc/nginx/sites-available/default`.
 ### 5.1 Estrutura
 
 ```bash
-sudo mkdir -p /opt/deskcomm-waha
-sudo chown deskcomm:deskcomm /opt/deskcomm-waha
-cd /opt/deskcomm-waha
+sudo mkdir -p /opt/gm-crm-waha
+sudo chown deskcomm:deskcomm /opt/gm-crm-waha
+cd /opt/gm-crm-waha
 ```
 
-Copiar (via `scp` ou `git clone`) o `docker-compose.yml` do repo (raiz do DeskcommCRM). Ajustes obrigatórios pra prod:
+Copiar (via `scp` ou `git clone`) o `docker-compose.yml` do repo (raiz do G&M CRM). Ajustes obrigatórios pra prod:
 
 ```yaml
 services:
@@ -148,22 +148,22 @@ services:
 
 ### 5.2 .env de produção
 
-`/opt/deskcomm-waha/.env` (chmod 600):
+`/opt/gm-crm-waha/.env` (chmod 600):
 
 ```bash
 WAHA_API_KEY=<plaintext gerado novo, 64 chars hex>
-WAHA_WEBHOOK_BASE_URL=https://app.deskcomm.com.br
+WAHA_WEBHOOK_BASE_URL=https://app.gabarronmathias.com.br
 WAHA_HMAC_SECRET=<32 bytes random distinto da api key>
 ```
 
 ```bash
-chmod 600 /opt/deskcomm-waha/.env
+chmod 600 /opt/gm-crm-waha/.env
 ```
 
 ### 5.3 Subir
 
 ```bash
-cd /opt/deskcomm-waha
+cd /opt/gm-crm-waha
 docker compose up -d
 docker compose logs -f waha       # confere "Nest application successfully started"
 ```
@@ -185,10 +185,10 @@ curl -s -H "X-Api-Key: $PLAIN" http://127.0.0.1:3000/api/sessions
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name waha.deskcomm.com.br;
+    server_name waha.gabarronmathias.com.br;
 
-    ssl_certificate     /etc/letsencrypt/live/waha.deskcomm.com.br/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/waha.deskcomm.com.br/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/waha.gabarronmathias.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/waha.gabarronmathias.com.br/privkey.pem;
 
     # Egress allowlist — só Vercel pode chamar.
     include /etc/nginx/conf.d/vercel-egress-allowlist.conf;
@@ -210,7 +210,7 @@ server {
 
 server {
     listen 80;
-    server_name waha.deskcomm.com.br;
+    server_name waha.gabarronmathias.com.br;
     return 301 https://$host$request_uri;
 }
 ```
@@ -236,7 +236,7 @@ echo "0 4 * * * deskcomm /usr/local/bin/refresh-vercel-cidrs.sh" | sudo tee /etc
 ```bash
 sudo ln -s /etc/nginx/sites-available/waha /etc/nginx/sites-enabled/waha
 sudo nginx -t && sudo systemctl reload nginx
-curl -I https://waha.deskcomm.com.br/api/health    # 401 esperado sem header
+curl -I https://waha.gabarronmathias.com.br/api/health    # 401 esperado sem header
 ```
 
 ---
@@ -246,15 +246,15 @@ curl -I https://waha.deskcomm.com.br/api/health    # 401 esperado sem header
 ### 7.1 Setup
 
 ```bash
-sudo tee /opt/deskcomm-waha/backup.env > /dev/null <<EOF
+sudo tee /opt/gm-crm-waha/backup.env > /dev/null <<EOF
 B2_ACCOUNT_ID=<key id>
 B2_ACCOUNT_KEY=<key>
-RESTIC_REPOSITORY=b2:deskcomm-waha-backup:/waha
+RESTIC_REPOSITORY=b2:gm-crm-waha-backup:/waha
 RESTIC_PASSWORD=<senha forte armazenada no 1Password>
 EOF
-sudo chmod 600 /opt/deskcomm-waha/backup.env
+sudo chmod 600 /opt/gm-crm-waha/backup.env
 
-source /opt/deskcomm-waha/backup.env
+source /opt/gm-crm-waha/backup.env
 restic init    # uma vez só
 ```
 
@@ -263,7 +263,7 @@ restic init    # uma vez só
 `/etc/cron.d/waha-backup`:
 
 ```cron
-0 3 * * * deskcomm . /opt/deskcomm-waha/backup.env && restic backup /var/lib/docker/volumes/deskcomm-waha_waha-data --tag daily && restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+0 3 * * * deskcomm . /opt/gm-crm-waha/backup.env && restic backup /var/lib/docker/volumes/gm-crm-waha_waha-data --tag daily && restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
 ```
 
 ### 7.3 Restore drill (rodar mensal)
@@ -271,8 +271,8 @@ restic init    # uma vez só
 ```bash
 # em VPS de teste:
 docker compose down
-sudo rm -rf /var/lib/docker/volumes/deskcomm-waha_waha-data/*
-. /opt/deskcomm-waha/backup.env
+sudo rm -rf /var/lib/docker/volumes/gm-crm-waha_waha-data/*
+. /opt/gm-crm-waha/backup.env
 restic restore latest --target /
 docker compose up -d
 # verificar que sessões voltaram sem precisar re-parear
@@ -286,7 +286,7 @@ Nunca confie em backup que você não testou restaurando.
 
 ### 8.1 Healthcheck externo
 
-UptimeRobot (free tier, 5min) apontando pra `https://waha.deskcomm.com.br/ping` (rota pública sem auth). Alerta → email + WhatsApp via webhook do próprio app.
+UptimeRobot (free tier, 5min) apontando pra `https://waha.gabarronmathias.com.br/ping` (rota pública sem auth). Alerta → email + WhatsApp via webhook do próprio app.
 
 ### 8.2 Watchdog local
 
@@ -300,7 +300,7 @@ else
   FAILS=$((FAILS+1))
   echo $FAILS > /tmp/waha-fails
   if [ "$FAILS" -ge 3 ]; then
-    cd /opt/deskcomm-waha && docker compose restart waha
+    cd /opt/gm-crm-waha && docker compose restart waha
     curl -s -X POST "https://hooks.sentry.io/..." -d "WAHA restarted após $FAILS falhas"
     echo 0 > /tmp/waha-fails
   fi
@@ -312,7 +312,7 @@ echo "*/1 * * * * deskcomm /usr/local/bin/waha-watchdog.sh" | sudo tee /etc/cron
 
 ### 8.3 Log shipping (opcional Fase 2)
 
-Better Stack ou Datadog Agent → `docker logs deskcomm-waha`. Sem isso, logs ficam só locais e somem em rotação.
+Better Stack ou Datadog Agent → `docker logs gm-crm-waha`. Sem isso, logs ficam só locais e somem em rotação.
 
 ---
 
@@ -321,9 +321,9 @@ Better Stack ou Datadog Agent → `docker logs deskcomm-waha`. Sem isso, logs fi
 No painel Vercel → Project Settings → Environment Variables (escopo: **Production** apenas):
 
 ```
-WAHA_API_BASE_URL=https://waha.deskcomm.com.br
+WAHA_API_BASE_URL=https://waha.gabarronmathias.com.br
 WAHA_API_KEY=<mesmo plaintext do .env do VPS>
-WAHA_WEBHOOK_BASE_URL=https://app.deskcomm.com.br
+WAHA_WEBHOOK_BASE_URL=https://app.gabarronmathias.com.br
 WAHA_HMAC_SECRET=<mesmo do VPS>
 ```
 

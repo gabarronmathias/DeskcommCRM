@@ -72,7 +72,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       )
     `)
     .eq("organization_id", activeOrg.orgId)
-    .eq("external_provider", "deskcomm_food")
+    .eq("external_provider", "gm_crm_food")
     .order("ordered_at", { ascending: false })
     .limit(limit);
 

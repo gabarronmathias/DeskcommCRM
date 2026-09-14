@@ -26,7 +26,7 @@ import { describe, expect, it } from "vitest";
 const RAIZ = join(__dirname, "..", "..");
 const DIR_CRON = join(RAIZ, "app", "api", "v1", "cron");
 // O crontab saiu do `command:` inline do compose e virou o entrypoint da imagem
-// `deskcomm-scheduler` — o `apk add curl tzdata` a cada start amarrava a volta
+// `gm-crm-scheduler` — o `apk add curl tzdata` a cada start amarrava a volta
 // do cron à internet da VPS. A cerca continua a mesma; só a fonte da verdade do
 // "o que roda" mudou de arquivo.
 const CRONTAB = join(RAIZ, "docker", "scheduler", "entrypoint.sh");

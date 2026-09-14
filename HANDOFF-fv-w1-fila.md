@@ -111,7 +111,7 @@ pediu.
 Medido no `CLAUDE.md` do meu HEAD, que traz a saída do `gh api` colada:
 
 ```console
-$ gh api repos/melgarafael/DeskcommCRM/branches/main/protection --jq '.required_status_checks.contexts|join(", ")'
+$ gh api repos/melgarafael/G&M CRM/branches/main/protection --jq '.required_status_checks.contexts|join(", ")'
 verify, build-and-size, invariants, e2e
 ```
 
@@ -119,7 +119,7 @@ verify, build-and-size, invariants, e2e
 
 **E a origem da crença não é descuido de quem repetiu — é estrutural.** O
 `CLAUDE.md` que chega ao contexto de uma sessão vem do DIRETÓRIO PRINCIPAL
-(`/Users/rafaelmelgaco/DeskcommCRM`), não do worktree onde se trabalha. Medido
+(`/Users/rafaelmelgaco/G&M CRM`), não do worktree onde se trabalha. Medido
 agora: o principal está na branch `feat/indice-de-atrito` e o arquivo lá ainda
 diz, na linha 215, `Check **não-obrigatório** (roda, mas não segura merge)`. O
 `CLAUDE.md` do worktree `fv-fila` **já estava corrigido** — inclusive na base
@@ -428,7 +428,7 @@ aqui"); nenhuma asserção existente é tocada.
   },
 ```
 
-Com autorização, o commit precisa de `DESKCOMM_GOV_INVARIANTS_EDIT=1` e da razão
+Com autorização, o commit precisa de `GMCRM_GOV_INVARIANTS_EDIT=1` e da razão
 citada na mensagem — é o que o hook exige de quem passa por ele.
 
 ---

@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASELINE="$ROOT/supabase/baseline.sql"
 PORT="${TEST_DB_PORT:-54329}"
-CONTAINER="deskcomm-test-db-$$"
+CONTAINER="gm-crm-test-db-$$"
 IMAGE="pgvector/pgvector:pg17"
 
 [ -f "$BASELINE" ] || { echo "FATAL: $BASELINE não encontrado" >&2; exit 1; }
@@ -86,7 +86,7 @@ $$;
 --                       retrieve_top_k_chunks)
 --
 -- As mesmas 6, exatamente, que `select ... has_function_privilege('anon', ...)`
--- devolve no `supabase_db_deskcomm-crm` desta máquina hoje. Ou seja: o gate estava
+-- devolve no `supabase_db_gm-crm` desta máquina hoje. Ou seja: o gate estava
 -- verde medindo um universo onde o defeito não pode existir.
 --
 -- `revoke execute ... from public` no default também é fiel ao produto: no
@@ -139,7 +139,7 @@ create table if not exists auth.users (
 -- do Supabase; os testes simulam o JWT via set_config).
 --
 -- O CORPO ABAIXO É CÓPIA FIEL do `auth.uid()` do Supabase — conferido em
--- 2026-08-11 com `pg_get_functiondef` no `supabase_db_deskcomm-crm` (imagem
+-- 2026-08-11 com `pg_get_functiondef` no `supabase_db_gm-crm` (imagem
 -- supabase/postgres:17.6.1.106). A cópia importa por causa de UM detalhe que a
 -- versão anterior deste stub errava:
 --

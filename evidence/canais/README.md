@@ -174,7 +174,7 @@ A primeira e a segunda execuções da jornada saíram sujas — toast `No active
 `loadAuthUser` (`lib/auth/server.ts`) **descarta o erro** do `select` em
 `user_organizations`, então uma falha de query vira "usuário sem organização".
 
-A falha de query foi medida na fonte: `docker logs supabase_db_deskcomm-crm` mostra
+A falha de query foi medida na fonte: `docker logs supabase_db_gm-crm` mostra
 `server process ... was terminated by signal 11: Segmentation fault` às 18:22:51 e
 18:28:41 UTC — exatamente as duas janelas —, o PostgREST respondendo `503 PGRST002` e o
 GoTrue `FATAL: the database system is in recovery mode`. O mesmo container já tinha

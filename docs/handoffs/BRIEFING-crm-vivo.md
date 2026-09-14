@@ -11,20 +11,20 @@
 
 ## 0. Onde o trabalho acontece
 
-- **Worktree:** `/Users/rafaelmelgaco/DeskcommCRM-crm-vivo`
+- **Worktree:** `/Users/rafaelmelgaco/G&M CRM-crm-vivo`
 - **Branch:** `feat/crm-vivo`, criada de `origin/main` (`3b4c193`)
 - **Próxima migration livre:** `0070` (a base vai até `0067`)
 - **Dev server desta entrega:** porta **3020** (3000/3001/3010 são de outras sessões — **não encoste**)
 - **Worker alheio vivo na 8787:** de outra sessão. **Não mate, não reinicie.**
 
-Existem outros worktrees vivos (`.claude/worktrees/*`, `DeskcommCRM-qa`, `DeskcommCRM-main-preview`,
-`DeskcommCRM-vendaval*`). **Nenhum deles é seu.** Trabalhe só no worktree acima.
+Existem outros worktrees vivos (`.claude/worktrees/*`, `G&M CRM-qa`, `G&M CRM-main-preview`,
+`G&M CRM-vendaval*`). **Nenhum deles é seu.** Trabalhe só no worktree acima.
 
 ---
 
 ## 1. A missão
 
-O DeskcommCRM existe para que **todo lead que entra vire uma venda feita ou um problema
+O G&M CRM existe para que **todo lead que entra vire uma venda feita ou um problema
 resolvido** — nunca um card parado que ninguém viu.
 
 O sistema tem duas metades que funcionam e não se conhecem: uma **pensa** (harness:
@@ -1441,7 +1441,7 @@ gera atrito no momento da decisão; só o instrumento gera.
 contorno paga o preço em qual outro lugar?"*. `freeze-invariants.sh` existe para impedir que um
 invariante seja **apagado ou afrouxado**, não que ele continue **compilando** quando um tipo ganha
 campo: acrescentar linha a um fixture é **adição**. A exceção documentada existe e cobra prova —
-`DESKCOMM_GOV_INVARIANTS_EDIT=1` com o `+N −0` **medido** no corpo do commit. Se o `−0` não
+`GMCRM_GOV_INVARIANTS_EDIT=1` com o `+N −0` **medido** no corpo do commit. Se o `−0` não
 aparecer, o bloqueio estava certo.
 
 ### §7.29-a — Duas emendas do @DevVivo, e a segunda vale para tudo

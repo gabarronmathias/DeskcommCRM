@@ -44,15 +44,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: deskcommcrm
+          - name: gm-crm
             dockerfile: Dockerfile
-            title: DeskcommCRM
-          - name: deskcomm-worker
+            title: G&M CRM
+          - name: gm-crm-worker
             dockerfile: Dockerfile.worker
-            title: DeskcommCRM worker
-          - name: deskcomm-scheduler
+            title: G&M CRM worker
+          - name: gm-crm-scheduler
             dockerfile: Dockerfile.scheduler
-            title: DeskcommCRM scheduler
+            title: G&M CRM scheduler
 
     steps:
       - uses: actions/checkout@v7

@@ -15,7 +15,7 @@
  *       então em MVP isProspecting é sempre false e este ramo é inócuo para inbound/follow-up.
  *
  * Fonte dos sinais pós-fusão: `contacts.consent` (jsonb de consentimento POR FINALIDADE
- * do Deskcomm — `{marketing: {granted_at, source, version}, transactional: ..., profiling: ...}`),
+ * do G&M CRM — `{marketing: {granted_at, source, version}, transactional: ..., profiling: ...}`),
  * `contacts.source` (data_origin) e `contacts.is_anonymized` — tudo no mesmo banco, sem gap
  * de MCP. Consentimento de PROSPECÇÃO = finalidade `marketing` concedida (`granted_at`
  * não-vazio). LIA = leitura DEFENSIVA de `consent.legitimate_interest.ref` (chave que o
@@ -79,7 +79,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 /**
  * Deriva o LgpdInput de uma linha de `contacts`. `isProspecting` NÃO vem do contato — é do
  * fluxo (o caller decide se é cold touch); em MVP é sempre false (resposta a inbound).
- * Consent por FINALIDADE do Deskcomm: prospecção usa `marketing.granted_at` (string
+ * Consent por FINALIDADE do G&M CRM: prospecção usa `marketing.granted_at` (string
  * não-vazia = concedido). LIA em `legitimate_interest.ref` (leitura defensiva — a chave só
  * existe quando registrada). Sem nenhum dos dois → basis null (sem base legal).
  */

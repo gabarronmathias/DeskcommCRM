@@ -10,7 +10,7 @@ este arquivo é o índice da evidência, para ser citado lá.
 
 Caminho percorrido, **inteiro por clique**, como um usuário:
 
-1. `/login` → digita e-mail e senha do **manager** (`e2e-manager@deskcomm.test`);
+1. `/login` → digita e-mail e senha do **manager** (`e2e-manager@gabarronmathias.test`);
 2. cai em `/app/inbox` → clica em **Kanban** no menu lateral;
 3. na lista de pipelines, clica na linha **"CRM Vivo — Clínica"**;
 4. board carregado → capturas.

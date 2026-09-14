@@ -1,5 +1,5 @@
 #!/bin/sh
-# Entrypoint do deskcomm-scheduler: escreve o crontab e entrega o PID 1 ao crond.
+# Entrypoint do gm-crm-scheduler: escreve o crontab e entrega o PID 1 ao crond.
 #
 # Por que gerar em runtime em vez de assar o arquivo na imagem: o INTERNAL_SECRET
 # só existe no .env do cliente, e o busybox crond não expande variáveis dentro da

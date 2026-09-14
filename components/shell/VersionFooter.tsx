@@ -24,7 +24,7 @@ export function VersionFooter({ collapsed }: { collapsed: boolean }) {
   if (!alerta) {
     return (
       <p
-        className={cn("px-3 py-1 text-[11px] text-muted-foreground/70", collapsed && "px-0 text-center")}
+        className={cn("px-3 py-1 text-[11px] text-navy-300", collapsed && "px-0 text-center")}
         title={`Versão ${label}`}
       >
         {collapsed ? label.split(".").slice(0, 2).join(".") : `versão ${label}`}
@@ -38,13 +38,13 @@ export function VersionFooter({ collapsed }: { collapsed: boolean }) {
       href="/app/settings/atualizacao"
       title={`Nova versão ${novo} disponível`}
       className={cn(
-        "flex items-center gap-2 rounded-md px-3 py-2 text-xs text-foreground hover:bg-accent/50",
+        "flex items-center gap-2 rounded-md px-3 py-2 text-xs text-gold-400 hover:bg-navy-800 hover:text-gold-300",
         collapsed && "justify-center px-2",
       )}
     >
       <span className="relative flex h-2 w-2 shrink-0">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold-500/60" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-gold-500" />
       </span>
       {!collapsed && (
         <span className="truncate">

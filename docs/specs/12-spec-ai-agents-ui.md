@@ -1,6 +1,6 @@
 ---
 title: Spec Técnica 12 — AI Agents UI (Telas, Fluxos, Wireframes)
-parent: docs/research/pre-development/ai-agent-framework-deskcomm-whatsapp/09-handoff.md
+parent: docs/research/pre-development/ai-agent-framework-gm-crm-whatsapp/09-handoff.md
 depends_on: 09-spec-frontend-backend-integration.md, 10-spec-ai-agents-runtime.md, 11-spec-mcp-server-internal.md
 related: 10-spec-ai-agents-runtime.md, 11-spec-mcp-server-internal.md
 version: 0.1

@@ -42,7 +42,7 @@ const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_R
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const ORG_SLUG = "e2e-tenant-b";
 const ORG_NAME = "E2E Tenant B";
-const EMAIL = "e2e-b-manager@deskcomm.test";
+const EMAIL = "e2e-b-manager@gabarronmathias.test";
 const PASSWORD = "E2E!Test1234";
 const LEAD_TITLE = "Lead do Tenant B — nao pode vazar";
 

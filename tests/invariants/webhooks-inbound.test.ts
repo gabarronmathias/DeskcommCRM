@@ -391,7 +391,7 @@ describe("POST /api/v1/webhooks/in/[token] (Task 6)", () => {
     const reqWithSig = new NextRequest(`http://localhost/api/v1/webhooks/in/${TOKEN_SECRET}`, {
       method: "POST",
       body: rawBody,
-      headers: { "content-type": "application/json", "x-deskcomm-signature": validSig },
+      headers: { "content-type": "application/json", "x-gm-crm-signature": validSig },
     });
     const resWithSig = await POST(reqWithSig, reqCtx(TOKEN_SECRET));
     expect(resWithSig.status).toBe(200);

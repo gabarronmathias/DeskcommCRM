@@ -30,7 +30,7 @@ O procedimento completo está em [`doctrine/packaging.md`](doctrine/packaging.md
 - [ ] `pnpm test:db` verde localmente (aplica o baseline em install **e** update num Postgres limpo)
 - [ ] `pnpm test:shell` verde (é o único gate que exercita o kit)
 - [ ] O número da versão nunca foi publicado: `git tag --list 'vX.Y.Z'` vazio **e**
-      `ghcr_status deskcommcrm X.Y.Z` → **404**
+      `ghcr_status gm-crm X.Y.Z` → **404**
 
       Use a função `ghcr_status` de [`doctrine/packaging.md`](doctrine/packaging.md)
       §Checklist de release. **Não use `curl` cru no GHCR**: ele responde `401`, e um corpo de
@@ -41,7 +41,7 @@ O procedimento completo está em [`doctrine/packaging.md`](doctrine/packaging.md
 
 - [ ] `git tag vX.Y.Z && git push origin vX.Y.Z` a partir de um commit da `main`
 - [ ] `gh run list --workflow=publish-image.yml --limit 3` → verde
-- [ ] As **três** imagens existem na versão: `deskcommcrm`, `deskcomm-worker`, `deskcomm-scheduler`
+- [ ] As **três** imagens existem na versão: `gm-crm`, `gm-crm-worker`, `gm-crm-scheduler`
 - [ ] `stable` aponta para esta versão (mesmo digest de `X.Y.Z`)
 - [ ] `gh release create vX.Y.Z` com as notas do CHANGELOG
 

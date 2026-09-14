@@ -5,7 +5,7 @@ resolve o que consegue, e o que não consegue chega ao dono **mastigado** — nu
 um erro cru.
 
 **Escopo**: esta inbox é EXCLUSIVA do **gov-loop** (loop de construção do épico de
-governança). Alertas de runtime do produto seguem os canais do próprio DeskcommCRM
+governança). Alertas de runtime do produto seguem os canais do próprio G&M CRM
 (Sentry, audit log) — misturar os dois canais é defeito.
 
 **Onde vive**: `loop/inbox.items.md` — não `loop/inbox.md`, porque em filesystem
@@ -64,7 +64,7 @@ objetiva, idealmente com opções A/B).
    a feature de novo (com direito ao ciclo normal implementer→verifier) e, ao
    concluir, mudar o item pra `status: closed` com uma linha de desfecho. Se a
    resposta exigir mudança de acceptance → isso é ato humano (commit com
-   `DESKCOMM_GOV_PLAN_EDIT=1`), e o item fica `answered` até o features.json
+   `GMCRM_GOV_PLAN_EDIT=1`), e o item fica `answered` até o features.json
    refletir a mudança.
 5. **Um item por feature por bloqueio.** Bloqueio NOVO na mesma feature = item novo
    referenciando o anterior.
@@ -76,4 +76,4 @@ objetiva, idealmente com opções A/B).
    jamais colado (LGPD, restrição de 1ª ordem do repo).
 8. **Feature nova/alterada também passa por aqui**: o loop não muda o plano —
    proposta vira item `needs_human`; o humano aprova e commita com
-   `DESKCOMM_GOV_PLAN_EDIT=1`.
+   `GMCRM_GOV_PLAN_EDIT=1`.

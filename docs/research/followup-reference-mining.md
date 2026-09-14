@@ -9,7 +9,7 @@
 **TL;DR:** scheduler completo e maduro em `src/task_scheduler.py` (classe `TaskScheduler`). Modelo híbrido: cron (croniter) + recorrência wall-clock daily/weekly/monthly + one-shot (`once`) + gatilho por contagem de eventos. Persistência SQLAlchemy, recuperação explícita de zumbis no boot. LLM agenda via tool `manage_tasks`.
 
 ### Padrões roubáveis
-1. **Datetime como mensagem user-role separada** para não invalidar prompt cache em jobs recorrentes (`task_scheduler.py:1578-1587`) — system prompt fica byte-idêntico. (O Deskcomm já faz o equivalente no `followup-turn.ts`: bloco temporal no sufixo.)
+1. **Datetime como mensagem user-role separada** para não invalidar prompt cache em jobs recorrentes (`task_scheduler.py:1578-1587`) — system prompt fica byte-idêntico. (O G&M CRM já faz o equivalente no `followup-turn.ts`: bloco temporal no sufixo.)
 2. **Recuperação de zumbis no boot**: runs deixadas em `running`/`queued` por crash viram `aborted`; `next_run` vencidos são empurrados para `now+60s` (`start()`, linhas 447-496) — evita rajada pós-restart.
 3. **Invariante de ouro: avançar `next_run` mesmo em erro/no-op/cancel** — task quebrada nunca busy-loopa o scheduler (4 caminhos distintos garantem isso).
 4. **Polling adaptativo**: sleep = distância ao próximo `next_run`, teto 60s, piso 1s — corrige o atraso clássico de tick fixo.
@@ -105,7 +105,7 @@ Arquivos-âncora: `supabase/functions/followup-flow-worker/`, `followup-sequence
 
 ## Síntese para o design
 
-**O que o Deskcomm já tem que os 4 repos validam:** `cron_jobs` (at/every/cron + tz + stagger + backoff) ≅ união discriminada de schedule do openclaw; `schedule_followup` com janela mín/máx via knobs = a validação de horizonte que faltou no Tomik; `followup_turn` com bloco de re-entrada temporal = a re-hidratação que odysseus/hermes NÃO fazem; before-send guardrails + pacing = a consciência de janela que faltou no Tomik.
+**O que o G&M CRM já tem que os 4 repos validam:** `cron_jobs` (at/every/cron + tz + stagger + backoff) ≅ união discriminada de schedule do openclaw; `schedule_followup` com janela mín/máx via knobs = a validação de horizonte que faltou no Tomik; `followup_turn` com bloco de re-entrada temporal = a re-hidratação que odysseus/hermes NÃO fazem; before-send guardrails + pacing = a consciência de janela que faltou no Tomik.
 
 **Decisões extraídas da mineração:**
 1. **UM motor, UM relógio.** Tudo (silêncio, demanda, fluxo) é o mesmo grafo com o mesmo enrollment; sem motores paralelos (anti-padrão-raiz do Tomik, ecoado no odysseus com seus 2 subsistemas).

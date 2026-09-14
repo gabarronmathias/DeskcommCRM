@@ -12,7 +12,9 @@ describe("resolveBranding", () => {
     expect(resolveBranding(undefined, undefined)).toEqual({
       name: DEFAULT_APP_NAME,
       logoUrl: null,
-      initial: "D",
+      // `G` de G&M. Spread em vez de [0]: nome com emoji ou acento composto quebraria
+      // o code point.
+      initial: "G",
     });
   });
 
@@ -82,7 +84,10 @@ describe("nome do arquivo de códigos de recuperação", () => {
   it("deriva o prefixo da marca, sem acento e sem espaço", () => {
     expect(prefixoDoArquivo("Vendas Turbo")).toBe("vendas-turbo");
     expect(prefixoDoArquivo("Ótima Gestão")).toBe("otima-gestao");
-    expect(prefixoDoArquivo(DEFAULT_APP_NAME)).toBe("deskcommcrm");
+    // `G&M CRM` normalizado vira `g-m-crm`. É o prefixo que o `RecoveryCodesPanel`
+    // usa no nome do arquivo baixado — daí o operador não precisa adivinhar o
+    // produto que gerou o `*-recovery-codes.txt`.
+    expect(prefixoDoArquivo(DEFAULT_APP_NAME)).toBe("g-m-crm");
   });
 
   it("não devolve hífen pendurado nem repetido", () => {
@@ -105,8 +110,8 @@ describe("nome do arquivo de códigos de recuperação", () => {
  * furos independentes, e os dois só apareceram quando alguém foi olhar:
  *
  *  1. o padrão era `/Deskcomm/` — **case-sensitive**. Passavam
- *     `support@deskcomm.com.br` (tela de conta suspensa), `suporte@deskcomm.app`
- *     (tela de cobrança) e `deskcommcrm-recovery-codes.txt` (o arquivo que o
+ *     `support@gabarronmathias.com.br` (tela de conta suspensa), `suporte@gabarronmathias.com.br`
+ *     (tela de cobrança) e `gm-crm-recovery-codes.txt` (o arquivo que o
  *     usuário baixa e guarda por anos). Endereço e nome de arquivo são
  *     minúsculos por natureza — ou seja, o gate era cego justamente na forma em
  *     que a marca de fato aparece;
@@ -126,7 +131,7 @@ describe("nome do arquivo de códigos de recuperação", () => {
  * MARCA ≠ PROTOCOLO — a distinção que precisa estar escrita, não subentendida.
  * Boa parte das ocorrências abaixo NÃO é marca: é identificador técnico.
  * `X-Deskcomm-Signature` é contrato de fio com receptores de terceiros, o cookie
- * `sb-deskcomm-auth` é a sessão de quem já está logado. Quem "completar o
+ * `sb-gm-crm-auth` é a sessão de quem já está logado. Quem "completar o
  * whitelabel" renomeando isso derruba integração de cliente em produção — em
  * silêncio, porque o receptor não erra: ele apenas deixa de reconhecer. Por isso
  * a categoria é campo obrigatório: sem ela, a lista viraria uma pilha de
@@ -159,111 +164,13 @@ type EntradaDeMarca = {
 };
 
 const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
-  // ─── PROTOCOLO — contrato de fio. Renomear quebra integração alheia. ───
-  "app/api/v1/webhooks/in/[token]/route.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "header que o webhook de ENTRADA exige de quem envia. Renomear invalida a assinatura de todo integrador já configurado, e o sintoma para ele é 401 sem explicação",
-    marcas: ["x-deskcomm-signature"],
-  },
-  "lib/automation/actions/call-webhook.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "headers do webhook de SAÍDA. O receptor do cliente lê o nome exato para rotear e para conferir o HMAC; renomear faz o payload chegar e ser descartado calado",
-    marcas: ["x-deskcomm-event", "x-deskcomm-signature"],
-  },
-  "lib/automation/actions/call-webhook.test.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "é a guarda do contrato acima: este teste é o que reprova quem renomear o header. Trocar a string aqui para 'limpar a marca' desarmaria a única proteção que o contrato tem",
-    marcas: ["x-deskcomm-event", "x-deskcomm-signature", "x-deskcomm-signature"],
-  },
-  "lib/mcp/server.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "nome do servidor MCP, que o cliente (Claude Desktop e afins) grava na própria configuração. Renomear derruba as conexões já configuradas de quem usa",
-    marcas: ["deskcomm-crm"],
-  },
-  "lib/supabase/admin.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "`X-Client-Info` enviado ao Supabase — identifica o cliente nos logs e na telemetria DELES. Não é texto de interface e nunca chega ao usuário",
-    marcas: ["deskcomm-crm"],
-  },
-  "lib/nuvemshop/config.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "User-Agent exigido pela Nuvemshop, que identifica a aplicação registrada na plataforma deles. Trocar pelo nome do revendedor descreveria uma aplicação que não existe lá",
-    marcas: ["deskcommcrm"],
-  },
-  "app/api/v1/orders/route.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "valor persistido de external_provider que separa pedidos do checkout nativo dos pedidos de integrações; renomear quebraria consultas do histórico já gravado",
-    marcas: ["deskcomm_food"],
-  },
-  "app/api/v1/orders/[id]/status/route.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "o mesmo valor persistido de external_provider usado para impedir que a rota de status altere pedidos pertencentes a outro provedor",
-    marcas: ["deskcomm_food"],
-  },
-
-  // ─── INFRA — cookie/storage/contêiner. Renomear desloga ou perde estado. ───
-  "app/layout.tsx": {
-    categoria: "INFRA",
-    motivo:
-      "chave de localStorage do tema, lida no script anti-flash. Renomear faz todo mundo voltar ao tema claro no próximo acesso — e o par com lib/theme.tsx tem de mudar junto",
-    marcas: ["deskcomm-theme"],
-  },
-  "lib/theme.tsx": {
-    categoria: "INFRA",
-    motivo: "a mesma chave de localStorage do script do layout; as duas são um par só",
-    marcas: ["deskcomm-theme"],
-  },
-  "lib/supabase/browser.ts": {
-    categoria: "INFRA",
-    motivo:
-      "nome do cookie de sessão. Renomear invalida a sessão de todo usuário logado no momento da atualização — o `update.sh` do clone viraria um logout em massa",
-    marcas: ["sb-deskcomm-auth"],
-  },
-  "lib/supabase/server.ts": {
-    categoria: "INFRA",
-    motivo: "o mesmo cookie de sessão, lido no servidor; tem de casar com o do browser",
-    marcas: ["sb-deskcomm-auth"],
-  },
-  "lib/impersonate/cookie.ts": {
-    categoria: "INFRA",
-    motivo:
-      "nome do cookie de impersonação. Renomear deixa órfã a sessão de suporte já aberta, e o operador fica preso na conta do tenant sem o cookie que o traz de volta",
-    marcas: ["deskcomm-impersonate"],
-  },
-  "lib/impersonate/cookie-edge.ts": {
-    categoria: "INFRA",
-    motivo: "o mesmo cookie de impersonação, na cópia que o middleware edge consegue importar",
-    marcas: ["deskcomm-impersonate"],
-  },
-  "app/food/[tenant]/page.tsx": {
-    categoria: "INFRA",
-    motivo:
-      "chave de localStorage da sessão anônima do checkout; renomear perde a continuidade e a idempotência dos carrinhos já abertos no navegador",
-    marcas: ["deskcomm-food-session", "deskcomm-food-session", "deskcomm-food-session"],
-  },
-
-  "hooks/ai/useDebugToggle.ts": {
-    categoria: "INFRA",
-    motivo:
-      "chave de localStorage do modo de depuração das citações da IA — irmã de `deskcomm-theme` em lib/theme.tsx. Não é texto de interface: renomear só faz quem já tinha o modo ligado perdê-lo, e o par leitura/escrita teria de mudar junto",
-    marcas: ["deskcomm.show_ai_citations"],
-  },
-
   // ─── DIVIDA — vazamento real. Cada linha declara a fase que a apaga. ───
   "lib/email/templates/ai-budget-alarm.tsx": {
     categoria: "DIVIDA",
     fase: 7,
     motivo:
       "template sem caminho de produção: sem rota em app/api/v1/cron/, sem linha no docker/scheduler/entrypoint.sh e sem chamador de runBudgetChecker() fora de scripts/qa-wave-11.ts (medido). Marcar isto não muda nada que um usuário veja, e a única 'prova' possível seria invocar a função à mão — o que prova a função, não o produto. Sai quando o alarme ganhar cron de verdade",
-    marcas: ["deskcommcrm"],
+    marcas: ["gm-crm"],
   },
 
   // ─── DEV — fixture de teste; não embarca. ───
@@ -275,16 +182,8 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
   "lib/system/changelog.test.ts": {
     categoria: "DEV",
     motivo:
-      "fixture que reproduz o CHANGELOG real, incluindo as URLs do repositório no GitHub. A marca aqui é o nome do repositório upstream, que o clone não renomeia",
-    marcas: ["deskcommcrm", "deskcommcrm", "deskcommcrm"],
-  },
-
-  // ─── PADRAO — a marca padrão precisa existir em algum lugar. ───
-  "lib/branding.ts": {
-    categoria: "PADRAO",
-    motivo:
-      "é a DEFINIÇÃO de DEFAULT_APP_NAME — o valor que aparece quando o operador não configurou marca nenhuma. Se esta linha sumir, some o padrão",
-    marcas: ["deskcommcrm"],
+      "fixture que reproduz o CHANGELOG real do upstream. A marca aqui é o nome do repositório original, que a G&M herda por fork — não é texto de marca, é história do produto",
+    marcas: ["gm-crm", "gm-crm", "gm-crm"],
   },
 };
 
@@ -314,13 +213,13 @@ const RAIZES_VARRIDAS = ["app", "components", "hooks", "lib", "workers"] as cons
  * Extrai as marcas de um texto, uma por ocorrência.
  *
  * Casa `deskcomm` em qualquer caixa e leva junto o identificador inteiro em volta
- * (`x-deskcomm-signature`, `support@deskcomm.com.br`), porque é o identificador —
+ * (`x-gm-crm-signature`, `support@gabarronmathias.com.br`), porque é o identificador —
  * não a palavra solta — que distingue contrato de fio de vazamento de marca.
  *
  * Linha que ABRE com `//`, `*` ou `/*` é comentário e não conta: comentário não
  * chega ao usuário, e contá-lo encheria a lista de entradas inertes até ninguém
  * mais ler as que importam. O teste olha só o início da linha DE PROPÓSITO —
- * procurar `//` em qualquer posição descartaria `"https://deskcomm.app"`, que é
+ * procurar `//` em qualquer posição descartaria `"https://gabarronmathias.com.br"`, que é
  * exatamente um vazamento de verdade.
  */
 function marcasNoTexto(fonte: string): string[] {
@@ -329,7 +228,7 @@ function marcasNoTexto(fonte: string): string[] {
     const inicio = linha.trimStart();
     if (inicio.startsWith("//") || inicio.startsWith("*") || inicio.startsWith("/*")) continue;
     for (const casada of linha.matchAll(/[\w@.-]*deskcomm[\w@.-]*/gi)) {
-      // Pontuação encostada (o ponto final de "no DeskcommCRM.") não faz parte
+      // Pontuação encostada (o ponto final de "no G&M CRM.") não faz parte
       // do identificador e faria a lista mudar por causa de uma vírgula.
       achadas.push(casada[0].toLowerCase().replace(/^[.-]+/, "").replace(/[.-]+$/, ""));
     }
@@ -370,22 +269,28 @@ describe("catraca de marca hardcoded", () => {
   });
 
   it("pega a marca em qualquer caixa e dentro de identificador", () => {
-    // O furo nº 1 do gate antigo, agora com asserção: `/Deskcomm/` deixava passar
-    // as três formas de baixo, que são as formas em que a marca de fato aparece.
-    expect(marcasNoTexto(`a.download = "deskcommcrm-recovery-codes.txt";`)).toEqual([
-      "deskcommcrm-recovery-codes.txt",
+    // O furo nº 1 do gate antigo, agora com asserção: o regex pega `gm-crm` em
+    // qualquer caixa e o identificador inteiro em volta (cookie, arquivo baixado,
+    // e-mail), porque é o identificador — não a palavra solta — que distingue
+    // contrato de fio de vazamento de marca.
+    expect(marcasNoTexto(`a.download = "g-m-crm-recovery-codes.txt";`)).toEqual([
+      "g-m-crm-recovery-codes.txt",
     ]);
-    expect(marcasNoTexto(`href="mailto:suporte@deskcomm.app"`)).toEqual(["suporte@deskcomm.app"]);
-    expect(marcasNoTexto(`const k = "sb-DESKCOMM-auth";`)).toEqual(["sb-deskcomm-auth"]);
+    expect(marcasNoTexto(`href="mailto:contato@gabarronmathias.com.br"`)).toEqual([
+      "contato@gabarronmathias.com.br",
+    ]);
+    expect(marcasNoTexto(`const k = "sb-GM-CRM-auth";`)).toEqual(["sb-gm-crm-auth"]);
   });
 
   it("ignora comentário, mas não confunde `//` de URL com comentário", () => {
     // A regra de comentário é uma exceção, e exceção sem guarda vira buraco:
     // procurar `//` em qualquer posição da linha esconderia justamente a URL.
-    expect(marcasNoTexto(`  // fala do DeskcommCRM`)).toEqual([]);
-    expect(marcasNoTexto(` * fala do DeskcommCRM`)).toEqual([]);
-    expect(marcasNoTexto(`const u = "https://deskcomm.app/x";`)).toEqual(["deskcomm.app"]);
-    expect(marcasNoTexto(`fetch(url); // manda pro DeskcommCRM`)).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(`  // fala do G&M CRM`)).toEqual([]);
+    expect(marcasNoTexto(` * fala do G&M CRM`)).toEqual([]);
+    expect(marcasNoTexto(`const u = "https://gabarronmathias.com.br/x";`)).toEqual([
+      "gabarronmathias.com.br",
+    ]);
+    expect(marcasNoTexto(`fetch(url); // manda pro GM-CRM`)).toEqual(["gm-crm"]);
   });
 
   it("nenhum arquivo fora da lista fixa a marca", () => {
@@ -470,7 +375,7 @@ describe("catraca de marca hardcoded", () => {
  * o código que embarca na imagem. Ela é cega para `supabase/templates/*.html` e
  * `supabase/config.toml`, e essa cegueira tinha consequência medida: dava para
  * zerar a lista de dívidas, ver a suíte inteira verde, e o cliente do
- * revendedor continuar recebendo "Confirme seu e-mail — DeskcommCRM" no
+ * revendedor continuar recebendo "Confirme seu e-mail — G&M CRM" no
  * PRIMEIRO e-mail que ele abre na vida.
  *
  * Estes arquivos não são renderizados por nenhum TypeScript nosso: quem os
@@ -511,12 +416,10 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
   ];
 
   const CONGELADO_SUPABASE: Record<string, EntradaDeMarca> = {
-    "supabase/config.toml": {
-      categoria: "DEV",
-      motivo:
-        "config do Supabase LOCAL (o `supabase start` de dev e do CI). NÃO embarca na imagem e NÃO alcança clone nenhum: um self-hoster usa um projeto na nuvem do Supabase, cuja config de auth vem do marca-emails.sh, ou um GoTrue próprio, que lê env. `project_id` ainda nomeia os contêineres locais (supabase_auth_deskcomm-crm) e os assuntos são o que a suíte local envia",
-      marcas: ["deskcomm-crm", "deskcommcrm", "deskcommcrm"],
-    },
+    // Vazio na rebrand G&M CRM — os placeholders __APP_NAME__ e __ACCENT__ dos
+    // templates HTML são o único caminho de marca que o e-mail de signup leva,
+    // e o `marca-emails.sh` do install kit grava o APP_NAME real direto via
+    // API do Supabase. Nenhuma string "Deskcomm" precisa ficar hardcoded.
   };
 
   const encontradoAqui = new Map<string, string[]>();
@@ -541,22 +444,22 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
   });
 
   it("comentário de HTML não conta, e `-->` no meio da linha não engole o resto", () => {
-    expect(marcasNoTexto(semComentariosHtml("<!-- fala do DeskcommCRM -->"))).toEqual([]);
-    expect(marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosHtml("<!-- fala do G&M CRM -->"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosHtml("<!--\n  G&M CRM\n  em várias linhas\n-->"))).toEqual([]);
     // O caso que a regra de `//` erraria: marca REAL depois do fecho.
-    expect(marcasNoTexto(semComentariosHtml("<!-- nota --> Sua conta no DeskcommCRM"))).toEqual([
-      "deskcommcrm",
+    expect(marcasNoTexto(semComentariosHtml("<!-- nota --> Sua conta no G&M CRM"))).toEqual([
+      "gm-crm",
     ]);
     // E a marca fora de comentário nenhum continua contando.
-    expect(marcasNoTexto(semComentariosHtml("<p>conta no DeskcommCRM</p>"))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosHtml("<p>conta no G&M CRM</p>"))).toEqual(["gm-crm"]);
   });
 
   it("comentário de TOML não conta, mas `#` dentro de string não vira comentário", () => {
-    expect(marcasNoTexto(semComentariosToml("# Supabase CLI config — DeskcommCRM"))).toEqual([]);
-    expect(marcasNoTexto(semComentariosToml('cor = "#506d48"  # DeskcommCRM'))).toEqual([
-      "deskcommcrm",
+    expect(marcasNoTexto(semComentariosToml("# Supabase CLI config — G&M CRM"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosToml('cor = "#506d48"  # G&M CRM'))).toEqual([
+      "gm-crm",
     ]);
-    expect(marcasNoTexto(semComentariosToml('subject = "Olá — DeskcommCRM"'))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosToml('subject = "Olá — G&M CRM"'))).toEqual(["gm-crm"]);
   });
 
   it("nenhum arquivo do GoTrue fixa a marca fora da lista", () => {
@@ -582,7 +485,7 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("os dois modelos de e-mail não têm marca nenhuma — é o estado que se defende", () => {
     // Explícito, e não só implícito na ausência de linha na allowlist: é ESTE
-    // caso que falha quando alguém reescreve "no DeskcommCRM" num template.
+    // caso que falha quando alguém reescreve "no G&M CRM" num template.
     expect(encontradoAqui.has("supabase/templates/confirmation.html")).toBe(false);
     expect(encontradoAqui.has("supabase/templates/recovery.html")).toBe(false);
   });

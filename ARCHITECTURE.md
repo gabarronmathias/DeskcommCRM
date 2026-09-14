@@ -1,4 +1,4 @@
-# Architecture — DeskcommCRM
+# Architecture — G&M CRM
 
 > Visão de 1 página. Profundidade vive em `docs/specs/` e `docs/stories/epics/MASTER.md`.
 > Mapa de toda a documentação: [`docs/index.md`](docs/index.md).
@@ -38,7 +38,7 @@ Detalhes: [`docs/specs/01-spec-platform-base.md`](docs/specs/01-spec-platform-ba
 
 ```
 request → proxy.ts (X-Request-Id, x-pathname; isPublicPath? → bypass;
-                    senão valida sessão Supabase via cookie sb-deskcomm-auth)
+                    senão valida sessão Supabase via cookie sb-gm-crm-auth)
         → route handler:
              1. Zod valida o input externo
              2. guard: requireRole() | requirePlatformAdmin() | secret/HMAC

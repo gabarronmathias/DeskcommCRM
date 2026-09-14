@@ -1,4 +1,4 @@
-# DeskcommCRM — Handoff Autônomo
+# G&M CRM — Handoff Autônomo
 
 **Data**: 2026-04-28 (entrega overnight pra apresentação SP 2026-04-29 cedo)
 **Sessão**: autônoma via Claude Opus 4.7 + 11 subagentes paralelos
@@ -15,7 +15,7 @@ Em uma única sessão autônoma de ~3 horas, partindo de PRD + Regras de Negóci
 - ✅ **Scaffolding completo** Next.js 15 + TypeScript + Tailwind + shadcn/ui (38 arquivos)
 - ✅ **Schema deployado em produção** no Supabase sa-east-1: **31 tabelas com RLS, 7 migrations, 100+ indexes**
 - ✅ **TypeScript types gerados** do banco (2184 linhas em `lib/database.types.ts`)
-- ✅ **Repositório no GitHub**: https://github.com/melgarafael/DeskcommCRM
+- ✅ **Repositório no GitHub**: https://github.com/melgarafael/G&M CRM
 - ✅ **Security advisors** rodados, hardening aplicado (search_path, RLS coverage, anon revoke)
 
 ---
@@ -53,7 +53,7 @@ Em uma única sessão autônoma de ~3 horas, partindo de PRD + Regras de Negóci
 | **Supabase project** | `rrydmwnporysaiysiztn` em `sa-east-1` (São Paulo), Postgres 17 |
 | **URL** | `https://rrydmwnporysaiysiztn.supabase.co` |
 | **Anon key** (publishable) | `sb_publishable_71qDjdwBUo-a8qihNdFj2Q_wew0WUAi` |
-| **GitHub repo** | https://github.com/melgarafael/DeskcommCRM (private) |
+| **GitHub repo** | https://github.com/melgarafael/G&M CRM (private) |
 
 ---
 
@@ -122,13 +122,13 @@ Triggers de domínio implementados:
 
 Tudo decidido durante a sessão autônoma está documentado em:
 
-- **Memórias persistentes do projeto** em `~/.claude/projects/-Users-rafaelmelgaco-DeskcommCRM/memory/`
+- **Memórias persistentes do projeto** em `~/.claude/projects/-Users-rafaelmelgaco-G&M CRM/memory/`
   - `project_tenancy_model.md` — Multi-tenant clássico desde dia 1 (Opção A)
   - `project_mvp_scope.md` — Opção B (com IA core)
   - `project_ecommerce_integration.md` — Nuvemshop only no MVP
   - `project_target_tenant_profile.md` — PME médio
   - `project_adopted_architecture.md` — bundle integral da Aula CRM Nichado WAHA
-  - `project_naming_and_timeline.md` — DeskcommCRM, MVP-B 8-12 semanas
+  - `project_naming_and_timeline.md` — G&M CRM, MVP-B 8-12 semanas
 
 - **CLAUDE.md** na raiz do projeto — convenções operacionais pra futuras sessões
 - **docs/business-rules/00-business-rules-catalog.md** — 60 regras canônicas com IDs lookup-able
@@ -190,8 +190,8 @@ Tudo decidido durante a sessão autônoma está documentado em:
   ```bash
   npx @marp-team/marp-cli docs/presentation/pitch-deck.md -o pitch.pdf
   ```
-- GitHub repo: https://github.com/melgarafael/DeskcommCRM (mostre as docs)
-- Supabase Studio: dashboard.supabase.com → projeto DeskcommCRM → Database → Tables (31 tabelas com RLS verde)
+- GitHub repo: https://github.com/melgarafael/G&M CRM (mostre as docs)
+- Supabase Studio: dashboard.supabase.com → projeto G&M CRM → Database → Tables (31 tabelas com RLS verde)
 
 ---
 

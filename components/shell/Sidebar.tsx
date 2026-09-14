@@ -56,31 +56,40 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-30 flex flex-col border-r bg-card transition-[width] duration-200",
+        // Casca da Gabarron & Mathias: azul-marinho como bg default da sidebar.
+        // O accent do white-label (verde/Sage ou outro) continua pintando o
+        // produto — esta cor é só a casca onde a marca G&M é proprietária.
+        "fixed inset-y-0 left-0 z-30 flex flex-col border-r border-navy-800 bg-navy-900 text-navy-100 transition-[width] duration-200",
         collapsed ? "w-16" : "w-60",
       )}
     >
-      <div className={cn("flex items-center gap-2 border-b px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
+      <div className={cn("flex items-center gap-2 border-b border-navy-800 px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
         {logoUrl && !collapsed ? (
           // <img> em vez de next/image de propósito: a URL vem do .env de quem hospeda,
           // e next/image exige allowlist de domínios fechada em build — a imagem
           // pré-buildada rejeitaria o domínio do self-hoster. Altura fixa e largura
           // livre porque a arte enviada tem proporção desconhecida; forçar as duas
-          // distorceria o logo de quem configurou.
+          // distorceria o logo de quem configurou. A marca completa é vertical;
+          // neste ícone mostramos o brasão, sem reduzir o nome até ficar ilegível.
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={logoUrl}
-            alt={nome}
-            className="h-10 w-10 shrink-0 rounded-md bg-white/80 object-contain p-0.5"
-          />
+          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-navy-800 ring-1 ring-gold-500/60">
+            <img
+              src={logoUrl}
+              alt={nome}
+              className="absolute left-1/2 top-1/2 h-[210%] w-[210%] max-w-none -translate-x-1/2 -translate-y-[40%] object-contain"
+            />
+          </div>
         ) : null}
         {!collapsed ? (
-          <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
+          // Nome da marca em serif (Source Serif 4) — herdado do `font-display`
+          // global em `globals.css`. Omitir `font-sans` aqui é o que faz o
+          // destaque executivo aparecer sem repetir tipografia em cada lugar.
+          <span className={cn("font-display text-[15px] font-semibold tracking-tight text-navy-50", collapsed && "sr-only")}>
             {nome}
           </span>
         ) : null}
         {collapsed && (
-          <span aria-hidden className="text-lg font-bold text-primary">
+          <span aria-hidden className="font-display text-lg font-bold text-gold-400">
             {/* Spread e não `[0]`: nome começando com emoji ou acento composto
                 quebraria no meio do code point. Mesma regra de `resolveBranding`
                 — a inicial precisa acompanhar o nome que a barra mostra, senão
@@ -97,11 +106,11 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
               {/* Colapsado, o sidebar tem 64px: seis rótulos ali seriam ilegíveis.
                   Vira um filete separador, que preserva o agrupamento sem texto. */}
               {collapsed ? (
-                <div aria-hidden className="mx-2 border-t first:hidden" />
+                <div aria-hidden className="mx-2 border-t border-navy-800 first:hidden" />
               ) : (
                 <h2
                   id={tituloId}
-                  className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60"
+                  className="px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-navy-300/80"
                 >
                   {t(group.label)}
                 </h2>
@@ -117,14 +126,24 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                         title={collapsed ? t(item.label) : undefined}
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
+                          // Item ativo: bg navy-700 + divisor dourado à esquerda
+                          // (3px inset shadow). Inativo: texto navy-200 com hover
+                          // navy-800. O accent do white-label NÃO entra aqui —
+                          // misturar verde com navy neste componente daria o
+                          // "botão de natal" que o preview B evita.
                           "relative flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
                           isActive
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                            ? "bg-navy-700 text-white shadow-[inset_3px_0_0_var(--color-gold-500)]"
+                            : "text-navy-200 hover:bg-navy-800 hover:text-white",
                           collapsed && "justify-center px-2",
                         )}
                       >
-                        <Icon size={18} weight={isActive ? "fill" : "regular"} aria-hidden />
+                        <Icon
+                          size={18}
+                          weight={isActive ? "fill" : "regular"}
+                          aria-hidden
+                          className={cn(isActive ? "text-gold-400" : "text-navy-300")}
+                        />
                         {!collapsed && <span className="truncate">{t(item.label)}</span>}
                         {item.healthDot && (
                           <ConnectionHealthDot
@@ -144,12 +163,12 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                       className={cn(
                         "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
                         pathname === group.hub.href
-                          ? "bg-accent text-accent-foreground"
-                          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                          ? "bg-navy-700 text-white shadow-[inset_3px_0_0_var(--color-gold-500)]"
+                          : "text-navy-200 hover:bg-navy-800 hover:text-white",
                         collapsed && "justify-center px-2",
                       )}
                     >
-                      <ArrowRight size={18} aria-hidden />
+                      <ArrowRight size={18} aria-hidden className={cn(pathname === group.hub.href ? "text-gold-400" : "text-navy-300")} />
                       {!collapsed && <span className="truncate">{t(group.hub.label)}</span>}
                     </Link>
                   </li>
@@ -159,7 +178,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           );
         })}
       </nav>
-      <div className="border-t p-2">
+      <div className="border-t border-navy-800 p-2">
         {rodape && (
           <Link
             href={rodape.href}
@@ -168,12 +187,12 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
             className={cn(
               "mb-1 flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
               pathname.startsWith(rodape.href)
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                ? "bg-navy-700 text-white shadow-[inset_3px_0_0_var(--color-gold-500)]"
+                : "text-navy-200 hover:bg-navy-800 hover:text-white",
               collapsed && "justify-center px-2",
             )}
           >
-            <Gear size={18} aria-hidden />
+            <Gear size={18} aria-hidden className={cn(pathname.startsWith(rodape.href) ? "text-gold-400" : "text-navy-300")} />
             {!collapsed && <span className="truncate">{rodape.label}</span>}
           </Link>
         )}
@@ -183,7 +202,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           onClick={() => startTransition(() => toggleSidebar(collapsed))}
           disabled={isPending}
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-navy-300 hover:bg-navy-800 hover:text-white",
             collapsed && "justify-center px-2",
           )}
           aria-label={collapsed ? "Expandir sidebar" : "Recolher sidebar"}

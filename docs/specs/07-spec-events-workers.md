@@ -19,7 +19,7 @@ related:
 
 # Spec 07 — Event Log + Workers + Crons (transversal)
 
-> Esta spec define o **bus interno** do DeskcommCRM: como módulos publicam eventos no banco, como workers consomem, quais crons rodam no Vercel, como tratamos retries, dead-letter, idempotência e observabilidade. É **transversal** — todos os outros sub-PRDs (02–06) emitem ou consomem deste bus.
+> Esta spec define o **bus interno** do G&M CRM: como módulos publicam eventos no banco, como workers consomem, quais crons rodam no Vercel, como tratamos retries, dead-letter, idempotência e observabilidade. É **transversal** — todos os outros sub-PRDs (02–06) emitem ou consomem deste bus.
 
 ---
 
@@ -530,9 +530,9 @@ await boss.start();
 ### 6.7 `webhook-dispatch-worker`
 
 - **Consome:** **todos** eventos cuja org tem `webhook_subscriptions` configuradas pra esse `event_type`.
-- **Faz:** POST com HMAC SHA-256 signature, header `X-Deskcomm-Signature`, timeout 10s. Sucesso = 2xx.
+- **Faz:** POST com HMAC SHA-256 signature, header `X-G&M CRM-Signature`, timeout 10s. Sucesso = 2xx.
 - **Retry:** backoff (§8). Após 8 falhas → DLQ. Após **10 falhas consecutivas** numa subscription → `webhook.subscription_disabled` + desabilita `webhook_subscriptions.enabled = false`.
-- **Idempotência:** header `X-Deskcomm-Idempotency-Key = event.id`.
+- **Idempotência:** header `X-GM-Idempotency-Key = event.id`.
 
 ### 6.8 `rag-indexer-worker`
 
@@ -689,7 +689,7 @@ if (msg.status === 'sent' || msg.waha_message_id) {
 ### 9.3 Idempotência em side-effects
 
 - **DB:** `unique constraint` em `(messages.organization_id, waha_message_id)`, `(orders.organization_id, ns_order_id)`.
-- **HTTP outbound (webhooks):** header `X-Deskcomm-Idempotency-Key = event_id`.
+- **HTTP outbound (webhooks):** header `X-GM-Idempotency-Key = event_id`.
 - **WAHA send:** WAHA aceita `idempotency_key` em `sendText` (se não, usar `clientMessageId`).
 - **Embeddings:** chunk_id = `sha256(content + version)`; upsert idempotente.
 

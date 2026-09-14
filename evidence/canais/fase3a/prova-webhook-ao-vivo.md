@@ -28,12 +28,12 @@ endpoint morre sozinho quando a sessão acaba.
    `cloudflared_tunnel_request_errors 0`.
 5. **WABA inscrita no app** — `POST /{waba-id}/subscribed_apps` → `{"success": true}`.
 6. **Sync contra a API real** — `{"inserted":6,"updated":0,"unchanged":0,"disabled":0}`.
-7. **Evento de verdade** — criei o template `deskcomm_prova_webhook_0088` (pt_BR,
+7. **Evento de verdade** — criei o template `gm_crm_prova_webhook_0088` (pt_BR,
    UTILITY, 2 parâmetros no corpo). Nasceu `PENDING`.
 8. **A Meta aprovou e o webhook chegou sozinho.** A linha virou:
 
 ```
-deskcomm_prova_webhook_0088 | APPROVED | 2026-07-28 17:41:21.726+00
+gm_crm_prova_webhook_0088 | APPROVED | 2026-07-28 17:41:21.726+00
 ```
 
 Nenhuma ação minha entre o passo 7 e o 8 — o `updated_at` é do handler, não de um

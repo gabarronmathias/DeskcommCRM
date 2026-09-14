@@ -11,7 +11,7 @@
  *
  * ── Por que vazio significa NÃO CONFIGURADO ─────────────────────────────────
  *
- * O fallback antigo era `"Deskcomm <noreply@deskcomm.app>"`. Num clone isso é
+ * O fallback antigo era `"G&M CRM <noreply@gabarronmathias.com.br>"`. Num clone isso é
  * PIOR que nada: o domínio não está verificado na conta Resend do revendedor,
  * então TODO envio falha lá na Resend e volta como `send_failed` com mensagem
  * opaca — o operador vai caçar rede, contêiner e chave, quando o problema é uma

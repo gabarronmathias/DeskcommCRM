@@ -1,4 +1,4 @@
-# DeskcommCRM — override para VPS que JÁ TEM um proxy reverso Traefik.
+# G&M CRM — override para VPS que JÁ TEM um proxy reverso Traefik.
 #
 #   docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml up -d
 #
@@ -23,9 +23,9 @@
 #
 # EQUIVALÊNCIA COM O Caddyfile
 # ----------------------------
-# - `reverse_proxy app:3000`  → router `deskcomm` + loadbalancer.server.port
-# - `encode gzip`             → middleware `deskcomm-compress`
-# - `respond @waha_global 403`→ router `deskcomm-waha-block` (ver abaixo)
+# - `reverse_proxy app:3000`  → router `gmcrm` + loadbalancer.server.port
+# - `encode gzip`             → middleware `gmcrm-compress`
+# - `respond @waha_global 403`→ router `gmcrm-waha-block` (ver abaixo)
 #
 # Os timeouts longos que o Caddyfile dá a /api/internal/agents/run* NÃO precisam
 # de equivalente: no Traefik o writeTimeout e o responseHeaderTimeout já são
@@ -75,14 +75,14 @@ services:
       traefik.docker.network: "${TRAEFIK_NETWORK:-traefik}"
 
       # Rota principal — equivale ao `reverse_proxy app:3000` do Caddyfile.
-      traefik.http.routers.deskcomm.rule: "Host(`${DOMAIN}`)"
-      traefik.http.routers.deskcomm.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
-      traefik.http.routers.deskcomm.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
-      traefik.http.routers.deskcomm.middlewares: "deskcomm-compress"
-      traefik.http.services.deskcomm.loadbalancer.server.port: "3000"
+      traefik.http.routers.gmcrm.rule: "Host(`${DOMAIN}`)"
+      traefik.http.routers.gmcrm.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+      traefik.http.routers.gmcrm.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      traefik.http.routers.gmcrm.middlewares: "gmcrm-compress"
+      traefik.http.services.gmcrm.loadbalancer.server.port: "3000"
 
       # `encode gzip` do Caddyfile.
-      traefik.http.middlewares.deskcomm-compress.compress: "true"
+      traefik.http.middlewares.gmcrm-compress.compress: "true"
 
       # `respond @waha_global 403` do Caddyfile. O webhook GLOBAL do WAHA não
       # pode ser alcançável da internet: quem soubesse o endereço injetaria
@@ -96,22 +96,22 @@ services:
       # real tem. Toda requisição àquele caminho cai fora da lista e recebe 403,
       # que é exatamente o comportamento desejado. A prioridade alta é o que faz
       # esta rota vencer a principal, que casaria o mesmo Host.
-      traefik.http.routers.deskcomm-waha-block.rule: "Host(`${DOMAIN}`) && Path(`/api/v1/webhooks/waha`)"
-      traefik.http.routers.deskcomm-waha-block.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
-      traefik.http.routers.deskcomm-waha-block.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
-      traefik.http.routers.deskcomm-waha-block.priority: "1000"
-      traefik.http.routers.deskcomm-waha-block.service: "deskcomm"
-      traefik.http.routers.deskcomm-waha-block.middlewares: "deskcomm-deny"
-      traefik.http.middlewares.deskcomm-deny.ipallowlist.sourcerange: "192.0.2.1/32"
+      traefik.http.routers.gmcrm-waha-block.rule: "Host(`${DOMAIN}`) && Path(`/api/v1/webhooks/waha`)"
+      traefik.http.routers.gmcrm-waha-block.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+      traefik.http.routers.gmcrm-waha-block.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      traefik.http.routers.gmcrm-waha-block.priority: "1000"
+      traefik.http.routers.gmcrm-waha-block.service: "gmcrm"
+      traefik.http.routers.gmcrm-waha-block.middlewares: "gmcrm-deny"
+      traefik.http.middlewares.gmcrm-deny.ipallowlist.sourcerange: "192.0.2.1/32"
 
       # HTTP -> HTTPS. O Caddy fazia isto automaticamente; no Traefik precisa ser
       # dito. Sem este router, quem digitar http:// não recebe resposta nenhuma.
-      traefik.http.routers.deskcomm-http.rule: "Host(`${DOMAIN}`)"
-      traefik.http.routers.deskcomm-http.entrypoints: "${TRAEFIK_ENTRYPOINT_HTTP:-web}"
-      traefik.http.routers.deskcomm-http.middlewares: "deskcomm-https"
-      traefik.http.routers.deskcomm-http.service: "deskcomm"
-      traefik.http.middlewares.deskcomm-https.redirectscheme.scheme: "https"
-      traefik.http.middlewares.deskcomm-https.redirectscheme.permanent: "true"
+      traefik.http.routers.gmcrm-http.rule: "Host(`${DOMAIN}`)"
+      traefik.http.routers.gmcrm-http.entrypoints: "${TRAEFIK_ENTRYPOINT_HTTP:-web}"
+      traefik.http.routers.gmcrm-http.middlewares: "gmcrm-https"
+      traefik.http.routers.gmcrm-http.service: "gmcrm"
+      traefik.http.middlewares.gmcrm-https.redirectscheme.scheme: "https"
+      traefik.http.middlewares.gmcrm-https.redirectscheme.permanent: "true"
 
   # O Caddy não é removido do compose (isso exigiria editar o arquivo base e
   # quebraria quem usa o padrão) — ele só é posto num profile que nunca é

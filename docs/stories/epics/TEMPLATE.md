@@ -125,7 +125,7 @@ exposes:
 ```
 
 #### Decisões a registrar
-- Decisão arquitetural específica que esta story toma e que outros podem precisar (ex: "Cookie de sessão chama-se `sb-deskcomm-auth` em todos os ambientes")
+- Decisão arquitetural específica que esta story toma e que outros podem precisar (ex: "Cookie de sessão chama-se `sb-gm-crm-auth` em todos os ambientes")
 
 #### Definition of Done
 - [ ] Todos os ACs passam em Playwright

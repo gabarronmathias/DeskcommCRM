@@ -63,7 +63,7 @@ begin
     'Muito obrigado por ter entrado em contato com a '||v_org_name||'.'||E'\n\n'||
     'Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?'||E'\n\n'||
     'Para acessar nosso cardápio digital, basta acessar o link abaixo:'||E'\n'||
-    'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+    'https://gabarronmathias.github.io/G&M CRM/'||v_slug||'/';
 
   insert into public.messages(organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,metadata,created_at)
   select new.organization_id,new.conversation_id,new.channel_session_id,new.contact_id,'text','outbound','queued',v_opening,'ai',now(),
@@ -266,7 +266,7 @@ begin
     select string_agg(oi.quantity::text||'x '||oi.product_name_snapshot,', ' order by oi.created_at,oi.product_name_snapshot) into v_last_items
     from public.food_order_items oi where oi.organization_id=new.organization_id and oi.order_id=v_last_order_id;
     v_last_order_context:='Último pedido confirmado: '||coalesce(v_last_items,'itens não detalhados')||', total R$ '||replace(to_char(coalesce(v_last_total,0)/100.0,'FM999999990D00'),'.',',')||', realizado em '||to_char(v_last_order_at at time zone 'America/Sao_Paulo','DD/MM/YYYY')||'. ';
-  else v_last_order_context:='Não há pedido concluído identificado para este contato no checkout Deskcomm. '; end if;
+  else v_last_order_context:='Não há pedido concluído identificado para este contato no checkout G&M CRM. '; end if;
 
   if v_pointer_name='Reativação de clientes' then
     v_reason:='Reativação comercial. Faça UMA mensagem curta, humana e muito persuasiva para gerar uma nova compra. Se houver último pedido, use-o naturalmente para demonstrar memória e relevância. Em seguida, procure uma oportunidade real de vender MAIS: consulte o catálogo e ofereça UM produto complementar, upgrade ou nova opção coerente com o histórico. Nunca invente desconto, promoção, produto, preço, estoque ou benefício.';

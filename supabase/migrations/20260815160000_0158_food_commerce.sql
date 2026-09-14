@@ -1,7 +1,7 @@
 -- 0158_food_commerce
--- Food Commerce multi-tenant para DeskcommCRM.
+-- Food Commerce multi-tenant para G&M CRM.
 -- Genérico: não contém marca, produto ou tenant específico.
--- Requer as migrations anteriores do DeskcommCRM (organizations, contacts,
+-- Requer as migrations anteriores do G&M CRM (organizations, contacts,
 -- orders, idempotency_keys, emit_event, fn_touch_updated_at, fn_role_at_least).
 
 alter table public.orders

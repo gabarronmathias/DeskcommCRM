@@ -272,7 +272,7 @@ export async function PATCH(
       `)
       .eq("id", id)
       .eq("organization_id", activeOrg.orgId)
-      .eq("external_provider", "deskcomm_food")
+      .eq("external_provider", "gm_crm_food")
       .maybeSingle();
 
   if (orderError) {

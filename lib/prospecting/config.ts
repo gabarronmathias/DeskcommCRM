@@ -30,7 +30,23 @@ export function activeCampaign(): string {
 }
 
 export const OPENING_MESSAGE = (company: string) =>
-  `Olá! Tudo bem?\nSou a Sarah, da Gabarron & Mathias.\n\nVi a ${company} e queria me apresentar: Somos especialistas em atendimento para delivery e ajudamos negócios de alimentação a vender mais, recuperar oportunidades e trazer clientes de volta pelo WhatsApp.\n\nComo vocês organizam o atendimento por aí hoje?`;
+  `Olá! Tudo bem? Sou a Sarah, da Gabarron & Mathias.\n\nVi a ${company} e queria me apresentar: Somos especialistas em atendimento para delivery e ajudamos negócios de alimentação a vender mais, recuperar oportunidades e trazer clientes de volta pelo WhatsApp. Como vocês organizam o atendimento por aí hoje?`;
+
+/**
+ * Quando o contato pergunta o motivo do contato, a Sarah responde o que a
+ * Gabarron & Mathias faz e devolve a conversa para o tomador de decisão. Os
+ * parágrafos seguem a regra do produto: uma ideia por parágrafo, separados por
+ * linha em branco, e a pergunta final isolada para abrir caminho à resposta.
+ */
+export const SARAH_REASON_MESSAGE =
+  "Claro! Entramos em contato porque somos especialistas em atendimento para delivery.\nAjudamos negócios de alimentação a vender mais pelo WhatsApp e pela própria base de clientes.\n\nVocê poderia me indicar quem é responsável pelo delivery, atendimento ou marketing para eu explicar rapidamente como a Sarah pode ajudar?";
+
+/**
+ * Quando a pessoa diz que aquele não é o canal de marketing, a Sarah pede o
+ * canal correto sem insistir nem desqualificar o número atual.
+ */
+export const SARAH_WRONG_CHANNEL_MESSAGE =
+  "Entendi! E qual seria o telefone/canal de comunicação de marketing?";
 
 export const SARAH_POSITIONING =
   "Nós ajudamos padarias, restaurantes, pizzarias, hamburguerias, esfiharias e deliveries a transformar o WhatsApp e a própria base de clientes em uma máquina de vendas recorrentes.";

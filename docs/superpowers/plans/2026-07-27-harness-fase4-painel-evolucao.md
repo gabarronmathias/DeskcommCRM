@@ -1368,7 +1368,7 @@ Expected: 0 erros nos dois.
 
 - [ ] **Step 5: Prova em Playwright, CLICANDO (protocolo obrigatório do épico)**
 
-Suba o dev server (`lsof -tiTCP:3000`; se não houver, `npm run dev` em background e espere `/api/v1/health`). Logue como `e2e-admin@deskcomm.test` (senha em `.e2e-creds.json`; o MFA é TOTP — secret no scratchpad, código via `generateTotp` de `./tests/e2e/utils/totp`, seis caixas de um dígito).
+Suba o dev server (`lsof -tiTCP:3000`; se não houver, `npm run dev` em background e espere `/api/v1/health`). Logue como `e2e-admin@gabarronmathias.test` (senha em `.e2e-creds.json`; o MFA é TOTP — secret no scratchpad, código via `generateTotp` de `./tests/e2e/utils/totp`, seis caixas de um dígito).
 
 Navegue até **Evolução da IA** e prove, clicando:
 1. A tela carrega com os quatro blocos.

@@ -20,7 +20,7 @@ exposes_contracts:
   - "ui.<UserMenu>"
   - "ui.<ThemeToggle>"
   - "layout.app-authenticated"
-  - "cookie.sb-deskcomm-auth"
+  - "cookie.sb-gm-crm-auth"
 status: completed
 created_at: 2026-04-28
 owner: Rafael Melgaço
@@ -41,7 +41,7 @@ Entregar autenticação completa (email+senha + MFA TOTP + recovery codes) com m
 - [ ] Admin/platform_admin com MFA cadastrado faz challenge TOTP em `/login/mfa` antes de logar
 - [ ] Admin/platform_admin sem MFA cadastrado é forçado a enrollar via modal blocker no primeiro login (com display once de 10 recovery codes + copy-to-clipboard)
 - [ ] Recovery code válido em `/login/recovery` reseta MFA do user (usado UMA vez, marcado `used_at`)
-- [ ] Logout limpa cookie `sb-deskcomm-auth` + redireciona pra `/login`
+- [ ] Logout limpa cookie `sb-gm-crm-auth` + redireciona pra `/login`
 - [ ] Layout `app/(app)/layout.tsx` renderiza com `<Sidebar>` (Inbox, Kanban, Contacts, Settings, com Phosphor icons + collapse persistido em cookie) + `<TopBar>` (`<TenantSwitcher>`, trigger Cmd+K, `<UserMenu>` com avatar/logout/profile/theme)
 - [ ] Hooks `useAuth`, `useUser`, `useActiveOrg`, `usePermission(action)` disponíveis em `lib/auth/` e cobertos por unit test
 - [ ] Auto-refresh de sessão a cada 40min (`useAuth`) — JWT não expira em sessão longa
@@ -100,7 +100,7 @@ Entregar autenticação completa (email+senha + MFA TOTP + recovery codes) com m
 | `ui.<ThemeToggle>` | react_component | S-01.10 | Wrapper sobre `useTheme` |
 | `ui.<MfaEnrollModal>` | react_component | S-01.11 | Blocker; QR + TOTP input + display once recovery codes |
 | `ui.<RecoveryCodesPanel>` | react_component | S-01.12 | Lista 10 codes com copy-all e download .txt |
-| `cookie.sb-deskcomm-auth` | cookie | S-01.01 | Nome canônico do cookie de sessão Supabase em todos os ambientes |
+| `cookie.sb-gm-crm-auth` | cookie | S-01.01 | Nome canônico do cookie de sessão Supabase em todos os ambientes |
 | `cookie.active_org` | cookie | S-01.10 | `httpOnly`, `sameSite=strict` |
 | `cookie.sidebar_collapsed` | cookie | S-01.09 | Boolean `'1' \| '0'` |
 | `event.audit.auth.*` | domain_event | S-01.03/04/05/07 | Inseridos em `api_audit_log` (Spec 01 §6.1) |
@@ -117,7 +117,7 @@ Entregar autenticação completa (email+senha + MFA TOTP + recovery codes) com m
 
 #### Contexto
 
-Primeira pedra do shell autenticado. Sem middleware nada funciona — qualquer rota `/app/*` ou `/admin/*` precisa falhar fechado pra usuário sem cookie. Decisão lockada: **cookie name canônico = `sb-deskcomm-auth`** em todos os ambientes (dev/staging/prod). Lista pública (`PUBLIC_PATHS`) inclui `/`, `/login`, `/login/mfa`, `/login/recovery`, `/api/v1/webhooks/*`, `/api/v1/health`. `/admin/*` exige `fn_is_platform_admin()` true além de auth.
+Primeira pedra do shell autenticado. Sem middleware nada funciona — qualquer rota `/app/*` ou `/admin/*` precisa falhar fechado pra usuário sem cookie. Decisão lockada: **cookie name canônico = `sb-gm-crm-auth`** em todos os ambientes (dev/staging/prod). Lista pública (`PUBLIC_PATHS`) inclui `/`, `/login`, `/login/mfa`, `/login/recovery`, `/api/v1/webhooks/*`, `/api/v1/health`. `/admin/*` exige `fn_is_platform_admin()` true além de auth.
 
 #### Files to create
 
@@ -135,7 +135,7 @@ Primeira pedra do shell autenticado. Sem middleware nada funciona — qualquer r
 2. Criar `middleware.ts` espelhando Spec 09 §3.2 (createServerClient ssr, getUser, redirect com `next` query)
 3. Adicionar gating de `/admin/*` via `supabase.rpc('fn_is_platform_admin')` → redirect `/403` se false
 4. Configurar `matcher` excluindo assets estáticos
-5. Forçar nome de cookie: `cookieOptions: { name: 'sb-deskcomm-auth', sameSite: 'strict', httpOnly: true, secure: true }` (dev pode `secure: false` via env)
+5. Forçar nome de cookie: `cookieOptions: { name: 'sb-gm-crm-auth', sameSite: 'strict', httpOnly: true, secure: true }` (dev pode `secure: false` via env)
 6. Escrever Playwright spec
 
 #### Acceptance Criteria
@@ -173,7 +173,7 @@ Then JWT é refreshado e Set-Cookie sai com novo token
 | t2 | e2e | Redirect admin sem permissão | Login como agent, `goto('/admin')` → expect `/403` |
 | t3 | api | Health pública | `curl /api/v1/health` sem cookie → 200 |
 | t4 | api | Header injection | Inspect response headers em qualquer rota → `x-request-id` presente |
-| t5 | rls | Cookie name canônico | Inspect Set-Cookie em login → `sb-deskcomm-auth=...` |
+| t5 | rls | Cookie name canônico | Inspect Set-Cookie em login → `sb-gm-crm-auth=...` |
 
 #### Architecture contracts emitted
 
@@ -183,13 +183,13 @@ exposes:
     id: "middleware.ts"
     behavior: "redirect_to_login_with_next + admin_gating + jwt_refresh"
   - type: cookie
-    id: "sb-deskcomm-auth"
+    id: "sb-gm-crm-auth"
     options: "{ httpOnly, sameSite: strict, secure: true (prod), path: / }"
 ```
 
 #### Decisões a registrar
 
-- **D-01.01**: Cookie de sessão chama-se `sb-deskcomm-auth` em todos os ambientes (locked)
+- **D-01.01**: Cookie de sessão chama-se `sb-gm-crm-auth` em todos os ambientes (locked)
 - **D-01.02**: `/admin/*` faz RPC `fn_is_platform_admin` no middleware (1 round-trip extra aceito por security)
 
 #### Definition of Done
@@ -324,7 +324,7 @@ Lógica server-side do login. Reuso do pseudo-código da Spec 01 §4.1 — Serve
 ```gherkin
 Given user agent com email/senha válidos sem MFA
 When submete /login
-Then cookie sb-deskcomm-auth é setado
+Then cookie sb-gm-crm-auth é setado
 And redirect pra /app/inbox (ou next query)
 And api_audit_log tem row auth.login_success
 ```
@@ -424,7 +424,7 @@ Recebe usuário com cookie `mfa_pending=1`. Mostra `<TOTPInput>` (6 dígitos, au
 ```gherkin
 Given user pós-login com mfa_pending=1
 When digita TOTP correto
-Then sb-deskcomm-auth elevated, redirect /app/inbox
+Then sb-gm-crm-auth elevated, redirect /app/inbox
 And audit auth.mfa_success existe
 ```
 
@@ -647,7 +647,7 @@ exposes:
 
 #### Contexto
 
-Server Action `signOut` que chama `supabase.auth.signOut()` server-side, deleta cookies (`sb-deskcomm-auth`, `active_org`, `mfa_pending` se existir, `sidebar_collapsed`), audit `auth.logout`, `redirect('/login')`. Botão dispara via `<UserMenu>` (componente vem em S-01.10, mas action precisa estar pronta).
+Server Action `signOut` que chama `supabase.auth.signOut()` server-side, deleta cookies (`sb-gm-crm-auth`, `active_org`, `mfa_pending` se existir, `sidebar_collapsed`), audit `auth.logout`, `redirect('/login')`. Botão dispara via `<UserMenu>` (componente vem em S-01.10, mas action precisa estar pronta).
 
 #### Files to create
 
@@ -670,7 +670,7 @@ Server Action `signOut` que chama `supabase.auth.signOut()` server-side, deleta 
 ```gherkin
 Given user autenticado
 When chama signOut
-Then cookie sb-deskcomm-auth removido
+Then cookie sb-gm-crm-auth removido
 And redirect pra /login
 And audit auth.logout existe
 ```
@@ -1130,7 +1130,7 @@ exposes:
 
 | Risco | Severidade | Mitigação |
 |---|---|---|
-| Cookie name divergente entre dev e prod quebra refresh silenciosamente | Alta | D-01.01: nome único `sb-deskcomm-auth` em todos envs; teste cobre |
+| Cookie name divergente entre dev e prod quebra refresh silenciosamente | Alta | D-01.01: nome único `sb-gm-crm-auth` em todos envs; teste cobre |
 | Middleware DB roundtrip (`fn_is_platform_admin`) adiciona latência em `/admin/*` | Média | Aceitar — só super-admin paga; cache curto opcional em wave futura |
 | Auto-refresh JWT a cada 40min causa request burst se 100+ usuários | Baixa | Spread aleatório: `40min + jitter(0-2min)` no `setInterval` |
 | Force-MFA modal pode ser bypassado se layout falhar | Alta | Server-side check no layout (não client); render condicional total — Sidebar/TopBar simplesmente não montam |
@@ -1140,7 +1140,7 @@ exposes:
 ## 8. Decisões arquiteturais novas que este epic introduz
 
 - **ADR-13**: Hooks de domínio crítico (auth) ficam em `lib/auth/hooks/`, não em `hooks/` — separação de blast radius (D-01.06)
-- **ADR-14**: Cookie de sessão Supabase nomeado `sb-deskcomm-auth` em todos os ambientes (D-01.01)
+- **ADR-14**: Cookie de sessão Supabase nomeado `sb-gm-crm-auth` em todos os ambientes (D-01.01)
 - **ADR-15**: Force-MFA é gating do layout `(app)`, não do middleware (D-01.08)
 - **ADR-16**: Login flow é Server Action (não API route) — API route reservada pra Bearer/server-to-server (D-01.04)
 - **ADR-17**: JWT auto-refresh a cada 40min com jitter no `useAuth`
@@ -1161,7 +1161,7 @@ Concluído em 2026-04-28 (sessões 1-2).
 
 | Wave | Story | Commit |
 |------|-------|--------|
-| 1 | S-01.01 Middleware proteção (cookie sb-deskcomm-auth) | `1310d4e` |
+| 1 | S-01.01 Middleware proteção (cookie sb-gm-crm-auth) | `1310d4e` |
 | 2 | S-01.02 /login page (RHF+Zod) | `60990bb` |
 | 3 | S-01.03 signInWithPassword + audit | `60990bb` |
 | 4 | S-01.04 /login/mfa challenge (TOTPInput auto-advance) | `b7acbc6` |
@@ -1183,6 +1183,6 @@ Concluído em 2026-04-28 (sessões 1-2).
 6. Service role placeholder — refatorado pra user-scoped client + RLS-safe queries
 
 ### Seed admin user
-- Email: `rafael@maudibrasil.com.br` / Senha: `DeskcommAdmin@2026` (TROCAR APÓS PRIMEIRO LOGIN)
+- Email: `rafael@maudibrasil.com.br` / Senha: `GmcrmAdmin@2026` (TROCAR APÓS PRIMEIRO LOGIN)
 - Criado via GoTrue REST signup + email confirmado via SQL + membership inserida
 - Role: admin → MfaEnrollGate aparece no primeiro login

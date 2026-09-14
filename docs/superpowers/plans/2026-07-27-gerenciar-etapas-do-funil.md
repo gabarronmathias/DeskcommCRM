@@ -257,7 +257,7 @@ Textos obrigatórios, porque são o que torna a tela auto-explicativa:
 
 ### Task 4: Fechamento
 
-- [ ] **Step 1: Mapa vivo** — `docs/architecture/agent-turn.workflow.json` (o rastreado; **não toque** em `deskcomm-system.*` nem `flywheel-proposal.*`, que são untracked de outra sessão). A tela entra com ao menos 2 arestas, e uma tem que ser `tela de etapas → mapa do funil` — as duas se completam. Rode o validador e re-renderize o HTML.
+- [ ] **Step 1: Mapa vivo** — `docs/architecture/agent-turn.workflow.json` (o rastreado; **não toque** em `gm-crm-system.*` nem `flywheel-proposal.*`, que são untracked de outra sessão). A tela entra com ao menos 2 arestas, e uma tem que ser `tela de etapas → mapa do funil` — as duas se completam. Rode o validador e re-renderize o HTML.
 
 - [ ] **Step 2: A prova do ciclo completo, que é a razão da feature existir.** Numa organização **recém-criada** (o gatilho semeia "Pedidos" com nomes de e-commerce): renomeie as etapas para o vocabulário de uma clínica, marque a de fechamento, mapeie os passos do agente na tela de mapeamento, e prove que o agente move o card para a etapa que você nomeou. **Declare o caminho de cada afirmação** — "chamei a função que o turno chama, com o pool real" e "passei por HTTP com sessão" são coisas diferentes. Apague a organização de teste e confirme as contagens.
 

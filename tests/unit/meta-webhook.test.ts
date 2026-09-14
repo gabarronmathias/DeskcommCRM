@@ -176,7 +176,7 @@ describe("parseMetaWebhook", () => {
   });
 
   it('rejected_reason "NONE" vira null — achado na prova AO VIVO com a Meta', () => {
-    // O template real `deskcomm_prova_webhook_0088` foi aprovado e a Meta mandou
+    // O template real `gm_crm_prova_webhook_0088` foi aprovado e a Meta mandou
     // `reason: "NONE"`. O handler gravou o literal enquanto o sync gravava null:
     // a MESMA coluna com duas convenções, dependendo de quem tocou por último.
     // Sem este caso, o defeito volta na próxima vez que alguém mexer no parse.

@@ -24,10 +24,10 @@ Se você usa número próprio no WhatsApp, reconecte depois de atualizar.
 
 ## [1.0.0] — 2026-07-27
 
-Primeira versão marcada do DeskcommCRM.
+Primeira versão marcada do G&M CRM.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/melgarafael/DeskcommCRM/releases/tag/v1.0.0
+[Não lançado]: https://github.com/melgarafael/G&M CRM/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/melgarafael/G&M CRM/releases/tag/v1.0.0
 `;
 
 describe("extractChangelogSection", () => {

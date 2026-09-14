@@ -1,19 +1,19 @@
-# Instincts generated from https://github.com/melgarafael/DeskcommCRM
+# Instincts generated from https://github.com/melgarafael/G&M CRM
 # Generated: 2026-07-06T20:13:47.311Z
 # Version: 2.0
 # NOTE: This file supplements (does not replace) any existing curated instincts.
 # High-confidence manually curated instincts should be preserved alongside these.
 
 ---
-id: DeskcommCRM-commit-conventional
+id: G&M CRM-commit-conventional
 trigger: "when writing a commit message"
 confidence: 0.85
 domain: git
 source: repo-analysis
-source_repo: https://github.com/melgarafael/DeskcommCRM
+source_repo: https://github.com/melgarafael/G&M CRM
 ---
 
-# DeskcommCRM Commit Conventional
+# G&M CRM Commit Conventional
 
 ## Action
 
@@ -26,15 +26,15 @@ Use conventional commit format with prefixes: fix
 - Examples: fix(supabase): compara channel_sessions.status contra WORKING (maiúsculo)
 
 ---
-id: DeskcommCRM-commit-length
+id: G&M CRM-commit-length
 trigger: "when writing a commit message"
 confidence: 0.6
 domain: git
 source: repo-analysis
-source_repo: https://github.com/melgarafael/DeskcommCRM
+source_repo: https://github.com/melgarafael/G&M CRM
 ---
 
-# DeskcommCRM Commit Length
+# G&M CRM Commit Length
 
 ## Action
 
@@ -46,15 +46,15 @@ Write moderate-length commit messages (~73 characters)
 - Based on 1 commits
 
 ---
-id: DeskcommCRM-naming-files
+id: G&M CRM-naming-files
 trigger: "when creating a new file"
 confidence: 0.8
 domain: code-style
 source: repo-analysis
-source_repo: https://github.com/melgarafael/DeskcommCRM
+source_repo: https://github.com/melgarafael/G&M CRM
 ---
 
-# DeskcommCRM Naming Files
+# G&M CRM Naming Files
 
 ## Action
 
@@ -66,15 +66,15 @@ Use snake_case naming convention
 - Dominant pattern: snake_case
 
 ---
-id: DeskcommCRM-import-relative
+id: G&M CRM-import-relative
 trigger: "when importing modules"
 confidence: 0.75
 domain: code-style
 source: repo-analysis
-source_repo: https://github.com/melgarafael/DeskcommCRM
+source_repo: https://github.com/melgarafael/G&M CRM
 ---
 
-# DeskcommCRM Import Relative
+# G&M CRM Import Relative
 
 ## Action
 
@@ -86,15 +86,15 @@ Use relative imports for project files
 - Example: import { x } from '../lib/x'
 
 ---
-id: DeskcommCRM-export-style
+id: G&M CRM-export-style
 trigger: "when exporting from a module"
 confidence: 0.7
 domain: code-style
 source: repo-analysis
-source_repo: https://github.com/melgarafael/DeskcommCRM
+source_repo: https://github.com/melgarafael/G&M CRM
 ---
 
-# DeskcommCRM Export Style
+# G&M CRM Export Style
 
 ## Action
 
@@ -106,15 +106,15 @@ Prefer named exports
 - Dominant style: named
 
 ---
-id: DeskcommCRM-test-separate
+id: G&M CRM-test-separate
 trigger: "when writing tests"
 confidence: 0.8
 domain: testing
 source: repo-analysis
-source_repo: https://github.com/melgarafael/DeskcommCRM
+source_repo: https://github.com/melgarafael/G&M CRM
 ---
 
-# DeskcommCRM Test Separate
+# G&M CRM Test Separate
 
 ## Action
 
@@ -126,15 +126,15 @@ Place tests in the tests/ or __tests__/ directory, mirroring src structure
 - Tests live in dedicated test folders
 
 ---
-id: deskcommcrm-instinct-file-naming
+id: gm-crm-instinct-file-naming
 trigger: "When creating a new file"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct File Naming
+# G&M CRMcrm Instinct File Naming
 
 ## Action
 
@@ -145,15 +145,15 @@ Name the file using snake_case
 - Pattern in namingConventions.files: snake_case
 
 ---
-id: deskcommcrm-instinct-function-naming
+id: gm-crm-instinct-function-naming
 trigger: "When defining a new function"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct Function Naming
+# G&M CRMcrm Instinct Function Naming
 
 ## Action
 
@@ -164,15 +164,15 @@ Name the function using camelCase
 - Pattern in namingConventions.functions: camelCase
 
 ---
-id: deskcommcrm-instinct-class-naming
+id: gm-crm-instinct-class-naming
 trigger: "When defining a new class"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct Class Naming
+# G&M CRMcrm Instinct Class Naming
 
 ## Action
 
@@ -183,15 +183,15 @@ Name the class using PascalCase
 - Pattern in namingConventions.classes: PascalCase
 
 ---
-id: deskcommcrm-instinct-constant-naming
+id: gm-crm-instinct-constant-naming
 trigger: "When defining a new constant"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct Constant Naming
+# G&M CRMcrm Instinct Constant Naming
 
 ## Action
 
@@ -202,15 +202,15 @@ Name the constant using SCREAMING_SNAKE_CASE
 - Pattern in namingConventions.constants: SCREAMING_SNAKE_CASE
 
 ---
-id: deskcommcrm-instinct-import-style
+id: gm-crm-instinct-import-style
 trigger: "When importing modules"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct Import Style
+# G&M CRMcrm Instinct Import Style
 
 ## Action
 
@@ -221,15 +221,15 @@ Use relative import paths
 - Pattern in importStyle: relative
 
 ---
-id: deskcommcrm-instinct-export-style
+id: gm-crm-instinct-export-style
 trigger: "When exporting modules or functions"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct Export Style
+# G&M CRMcrm Instinct Export Style
 
 ## Action
 
@@ -240,15 +240,15 @@ Use named exports
 - Pattern in exportStyle: named
 
 ---
-id: deskcommcrm-instinct-git-commit-prefix
+id: gm-crm-instinct-git-commit-prefix
 trigger: "When writing a commit message for a bug fix"
 confidence: 0.9
 domain: git
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct Git Commit Prefix
+# G&M CRMcrm Instinct Git Commit Prefix
 
 ## Action
 
@@ -260,15 +260,15 @@ Prefix the commit message with 'fix' following conventional commit format
 - Seen in commit: fix(supabase): compara channel_sessions.status contra WORKING (maiúsculo)
 
 ---
-id: deskcommcrm-instinct-git-commit-format
+id: gm-crm-instinct-git-commit-format
 trigger: "When writing a commit message"
 confidence: 0.9
 domain: git
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct Git Commit Format
+# G&M CRMcrm Instinct Git Commit Format
 
 ## Action
 
@@ -280,15 +280,15 @@ Use the conventional commit format: <type>(<scope>): <description>
 - Seen in commit: fix(supabase): compara channel_sessions.status contra WORKING (maiúsculo)
 
 ---
-id: deskcommcrm-instinct-test-location
+id: gm-crm-instinct-test-location
 trigger: "When adding or updating tests"
 confidence: 0.8
 domain: testing
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/G&M CRM
 ---
 
-# Deskcommcrm Instinct Test Location
+# G&M CRMcrm Instinct Test Location
 
 ## Action
 

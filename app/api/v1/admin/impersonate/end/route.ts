@@ -2,7 +2,7 @@
  * POST /api/v1/admin/impersonate/end (S-11.07)
  *
  * Terminates the active platform-admin impersonation session by deleting the
- * `deskcomm-impersonate` cookie. Audits the end event with the tenant id
+ * `gm-crm-impersonate` cookie. Audits the end event with the tenant id
  * derived from the cookie (best-effort; cookie is verified before audit).
  *
  * Idempotent: if no cookie present, still returns 200 with `ended: false`.

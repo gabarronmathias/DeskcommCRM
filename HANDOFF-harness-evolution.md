@@ -67,7 +67,7 @@ O painel já foi provado da telemetria para a frente. O que falta é o ciclo com
 - Base de conhecimento **ligada** na `Lia — AgendaPlus` (KB `df9810c7`, 2 verbetes: garantia de 12 meses e frete grátis acima de R$ 199), limiar de semelhança em **0,5** — o padrão 0,72 cortaria acertos legítimos, já medido em sessão anterior.
 - Worker rodando o código atual (`npm run worker`, healthz na 8787). **Isto importa:** um worker antigo processa o turno e **não grava** a telemetria, e a prova falharia em silêncio.
 - App em produção na **porta 3000**, health `healthy` nos três (Supabase, Redis, WAHA).
-- Redis local no ar (`docker start deskcomm-redis-local deskcomm-srh-local` se tiver reiniciado a máquina).
+- Redis local no ar (`docker start gm-crm-redis-local gm-crm-srh-local` se tiver reiniciado a máquina).
 - Embedding indo **direto na OpenAI**, sem passar pelo gateway (commit `e5d702d`) — era o teto do plano anônimo que derrubava a busca inteira.
 
 **Os dois passos que são seus:**
@@ -87,7 +87,7 @@ A primeira com `hits >= 1`, a segunda com `hits = 0` e `top_score` preenchido (b
 ## Ambiente consertado em 2026-07-27 (o que era "achado" virou conserto)
 
 - **AI Gateway no teto: RESOLVIDO na causa raiz, sem mexer em cobrança.** `lib/ai/embed.ts` prometia no cabeçalho usar o provider OpenAI direto quando não há `AI_GATEWAY_API_KEY`, e esse caminho **não existia no código** — passava a string `openai/text-embedding-3-small` para `embed()`, e no AI SDK id com barra é resolvido pelo gateway da Vercel **mesmo sem chave**, caindo no plano anônimo. Commit `e5d702d` + teste que assere o TIPO do que chega em `embed({model})` (string = gateway; objeto = provider explícito), sabotado e vermelho. Prova real: 1536 dimensões / 8 tokens direto na OpenAI. O caminho de CONVERSA já estava certo (`lib/agent-engine/edge/llm/providers.ts` usa providers explícitos com endpoint contido) — o defeito era exclusivo do embedding.
-- **Upstash morto: substituído por Redis local.** A instância da nuvem dá NXDOMAIN (foi removida). Subi o mesmo par do `docker-compose.prod.yml` — `deskcomm-redis-local` (redis:7-alpine) + `deskcomm-srh-local` (serverless-redis-http na porta 8079, que fala o protocolo REST do Upstash sobre o redis normal). `.env.local` aponta para lá, com os valores da nuvem **comentados logo acima** para reverter. Backup em `.env.local.bak-*`. Health voltou a `healthy`.
+- **Upstash morto: substituído por Redis local.** A instância da nuvem dá NXDOMAIN (foi removida). Subi o mesmo par do `docker-compose.prod.yml` — `gm-crm-redis-local` (redis:7-alpine) + `gm-crm-srh-local` (serverless-redis-http na porta 8079, que fala o protocolo REST do Upstash sobre o redis normal). `.env.local` aponta para lá, com os valores da nuvem **comentados logo acima** para reverter. Backup em `.env.local.bak-*`. Health voltou a `healthy`.
 - **Servidor da porta 3000:** o processo antigo (quebrado porque o `pnpm install` do merge trocou o `node_modules` por baixo dele) morreu sozinho; subi um `next start` novo do build atual.
 - **Worker reiniciado** para pegar o código da fase — o anterior era das 07:54 e não tinha a telemetria nem a ponte do funil.
 
@@ -104,7 +104,7 @@ O `top_score` de 0,165 é o ponto do épico: ele diz **"a base não tem esse ass
 
 **Na tela** (`/app/ai/evolution`, logado como `e2e-manager`): "Consultas aos seus materiais — **2 no período**" com o pico em 27/07, e em "O que está travando": *"1 pergunta de cliente não encontrou resposta nos seus materiais. São os assuntos que ainda faltam escrever — cada um deles é uma conversa em que o agente teve que improvisar ou passar adiante"*, com o botão para a base. Prova visual em `f4-prova-real-whatsapp.png`.
 
-**ACHADO DE AMBIENTE (não é bug, mas custa tempo de quem for repetir):** a conta de login do Rafael (`rafael@maudibrasil.com.br`) é admin da org **Deskcomm Admin**, enquanto o número de WhatsApp, a agente Lia e toda a telemetria vivem na org **E2E Test Org**. Abrir o painel com a conta dele mostra zeros — corretamente, porque o isolamento entre empresas está funcionando. Quem for repetir a prova precisa entrar com uma conta da org que tem o número, ou o painel vai parecer quebrado quando está certo.
+**ACHADO DE AMBIENTE (não é bug, mas custa tempo de quem for repetir):** a conta de login do Rafael (`rafael@maudibrasil.com.br`) é admin da org **G&M CRM Admin**, enquanto o número de WhatsApp, a agente Lia e toda a telemetria vivem na org **E2E Test Org**. Abrir o painel com a conta dele mostra zeros — corretamente, porque o isolamento entre empresas está funcionando. Quem for repetir a prova precisa entrar com uma conta da org que tem o número, ou o painel vai parecer quebrado quando está certo.
 
 **A lacuna de funil apareceu com dados reais**, confirmando o plano `docs/superpowers/plans/2026-07-27-mapeamento-funil-agente.md`: os funis "Pedidos" (4 passos sem etapa) e "CRM Vivo — Clínica" (2 passos) estão listados na tela, e hoje **não existe interface para consertá-los**.
 

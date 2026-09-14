@@ -126,7 +126,7 @@ begin
     'Muito obrigado por ter entrado em contato com a '||v_org_name||'.'||E'\n\n'||
     'Meu nome é Sarah e vou te atender por aqui. Como posso te ajudar hoje?'||E'\n\n'||
     'Para acessar nosso cardápio digital, basta acessar o link abaixo:'||E'\n'||
-    'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+    'https://gabarronmathias.github.io/G&M CRM/'||v_slug||'/';
 
   insert into public.messages(organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,body,sent_via,sent_at,metadata,created_at)
   select new.organization_id,new.conversation_id,new.channel_session_id,new.contact_id,'text','outbound','queued',v_opening,'ai',now(),

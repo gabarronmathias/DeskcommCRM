@@ -6,7 +6,7 @@
 
 ## O fato que gera todas as regras
 
-A monetização do DeskcommCRM **não é assinatura**. É self-host em VPS, com a HostGator como parceira.
+A monetização do G&M CRM **não é assinatura**. É self-host em VPS, com a HostGator como parceira.
 Quem instala numa VPS é o cliente que paga — e ele instala sozinho, sem ninguém olhando.
 
 Duas consequências que mudam o que é "bom código" aqui:

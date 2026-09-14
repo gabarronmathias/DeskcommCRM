@@ -174,7 +174,7 @@ async function submitOrder(e){
  fulfillment=String(fd.get("fulfillment")||"retirada");paymentMethod=String(fd.get("payment_method")||"pix");
  addressNotes=String(fd.get("address_notes")||"");marketingConsent=fd.get("marketing_consent")==="on";
  submitting=true;render();
- let session=localStorage.getItem("deskcomm-food-session");if(!session){session=uuid();localStorage.setItem("deskcomm-food-session",session)}
+ let session=localStorage.getItem("gm-crm-food-session");if(!session){session=uuid();localStorage.setItem("gm-crm-food-session",session)}
  try{
   const r=await fetch(`${API_BASE}/${encodeURIComponent(tenant)}`,{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:JSON.stringify({
    idempotency_key:uuid(),session_key:session,customer_name:customerName,phone,fulfillment,payment_method:paymentMethod,address_notes:fulfillment==="entrega"?addressNotes:"",marketing_consent:marketingConsent,

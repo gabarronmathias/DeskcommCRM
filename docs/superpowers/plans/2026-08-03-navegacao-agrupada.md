@@ -274,4 +274,4 @@ Task 1 destrava tudo. 2→3→4→5 dependem só dela e podem ser feitas na orde
 
 Os 9 critérios da spec §12, mais: `pnpm test:unit` verde, `pnpm typecheck` e `pnpm lint` zerados, evidência visual em `.superpowers/evidence/`.
 
-**Não fazer push.** O repo tem hook de governança (`DESKCOMM_GOV_PHASE_MERGE`) e push é decisão do Rafael.
+**Não fazer push.** O repo tem hook de governança (`GMCRM_GOV_PHASE_MERGE`) e push é decisão do Rafael.

@@ -385,7 +385,7 @@ async function main() {
     // ---------- AC4: localStorage toggle off → no Info icons anywhere ----------
     try {
       await page.evaluate(() => {
-        window.localStorage.setItem("deskcomm.show_ai_citations", "0");
+        window.localStorage.setItem("gm-crm.show_ai_citations", "0");
       });
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForTimeout(2500);
@@ -401,7 +401,7 @@ async function main() {
       );
       // Cleanup localStorage
       await page.evaluate(() => {
-        window.localStorage.removeItem("deskcomm.show_ai_citations");
+        window.localStorage.removeItem("gm-crm.show_ai_citations");
       });
     } catch (e) {
       record("AC4 (Toggle off hides all Info icons)", false, `error: ${(e as Error).message}`);

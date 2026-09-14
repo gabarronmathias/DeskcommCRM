@@ -7,6 +7,8 @@ import {
   loadProspectingConfig,
   OPENING_MESSAGE,
   SARAH_POSITIONING,
+  SARAH_REASON_MESSAGE,
+  SARAH_WRONG_CHANNEL_MESSAGE,
 } from "./config";
 import { domainOf, normalizeBrazilianCommercialPhone, segmentTag } from "./normalization";
 import {
@@ -27,14 +29,46 @@ describe("prospecção foodservice", () => {
 
   it("personaliza a abertura sem inventar dono ou relacionamento anterior", () => {
     const text = OPENING_MESSAGE("Padaria Teste");
-    expect(text).toContain("Vi a Padaria Teste");
-    expect(text).toContain("Somos especialistas em atendimento para delivery");
-    expect(text).toContain("Como vocês organizam o atendimento por aí hoje?");
-    expect(text).toContain("Olá! Tudo bem?\nSou a Sarah");
-    expect(text).toContain("pelo WhatsApp.\n\nComo vocês");
+    // Primeiro parágrafo: uma única linha, sem `\n` entre "Tudo bem?" e a apresentação.
+    expect(text).toContain("Olá! Tudo bem? Sou a Sarah, da Gabarron & Mathias.");
+    expect(text).not.toContain("Tudo bem?\nSou a Sarah");
+    // Segundo parágrafo: nome do estabelecimento + proposta + pergunta na MESMA linha.
+    expect(text).toContain("Vi a Padaria Teste e queria me apresentar:");
+    expect(text).toContain(
+      "pelo WhatsApp. Como vocês organizam o atendimento por aí hoje?",
+    );
+    // Os dois parágrafos ficam separados por exatamente uma linha em branco.
+    expect(text).toContain("Gabarron & Mathias.\n\nVi a Padaria Teste");
+    // Garantias do que NÃO pode aparecer.
     expect(text).not.toContain("vocês trabalham com delivery hoje?");
     expect(text).not.toContain("obrigado por entrar em contato");
     expect(text).not.toContain("dono");
+  });
+
+  it("tem resposta pronta para o motivo do contato", () => {
+    // Texto: uma linha por parágrafo, com linha em branco entre ideia e pergunta.
+    expect(SARAH_REASON_MESSAGE).toContain(
+      "Claro! Entramos em contato porque somos especialistas em atendimento para delivery.",
+    );
+    expect(SARAH_REASON_MESSAGE).toContain(
+      "Ajudamos negócios de alimentação a vender mais pelo WhatsApp e pela própria base de clientes.",
+    );
+    // A pergunta final fica isolada por linha em branco — caminho aberto para a resposta.
+    expect(SARAH_REASON_MESSAGE).toContain(
+      "base de clientes.\n\nVocê poderia me indicar quem é responsável",
+    );
+    expect(SARAH_REASON_MESSAGE).toContain(
+      "delivery, atendimento ou marketing",
+    );
+    expect(SARAH_REASON_MESSAGE).toContain(
+      "como a Sarah pode ajudar?",
+    );
+  });
+
+  it("pede o canal correto quando o número não é de marketing", () => {
+    expect(SARAH_WRONG_CHANNEL_MESSAGE).toBe(
+      "Entendi! E qual seria o telefone/canal de comunicação de marketing?",
+    );
   });
 
   it("mantém o posicionamento da Sarah como agente de relacionamento e vendas", () => {

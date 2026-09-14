@@ -1,12 +1,12 @@
 ---
-title: DeskcommCRM — Catálogo de Regras de Negócio
+title: G&M CRM — Catálogo de Regras de Negócio
 version: 0.1
 status: em revisão
 date: 2026-04-28
 owner: Rafael Melgaço
 ---
 
-# DeskcommCRM — Catálogo de Regras de Negócio
+# G&M CRM — Catálogo de Regras de Negócio
 
 > Regras de negócio normalizadas com IDs lookup-able. Cada regra documenta GIVEN/WHEN/THEN/EXCEPT, enforcement layer e política de override. Especificações técnicas (schema SQL, payloads) ficam nas Specs (Fase 3); aqui é onde a lógica de negócio vive.
 
@@ -56,7 +56,7 @@ owner: Rafael Melgaço
 ### T-05 — Roteamento de API usa subdomain OU header `X-Tenant-ID`
 - **Origem**: Sub-PRD 01 §3.2 (decisão deferida na §9 do mesmo)
 - **Tipo**: Soft policy
-- **Regra**: GIVEN request entrando pela API; WHEN chega no edge; THEN tenant é resolvido via subdomain (`<tenant>.api.deskcomm.com`) OU header `X-Tenant-ID` (configurável global). API key NÃO determina tenant — o JWT/Bearer determina.
+- **Regra**: GIVEN request entrando pela API; WHEN chega no edge; THEN tenant é resolvido via subdomain (`<tenant>.api.gabarronmathias.com`) OU header `X-Tenant-ID` (configurável global). API key NÃO determina tenant — o JWT/Bearer determina.
 - **Enforcement**: Edge function / middleware.
 - **Exceção**: Webhooks externos (Nuvemshop) usam path token único por tenant em vez de subdomain.
 

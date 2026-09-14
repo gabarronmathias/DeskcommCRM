@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DeskcommCRM — a porta de entrada.
+# G&M CRM — a porta de entrada.
 #
 # Diferente do install.sh, este script roda no SEU computador (macOS, Linux ou
 # WSL), antes de existir servidor. Ele responde a única pergunta que trava quem
@@ -9,11 +9,11 @@
 #
 # Uso:
 #   bash comecar.sh
-#   curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/comecar.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/melgarafael/G&M CRM/main/hostgator-setup-kit/comecar.sh | bash
 #
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+REPO_URL="${REPO_URL:-https://github.com/melgarafael/G&M CRM.git}"
 # Link de parceria com a HostGator. Mesma URL e mesmo rótulo do README: uma
 # promessa só, num lugar só — duas redações da mesma oferta viram duas ofertas.
 VPS_URL="https://www.hostgator.com.br/52708-141-3-52.html"
@@ -41,7 +41,7 @@ banner() {
   case "$cols" in ''|*[!0-9]*) cols=80;; esac
   printf '\n'
   if [ "$COLOR" != 1 ] || [ "$cols" -lt $((LOGO_COLS + 2)) ]; then
-    paint 1 "  DESKCOMM"
+    paint 1 "  GMCRM"
   else
     [ -t 1 ] && printf '\033[2J\033[H'
     while IFS= read -r linha; do
@@ -145,8 +145,8 @@ comando_de_instalacao() {
 
   Já dentro do servidor, cole isto:
 
-       git clone ${REPO_URL} deskcommcrm
-       cd deskcommcrm
+       git clone ${REPO_URL} gm-crm
+       cd gm-crm
        bash hostgator-setup-kit/install.sh
 
   O instalador cuida do resto: instala o Docker se faltar, cria o banco,

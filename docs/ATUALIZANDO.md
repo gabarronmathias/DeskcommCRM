@@ -1,4 +1,4 @@
-# Atualizando o DeskcommCRM na sua VPS
+# Atualizando o G&M CRM na sua VPS
 
 Saiu uma versão nova? Atualizar é **um comando só**. Você não precisa saber se a
 novidade é no código, no banco de dados ou nos dois — o comando cuida de tudo, na
@@ -43,7 +43,7 @@ recente**, é porque não havia nada novo pra baixar; está tudo certo.
 - **Automático (opcional):** dá pra agendar pra toda semana. Rode `crontab -e` e adicione
   (troque o caminho pela pasta do seu projeto):
   ```
-  0 4 * * 0  cd /caminho/do/deskcommcrm && bash hostgator-setup-kit/update.sh
+  0 4 * * 0  cd /caminho/do/gm-crm && bash hostgator-setup-kit/update.sh
   ```
   Isso atualiza todo domingo às 4h da manhã, já com backup automático.
 - **Deu algo estranho?** Rode `bash hostgator-setup-kit/healthcheck.sh` pra ver o estado

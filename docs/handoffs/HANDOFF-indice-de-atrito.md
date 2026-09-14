@@ -92,7 +92,7 @@ tela lia a coluna.
 ### Prova de tela — como foi feita (2026-08-06)
 
 Ambiente: **Supabase local** (`127.0.0.1:54321`), `next build` + `next start` na
-porta 3100, login real com `e2e-manager@deskcomm.test` via Playwright.
+porta 3100, login real com `e2e-manager@gabarronmathias.test` via Playwright.
 
 > ⚠️ **`.env.local` do repo aponta para a NUVEM DE PRODUÇÃO**
 > (`rrydmwnporysaiysiztn.supabase.co`). O app foi subido com as vars do Supabase

@@ -73,7 +73,7 @@
   erros. **Consequência tratada+disclosed:** o índice virar org-wide quebrou o STOP test da
   reactivity (seedava 3 vivos p/ o MESMO contato — estado agora impossível por decisão do
   Rafael) → corrigido p/ 1 vivo (`paused_handoff`) + 1 terminal (`completed`), sob
-  `DESKCOMM_GOV_INVARIANTS_EDIT=1`. **Pendente do controller:** aplicar 0062 no dev DB remoto +
+  `GMCRM_GOV_INVARIANTS_EDIT=1`. **Pendente do controller:** aplicar 0062 no dev DB remoto +
   regenerar `database.types.ts`. Detalhe: `.superpowers/sdd/task-8.6-report.md`.
 
 - 2026-07-23: **Task 8.3 (jornada) — fix de review CRITICAL: try/finally cobria tarde demais.** O `try`
@@ -370,7 +370,7 @@
   escopo mínimo desta task (a UI de 6.1 já comunica status/versão sem o número). Fica pra quando 6.2/6.3
   precisarem mostrar fila viva.
   **PROVA (Playwright headed, `tests/e2e/followup-builder.spec.ts`, 2/2 verde):** dev server real
-  (`next dev --port 3022` — 3001 estava ocupado por OUTRO worktree, `DeskcommCRM-qa`, confirmado via
+  (`next dev --port 3022` — 3001 estava ocupado por OUTRO worktree, `G&M CRM-qa`, confirmado via
   `lsof`/`cwd` antes de escolher a porta) + DB remoto real + login real do manager seed
   (`.e2e-creds.json`). Caso 1: login manager → `/app/ai/followups` → heading "Follow-ups" visível →
   screenshot lista vazia → clica "Novo fluxo" → dialog abre com foco no input (`toBeFocused` via

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Tornar o DeskcommCRM rodável 100% via `docker compose up` num VPS HostGator, sem quebrar o deploy Vercel atual.
+**Goal:** Tornar o G&M CRM rodável 100% via `docker compose up` num VPS HostGator, sem quebrar o deploy Vercel atual.
 
 **Architecture:** Híbrido — compute no VPS (containers app+waha+redis+srh+scheduler+caddy), DB no Supabase Cloud. Mudanças de código mínimas e aditivas (atrás de config/flag); infra nova em arquivos novos.
 
@@ -129,9 +129,9 @@ git commit -m "feat(hostgator): Nuvemshop opcional via NUVEMSHOP_ENABLED + auto-
 docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=https://x.supabase.co \
   --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=dummy \
   --build-arg NEXT_PUBLIC_APP_URL=https://example.com \
-  -t deskcomm-app:test .
+  -t gm-crm-app:test .
 ```
-Expected: imagem builda. `docker run --rm -e SUPABASE_SERVICE_ROLE_KEY=... deskcomm-app:test` sobe e loga listen em `:3000` (pode falhar em deps externas, mas o processo inicia).
+Expected: imagem builda. `docker run --rm -e SUPABASE_SERVICE_ROLE_KEY=... gm-crm-app:test` sobe e loga listen em `:3000` (pode falhar em deps externas, mas o processo inicia).
 
 - [ ] **Step 4 (commit):** `git add Dockerfile .dockerignore && git commit -m "feat(hostgator): Dockerfile multi-stage standalone"`
 

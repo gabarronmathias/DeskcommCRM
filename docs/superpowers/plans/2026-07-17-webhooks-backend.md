@@ -833,7 +833,7 @@ export function mapInboundPayload(
   };
 }
 
-/** HMAC SHA-256 hex do raw body. Header: X-Deskcomm-Signature. */
+/** HMAC SHA-256 hex do raw body. Header: X-G&M CRM-Signature. */
 export function verifyInboundSignature(rawBody: string, header: string | null, secret: string): boolean {
   if (!header) return false;
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
@@ -898,7 +898,7 @@ git commit -m "feat(webhooks): parser inbound — field_map, E.164 BR, HMAC sha2
 //    body "nome=Bia&telefone=11912345678", source com redirect_to setado.
 //    ASSERT: 303 + header Location = redirect_to; lead criado.
 // 3. Token inexistente → 404. Fonte is_active=false → 404 (mesma resposta).
-// 4. Fonte com secret: sem header X-Deskcomm-Signature → 401 e NENHUM lead;
+// 4. Fonte com secret: sem header X-G&M CRM-Signature → 401 e NENHUM lead;
 //    com assinatura correta (hmac sha256 do raw body) → 200.
 // 5. Payload sem nome E sem telefone E sem email → 400 invalid_request, sem lead.
 // 6. Isolamento: lead criado tem organization_id da org da FONTE (nunca de
@@ -978,7 +978,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     }
   }
 
-  const sigHeader = req.headers.get("x-deskcomm-signature");
+  const sigHeader = req.headers.get("x-gm-crm-signature");
   const validSignature = source.secret
     ? verifyInboundSignature(rawBody, sigHeader, source.secret)
     : null; // null = fonte sem secret, não exigido
@@ -1736,7 +1736,7 @@ git commit -m "feat(webhooks): ações add_tag, assign_owner e create_or_move_le
 - Test: `lib/automation/outbound-url.test.ts` (unit) + `tests/invariants/automation-call-webhook.test.ts`
 
 **Interfaces:**
-- Produces: executor `type: "call_webhook"`, config `{ url: string, secret?: string }`. Envelope enviado: POST JSON `{ event: string, occurred_at: string, data: Record<string,unknown> }` (data = payload do evento + lead/contact do contexto; SEM organization_id). Headers: `Content-Type: application/json`, `X-Deskcomm-Event: <event_type>`, e `X-Deskcomm-Signature: <hmac sha256 hex do body>` quando houver secret.
+- Produces: executor `type: "call_webhook"`, config `{ url: string, secret?: string }`. Envelope enviado: POST JSON `{ event: string, occurred_at: string, data: Record<string,unknown> }` (data = payload do evento + lead/contact do contexto; SEM organization_id). Headers: `Content-Type: application/json`, `X-G&M CRM-Event: <event_type>`, e `X-G&M CRM-Signature: <hmac sha256 hex do body>` quando houver secret.
 - `assertSafeOutboundUrl(url: string): void` — lança `Error` com mensagem `unsafe_url:<motivo>` se inválida.
 
 - [ ] **Step 1: Teste unit falhando** — `lib/automation/outbound-url.test.ts`:
@@ -1800,9 +1800,9 @@ Run: `npx vitest run lib/automation/outbound-url.test.ts` → PASS.
 
 ```ts
 // 1. Sucesso: servidor responde 200. execute → success; servidor recebeu POST
-//    com envelope {event, occurred_at, data}; header X-Deskcomm-Event correto;
-//    SEM X-Deskcomm-Signature (config sem secret); body SEM organization_id.
-// 2. Com secret: header X-Deskcomm-Signature presente e igual ao
+//    com envelope {event, occurred_at, data}; header X-G&M CRM-Event correto;
+//    SEM X-G&M CRM-Signature (config sem secret); body SEM organization_id.
+// 2. Com secret: header X-G&M CRM-Signature presente e igual ao
 //    hmac-sha256 hex do body recebido.
 // 3. Falha 500 persistente: servidor responde 500 sempre → executor tenta 3x
 //    (servidor conta 3 hits) e retorna failed com detail.response_status=500.
@@ -1853,11 +1853,11 @@ export async function executeCallWebhook(
   });
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Deskcomm-Event": ctx.event.event_type,
+    "X-G&M CRM-Event": ctx.event.event_type,
   };
   const secret = typeof config.secret === "string" ? config.secret : null;
   if (secret) {
-    headers["X-Deskcomm-Signature"] = createHmac("sha256", secret).update(body).digest("hex");
+    headers["X-G&M CRM-Signature"] = createHmac("sha256", secret).update(body).digest("hex");
   }
 
   let lastError = "";

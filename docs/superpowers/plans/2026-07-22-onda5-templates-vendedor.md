@@ -595,7 +595,7 @@ git commit -m "feat(templates): página de settings — CRUD de templates (pesso
 
 - [ ] **Step 1: Ambiente** — dev server + WAHA + sessão WORKING; login admin E2E.
 
-- [ ] **Step 2: Criar template na UI** — em `/app/templates`, criar um template pessoal (ex.: título "Saudação", corpo "Oi {{primeiro_nome}}! Aqui é da Deskcomm 👋", shortcut "oi") e um compartilhado. Screenshot da lista.
+- [ ] **Step 2: Criar template na UI** — em `/app/templates`, criar um template pessoal (ex.: título "Saudação", corpo "Oi {{primeiro_nome}}! Aqui é da G&M CRM 👋", shortcut "oi") e um compartilhado. Screenshot da lista.
 
 - [ ] **Step 3: Usar `/` na conversa REAL** — abrir a conversa REAL (contato com nome, ex.: "Rafael Melgaço", na sessão conectada), digitar `/` no composer → menu abre → escolher "Saudação" → confirmar que o corpo entra no textarea com `{{primeiro_nome}}` já substituído por "Rafael". Screenshot do menu aberto + do texto inserido.
 

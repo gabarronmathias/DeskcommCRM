@@ -5,7 +5,7 @@ Fase 4, Task 4. **Um envio**, no número de teste, para o WhatsApp real do dono 
 Saída literal em [envio-real-template.txt](evidence/canais/fase4/envio-real-template.txt):
 
 ```
-espelho: deskcomm_prova_webhook_0088 (pt_BR) status=APPROVED
+espelho: gm_crm_prova_webhook_0088 (pt_BR) status=APPROVED
 hash vigente: ef3bd0e67fc4122b…
 resultado: {"sent":true,"externalId":"wamid.HBgMNTUzMTk4OTY2Mzk4FQIAERgSNDIyRkVDRjRERjhFNTMzRTU3AA=="}
 ```

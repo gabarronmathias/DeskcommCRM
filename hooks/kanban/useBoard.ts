@@ -10,7 +10,7 @@ import type { BoardData } from "@/lib/kanban/types";
 /**
  * Fetch board via API route (NOT direct supabase-js).
  *
- * Why: the auth cookie `sb-deskcomm-auth` is httpOnly so the browser Supabase
+ * Why: the auth cookie `sb-gm-crm-auth` is httpOnly so the browser Supabase
  * client cannot read it — auth.uid() ends up null, RLS hides the pipeline,
  * and PostgREST returns PGRST116. Routing through /api/v1/pipelines/[id]/board
  * uses the server-side cookie reader, identical to every other authed query.

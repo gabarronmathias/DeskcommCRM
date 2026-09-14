@@ -8,7 +8,7 @@ import { carregarEnvLocal } from "../scripts/lib/env-de-teste";
 
 async function main() {
   const env = carregarEnvLocal();
-  const email = process.argv[2] ?? "demo@deskcomm.com.br";
+  const email = process.argv[2] ?? "demo@gabarronmathias.com.br";
   const password = process.argv[3] ?? "Demo!Live2026";
 
   const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {

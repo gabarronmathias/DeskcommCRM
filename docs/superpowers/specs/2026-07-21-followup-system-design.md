@@ -5,7 +5,7 @@
 
 ## 1. Objetivo
 
-Follow-up é onde a venda acontece (2º, 3º, 4º contato). A v1 (TomikCRM) falhou de dois jeitos: follow-up por silêncio robótico (timing fixo, template) e follow-up por demanda frágil em prazos longos (jobs órfãos, janela 24h ignorada, estados presos). A v2 no Deskcomm entrega:
+Follow-up é onde a venda acontece (2º, 3º, 4º contato). A v1 (TomikCRM) falhou de dois jeitos: follow-up por silêncio robótico (timing fixo, template) e follow-up por demanda frágil em prazos longos (jobs órfãos, janela 24h ignorada, estados presos). A v2 no G&M CRM entrega:
 
 1. **Builder visual de fluxos** de follow-up (estilo n8n) com nós AI-first.
 2. **Fila de follow-ups** (UI) com contexto de cada agendamento.

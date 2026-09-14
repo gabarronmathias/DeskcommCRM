@@ -23,7 +23,7 @@ export function loadEnvLocal(): Record<string, string> {
 }
 
 export function uniqueEmail(prefix: string): string {
-  return `e2e-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@deskcomm.test`;
+  return `e2e-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@gabarronmathias.test`;
 }
 
 interface MailpitSearchResult {

@@ -1,6 +1,6 @@
 ---
 type: index
-project: DeskcommCRM
+project: G&M CRM
 status: draft
 last_updated: 2026-07-29
 generated_by: auditoria documental (Claude Code)
@@ -8,7 +8,7 @@ confidence: alta (inventário de arquivos é CONFIRMADO; agrupamento temático �
 audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-27)
 ---
 
-# Índice da documentação — DeskcommCRM
+# Índice da documentação — G&M CRM
 
 Mapa dos **149** arquivos `.md` de `docs/`, espalhados por **24** subpastas — régua:
 `git ls-files 'docs/**/*.md' | wc -l`. Existe porque a documentação cresceu sem ponto

@@ -5,7 +5,7 @@ import { aggregateFollowupOutcomes } from "@/lib/followup/outcome-stats";
 
 /**
  * Task 8.2 — agregação de outcomes de follow-up por fluxo (pointer+version),
- * contra Postgres real. DESKCOMM_GOV_INVARIANTS_EDIT=1 — arquivo NOVO desta
+ * contra Postgres real. GMCRM_GOV_INVARIANTS_EDIT=1 — arquivo NOVO desta
  * sessão (tests/invariants/** congelado só pra arquivos existentes).
  *
  * Congela: (1) contadores por outcome + in_flight corretos com mix real de

@@ -1,6 +1,6 @@
 import { chromium } from "@playwright/test";
 const PASSWORD = "E2E!Test1234";
-const EMAIL = process.argv[2] || "e2e-agent@deskcomm.test";
+const EMAIL = process.argv[2] || "e2e-agent@gabarronmathias.test";
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const ctx = await browser.newContext();

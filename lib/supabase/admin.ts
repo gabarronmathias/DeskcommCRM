@@ -32,7 +32,7 @@ export function createAdminClient(): SupabaseClient {
     },
     global: {
       headers: {
-        "X-Client-Info": "deskcomm-crm/admin",
+        "X-Client-Info": "gm-crm/admin",
       },
     },
   });

@@ -115,7 +115,7 @@ begin
     ||E'\n\n'
     ||'Para acessar nosso cardápio digital, basta acessar o link abaixo:'
     ||E'\n'
-    ||'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+    ||'https://gabarronmathias.github.io/G&M CRM/'||v_slug||'/';
 
   insert into public.messages(
     organization_id,conversation_id,channel_session_id,contact_id,

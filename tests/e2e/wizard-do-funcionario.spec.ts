@@ -25,7 +25,7 @@ const svc = createClient(
   { auth: { persistSession: false } },
 );
 
-const SENHA = "WizardQa!2026#Deskcomm";
+const SENHA = "WizardQa!2026#G&M CRM";
 const email = `wizard-${randomUUID().slice(0, 8)}@qa.local`;
 
 let userId = "";

@@ -90,7 +90,7 @@
     { "id": "applayout", "lane": "saida", "col": 7, "type": "frontend", "label": "app/app/layout.tsx", "sublabel": "<EstiloDaMarcaDaOrganizacao/> escopado em [data-marca-org] — não alcança /login" },
     { "id": "iconroute", "lane": "saida", "col": 7, "type": "api", "label": "app/icon.tsx", "sublabel": "ImageResponse em runtime · force-dynamic · /icon em PUBLIC_PATHS (sem isso, 307 para /login)" },
     { "id": "invite", "lane": "saida", "col": 7, "type": "service", "label": "lib/email/templates/invite.ts", "sublabel": "assunto + corpo + botão com a marca de quem convidou" },
-    { "id": "lgpdemail", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/email-delivery.ts", "sublabel": "diz quem PROCESSOU a solicitação — era 'DeskcommCRM' em 100% dos casos, não em borda" },
+    { "id": "lgpdemail", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/email-delivery.ts", "sublabel": "diz quem PROCESSOU a solicitação — era 'G&M CRM' em 100% dos casos, não em borda" },
     { "id": "slaalarm", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/sla-alarm.ts", "sublabel": "marca resolvida no cabeçalho; o #dc2626 do alerta FICA — é semântica de urgência, não marca" },
     { "id": "enrollmfa", "lane": "saida", "col": 7, "type": "api", "label": "app/actions/auth/enrollMfa.ts", "sublabel": "issuer (o campo que o celular grava), não friendlyName — medido contra GoTrue v2.188.1" },
     { "id": "resend", "lane": "saida", "col": 7, "type": "service", "label": "lib/email/resend.ts", "sublabel": "nome de exibição = marca; endereço = do OPERADOR (domínio verificado). Vazio = not_configured" },
@@ -160,7 +160,7 @@
       "items": [
         "não existe aresta saida → pdf, e a ausência é o conteúdo: `lib/branding/saida.ts` alcança e-mail, remetente, ícone e autenticador, e para no relatório do titular",
         "o motivo é jurídico, não estético: o revendedor é OPERADOR; quem responde pelos dados é o CONTROLADOR, que é a organização (organizations.legal_name)",
-        "trocar 'DeskcommCRM' pela marca do revendedor ali PIORARIA o defeito — hoje o nome é obviamente do software; depois pareceria a declaração de quem responde legalmente",
+        "trocar 'G&M CRM' pela marca do revendedor ali PIORARIA o defeito — hoje o nome é obviamente do software; depois pareceria a declaração de quem responde legalmente",
         "consequência boa e deliberada: a armadilha do @react-pdf deixa de existir para nós. Ele aceita var(--x) e oklch(), NÃO lança, e devolve PDF válido com a cor descartada (1514 bytes contra 1538 do hex) — qualquer prova do tipo 'gerei e abriu' passaria com a marca perdida",
         "e o e-mail de LGPD (e54) leva marca DE PROPÓSITO: ele diz quem OPEROU. São dois papéis distintos na mesma jornada, e é por isso que as duas saídas carregam nomes diferentes",
         "armadilha aberta: legal_name NASCE igual a display_name (scripts/bootstrap-owner.ts) — o caso ruim é o valor plausível e errado, não o nulo. Quem resolve é a tela (e9), não um fallback"
@@ -186,7 +186,7 @@
       "items": [
         "DOMÍNIO por organização: fora. Zero coluna no schema, o proxy é NOOP nesse eixo, e no Edge não há banco para consultar antes de decidir o host",
         "FONTE por tenant: fora. next/font resolve em BUILD time e a imagem é pré-buildada — um seletor de fonte seria controle decorativo",
-        "X-Deskcomm-Signature e sb-deskcomm-auth NÃO são renomeados: o primeiro é contrato de fio com receptores de terceiros, o segundo é a sessão de quem está logado. 'Completar o whitelabel' ali derruba integração de cliente em silêncio",
+        "X-G&M CRM-Signature e sb-gm-crm-auth NÃO são renomeados: o primeiro é contrato de fio com receptores de terceiros, o segundo é a sessão de quem está logado. 'Completar o whitelabel' ali derruba integração de cliente em silêncio",
         "lib/email/templates/ai-budget-alarm.tsx segue com a nossa marca: não tem rota de cron, não tem linha no docker/scheduler/entrypoint.sh e não tem chamador de runBudgetChecker() fora de um script de QA. Dívida D1, com a condição de saída escrita",
         "quem envia e-mail é o APP (via event-log-drain, batido pelo scheduler), NUNCA o contêiner worker — que roda o agent-engine e não importa e-mail nenhum. Quem for provar reiniciando 'o worker' reinicia o processo errado"
       ]

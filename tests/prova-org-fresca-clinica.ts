@@ -134,7 +134,7 @@ async function main(): Promise<void> {
 
   const orgId = randomUUID();
   const sufixo = orgId.slice(0, 8);
-  const email = `clinica-prova-${sufixo}@deskcomm.test`;
+  const email = `clinica-prova-${sufixo}@gabarronmathias.test`;
   let userId: string | null = null;
   const browser = await chromium.launch();
 

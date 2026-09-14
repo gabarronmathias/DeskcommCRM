@@ -1,7 +1,7 @@
-# LOOP.md — prompt canônico da sessão do gov-loop — DeskcommCRM (Governança de Atendimento)
+# LOOP.md — prompt canônico da sessão do gov-loop — G&M CRM (Governança de Atendimento)
 
 > Você é UMA sessão DESCARTÁVEL do loop de construção do épico de governança de
-> atendimento do DeskcommCRM (spec-mãe: `docs/specs/13-spec-governanca-atendimento.md`;
+> atendimento do G&M CRM (spec-mãe: `docs/specs/13-spec-governanca-atendimento.md`;
 > fases em `plan/phases.md`). Você não tem memória de sessões anteriores e não terá
 > memória nas próximas. **Tudo que você sabe vem do disco; tudo que você aprende
 > volta pro disco.** Você entrega EXATAMENTE UMA feature e morre.
@@ -35,7 +35,7 @@ Conflito entre um prompt de tarefa e o CLAUDE.md → o CLAUDE.md vence; escale e
    resposta `answered` na inbox referente à recusa: reabrir `passes:false` nas
    features apontadas pelo dono (via `node loop/update-feature.ts`) e remover o
    `.rejected`, exatamente como instruído (o commit dessa reabertura exige
-   `DESKCOMM_GOV_PLAN_EDIT=1` — o pre-commit barra sem ela). Sem item `answered`
+   `GMCRM_GOV_PLAN_EDIT=1` — o pre-commit barra sem ela). Sem item `answered`
    sobre a recusa → saia.
 3. **Teto diário**: conte as linhas `started` de HOJE em `loop/sessions.log`.
    "Hoje" é no fuso **America/Sao_Paulo** — explícito, porque a virada de dia em UTC
@@ -62,7 +62,7 @@ Depois de adquirir o lock, IMEDIATAMENTE (ainda antes do ritual):
    restos nem deixe o commit atômico engolir arquivos de outra sessão.
 
 > Estado do loop tem UM endereço: o **checkout principal**
-> (`loop/loop.config.json → main_checkout`, hoje `/Users/rafaelmelgaco/DeskcommCRM`).
+> (`loop/loop.config.json → main_checkout`, hoje `/Users/rafaelmelgaco/G&M CRM`).
 > É nele que o loop roda depois que `gov/setup` for mergeada em `main`.
 
 ## 1. Ritual de abertura (obrigatório, NESTA ordem — nunca pule)
@@ -121,7 +121,7 @@ o que "pronto" significa (os `acceptance` dela — que você NÃO pode editar).
 - **Briefing ao subagente** (padrão dispatch — contexto completo, uma tarefa):
   id + title + acceptance da feature, verbatim; ponteiros de leitura obrigatória
   (spec 13 §relevante, specs 04/05 quando a feature as toca, arquivos que a feature
-  toca); e as **restrições de 1ª ordem do DeskcommCRM** (o CLAUDE.md do repo é a
+  toca); e as **restrições de 1ª ordem do G&M CRM** (o CLAUDE.md do repo é a
   fonte; o briefing repete o núcleo):
   - `organization_id` de fonte confiável (cookie/JWT/webhook secret/path token) —
     **NUNCA do body**; toda query em tabela tenant-aware filtra org; RLS + helper
@@ -188,7 +188,7 @@ Com PASS do verifier (e hash conferido), nesta ordem:
    `Verified-by: gov-verifier PASS <data ISO>`. **`git add` por caminho EXPLÍCITO,
    nunca `git add -A` ou `git add .`** — é a regra mecânica que impede misturar
    arquivos de outra feature ou lixo acidental. Se a feature flipou um invariante
-   (test.fails → teste normal), o commit exporta `DESKCOMM_GOV_INVARIANTS_EDIT=1`
+   (test.fails → teste normal), o commit exporta `GMCRM_GOV_INVARIANTS_EDIT=1`
    e o commit message CITA o flip (é a exceção legítima do freeze — §Proibições).
 2. **`plan/features.json`**: marque a feature via
    ```bash
@@ -199,7 +199,7 @@ Com PASS do verifier (e hash conferido), nesta ordem:
    (`loop/hooks/validate-features.sh`) revalida o diff: só `passes`/`verification`
    podem mudar. **NUNCA edite `acceptance`, `depends_on`, `title`, `priority` ou
    remova/adicione features** — quem define o teste não é quem passa no teste.
-   Mudar o plano é ato humano, com `DESKCOMM_GOV_PLAN_EDIT=1` exportada.
+   Mudar o plano é ato humano, com `GMCRM_GOV_PLAN_EDIT=1` exportada.
    Inclua a mudança do features.json + progress.md no mesmo commit.
 3. **`plan/progress.md`**: acrescente 3-5 linhas — data/sessão, feature, decisão
    não-óbvia tomada (se houve), o que a próxima sessão precisa saber. É um diário
@@ -236,7 +236,7 @@ elegível — só congeladas/human_input):
   features.json / progress.md / inbox. Se não está, não aconteceu.
 - **Nunca `git push`.** Push só existe no ritual de virada de fase (CHECKPOINT.md).
   E não é só instrução: o hook `loop/hooks/pre-push` recusa qualquer push sem
-  `DESKCOMM_GOV_PHASE_MERGE=1` — variável que só o ritual de virada exporta.
+  `GMCRM_GOV_PHASE_MERGE=1` — variável que só o ritual de virada exporta.
 - **Nunca edite acceptance/testes pra passar.** Teste incômodo = ou o código está
   errado, ou a feature está mal-escrita — o segundo caso vai pra inbox, não pro
   Edit. (O pre-commit barra edição de acceptance; o hook PreToolUse barra deleção
@@ -244,13 +244,13 @@ elegível — só congeladas/human_input):
 - **`tests/invariants/**` é o eval do épico — semi-congelado.** ADICIONAR arquivo
   novo é permitido (G1-03 cria a suíte; fases seguintes podem acrescentar).
   MODIFICAR ou DELETAR arquivo existente é bloqueado (PreToolUse + pre-commit
-  `freeze-invariants.sh`) sem `DESKCOMM_GOV_INVARIANTS_EDIT=1`. A exceção legítima
+  `freeze-invariants.sh`) sem `GMCRM_GOV_INVARIANTS_EDIT=1`. A exceção legítima
   é o catraca da G1-03: quando uma fase G2+ corrige um gap, o `test.fails` passa a
   falhar e OBRIGA o flip para teste normal — a sessão exporta a env no commit e o
   commit message cita o flip. Qualquer outra edição de invariante vai pra inbox.
 - **Migration fora da tripla não commita.** `loop/hooks/check-migration-triple.sh`
   exige baseline.sql + MANIFEST.md no mesmo commit e NNNN inédito em TODAS as
-  branches locais (bypass só orientado pelo dono: `DESKCOMM_GOV_MIGRATION_EDIT=1`).
+  branches locais (bypass só orientado pelo dono: `GMCRM_GOV_MIGRATION_EDIT=1`).
 - **Nunca responda um item de inbox por conta própria.** Inbox é canal do humano.
   Aplicar um item `answered` NÃO é responder — é executar a instrução do humano
   (§1.7); o que é proibido é preencher `resposta do humano` você mesmo.

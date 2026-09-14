@@ -36,7 +36,7 @@
 4. **Onde apareço na tela:** no card (avatar + nome + tooltip `Nome · vN`), no seletor "Responsável" e no menu de transferência. Provado em screenshot.
 5. **Anti-morte:** o dono agente é o que permite a Wave 5 cobrar próxima ação de um negócio que nenhum humano está olhando — hoje, um lead de bot fica sem dono e ninguém é cobrado. Nesta wave o mecanismo ainda é o do humano (o lead nunca fica sem `owner_kind` coerente; a constraint impede estado ambíguo).
 6. **Continuidade IA↔humano:** transferir agente→humano e humano→agente pelo mesmo menu, com o evento `lead.assigned` carregando **de quem para quem** — o próximo dono sabe que houve troca. O resumo contextual (o que o agente já sabia) entra na Wave 3, quando a timeline existir.
-7. **Mapa vivo:** *não aplicável nesta base* — `docs/architecture/` nesta branch tem só `agent-turn.workflow.json`/`.html`; o mapa do sistema (`deskcomm-system.architecture.json`) **não existe em `origin/main`**, é arquivo ainda não commitado da branch `feat/operacao-visivel`. Não há o que re-renderizar aqui. Quando os dois se encontrarem, as peças a acrescentar estão listadas abaixo.
+7. **Mapa vivo:** *não aplicável nesta base* — `docs/architecture/` nesta branch tem só `agent-turn.workflow.json`/`.html`; o mapa do sistema (`gm-crm-system.architecture.json`) **não existe em `origin/main`**, é arquivo ainda não commitado da branch `feat/operacao-visivel`. Não há o que re-renderizar aqui. Quando os dois se encontrarem, as peças a acrescentar estão listadas abaixo.
 
 ## Verificação visual (prova do @DevVivo; a oficial é do @QAVivo)
 
@@ -50,7 +50,7 @@ Instância própria do Playwright (o browser MCP estava com o QA), dev server da
 | D | Transferência de volta | Volta a "Sem responsável" e persiste | `wave-1-devvivo-revertido.png` |
 | E | Board inteiro | Humanos (`EM`, `EA` preenchidos) e agentes (`LA`, `BE` vazados) lado a lado | `wave-1-devvivo-dono-agente.png` |
 
-Screenshots em `/private/tmp/claude-501/-Users-rafaelmelgaco-DeskcommCRM/9579c957-fb23-4342-9df1-c208137c2c03/scratchpad/` (não escrevi em `evidence/`, que é do QA — copiar para lá se quiser referenciar no handoff oficial).
+Screenshots em `/private/tmp/claude-501/-Users-rafaelmelgaco-G&M CRM/9579c957-fb23-4342-9df1-c208137c2c03/scratchpad/` (não escrevi em `evidence/`, que é do QA — copiar para lá se quiser referenciar no handoff oficial).
 
 Qualidade: `pnpm typecheck` **0**, `pnpm lint` **0 errors** (151 warnings pré-existentes do repo), `npm run test:unit` **807/807** (113 arquivos), incluindo 16 testes novos/atualizados de `OwnerBadge` e `resolveLeadOwner`. Exit codes lidos **sem** `| tail`.
 
@@ -117,7 +117,7 @@ e `update` (re-aplicação) verdes — o gate do item 7 da doutrina de migration
 
 ## O que ficou para trás (e por quê)
 
-- **Mapa vivo não atualizado porque não existe nesta branch** (só `agent-turn.workflow.json`). Quando o `deskcomm-system.architecture.json` chegar aqui, precisam entrar com grau ≥2: `resolveLeadOwner` (board → resolve → card), a rota `ai/agents/assignable` (UI → rota → `ai_agents`/`ai_agent_versions`) e a aresta `crm_leads → ai_agents` via `owner_agent_id`.
+- **Mapa vivo não atualizado porque não existe nesta branch** (só `agent-turn.workflow.json`). Quando o `gm-crm-system.architecture.json` chegar aqui, precisam entrar com grau ≥2: `resolveLeadOwner` (board → resolve → card), a rota `ai/agents/assignable` (UI → rota → `ai_agents`/`ai_agent_versions`) e a aresta `crm_leads → ai_agents` via `owner_agent_id`.
 - **E2E de regressão (`kanban-owner-filter`, `rbac-roles`, `risk-radar`) não rodados por mim** — exigem `next build` + `next start` em porta própria e o QA está com o ambiente. Risco concentrado no `kanban-owner-filter` (renomeei `LeadFilters.ownerUserId → owner`; o **param de URL `?owner=` não mudou**).
 - **`createLeadSchema` não ganhou `owner_agent_id`** — criar um lead já nascendo de um agente não está no contrato da wave; hoje se cria e depois se atribui.
 - **Tooltip é `title` nativo**, não o `Tooltip` do design system. Motivo: não há `TooltipProvider` global e montar um por card no board é custo sem retorno agora. **Upgrade:** trocar por Radix quando o dossiê (Wave 6) já trouxer o provider.

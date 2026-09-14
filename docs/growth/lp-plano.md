@@ -1,4 +1,4 @@
-# Plano da Landing Page — deskcomm.com.br
+# Plano da Landing Page — gabarronmathias.com.br
 
 > Plano de conteúdo, layout, narrativa e direção de arte. **Não é código.**
 > Decisões travadas: hero **A Mesa Viva** · eixo **dono do negócio** com trilhas paralelas para dev · banner HostGator **reconstruído responsivo** com a marca deles preservada.
@@ -94,7 +94,7 @@ FOOTER
 Fino, sticky, fundo `#faf9f6` com `border-bottom` de 1px que só aparece após 40px de scroll.
 
 ```
-[■ DeskcommCRM]     Como funciona · Prova · Instalar · Preço      [GitHub ⭐] [Instalar na VPS]
+[■ G&M CRM]     Como funciona · Prova · Instalar · Preço      [GitHub ⭐] [Instalar na VPS]
 ```
 
 - `[GitHub ⭐ 116]` — secundário, ghost, **com contador ao vivo**. Decisão do Rafael, contra minha recomendação inicial e com argumento melhor que o meu: 116 para um CRM brasileiro com 3 meses de vida lê como tração real, não como hobby — a régua de ~1k que a pesquisa usa é de projeto anglófono de infraestrutura, outro mercado. O número é buscado da API do GitHub e cacheado; nunca hardcoded (prova social escrita à mão apodrece e fica menor que a realidade).
@@ -107,7 +107,7 @@ Fino, sticky, fundo `#faf9f6` com `border-bottom` de 1px que só aparece após 4
 
 ### O conceito
 
-O nome do produto virando imagem. **Deskcomm = Desk + comm — o comercial de mesa.** O hero é uma mesa isométrica vista de cima, onde a operação comercial inteira é **uma superfície só**: a conversa, o funil, o agente, o follow-up — peças distintas ligadas por trilhas visíveis.
+O nome do produto virando imagem. **G&M CRM = Desk + comm — o comercial de mesa.** O hero é uma mesa isométrica vista de cima, onde a operação comercial inteira é **uma superfície só**: a conversa, o funil, o agente, o follow-up — peças distintas ligadas por trilhas visíveis.
 
 Por que isso é a escolha certa e não outra: é a única imagem desta página que **nenhum concorrente pode usar**, porque ela nasce da etimologia do seu nome. Um CRM genérico pode mostrar um kanban. Nenhum pode mostrar "a mesa".
 
@@ -339,8 +339,8 @@ Imagem: a mesma tela em duas marcas diferentes, lado a lado.
 Bloco de código real, copiável:
 
 ```bash
-git clone https://github.com/melgarafael/DeskcommCRM.git
-cd DeskcommCRM/hostgator-setup-kit
+git clone https://github.com/melgarafael/G&M CRM.git
+cd G&M CRM/hostgator-setup-kit
 bash install.sh
 ```
 
@@ -370,7 +370,7 @@ Sem tabela de planos — não temos planos. Um bloco só, honesto.
 
 Formato deliberado (é o que a pesquisa de GEO mediu como eficaz): **pergunta literal como H2 visível**, resposta direta nas duas primeiras frases, número verificável quando houver. Como HTML visível — não como JSON-LD escondido, que o Google descontinuou para FAQ.
 
-1. Quanto custa o DeskcommCRM?
+1. Quanto custa o G&M CRM?
 2. Preciso saber programar para instalar?
 3. Qual VPS eu preciso?
 4. Funciona com WhatsApp comum?
@@ -389,11 +389,11 @@ A 9 é a mais importante e quase ninguém responde: *"Cada mensagem passa por se
 
 Reconstruído em HTML fluido (o original é 1680×600 fixo e quebra no celular), **mantendo os sinais visuais da HostGator** — laranja `#F67922`, navy `#073f60` — como um bloco de **parceiro claramente delimitado**. A ruptura de paleta vira intencional em vez de acidental: uma faixa de largura total, com respiro antes e depois, lida como "aqui começa outra coisa".
 
-Removidos: **OpenClaw** e **Hermes** — não têm relação com o Deskcomm e diluem a conversão.
+Removidos: **OpenClaw** e **Hermes** — não têm relação com o G&M CRM e diluem a conversão.
 
 > **Eyebrow:** Parceiro oficial
 > **Título:** Soberania com IA é na HostGator
-> **Corpo:** Datacenter no Brasil, sem transferência internacional de dados. É onde o DeskcommCRM foi feito para rodar.
+> **Corpo:** Datacenter no Brasil, sem transferência internacional de dados. É onde o G&M CRM foi feito para rodar.
 > **CTA:** Assinar a VPS com desconto da parceria →
 > **Microcopy:** link de parceria — assinar por ele apoia o projeto
 
@@ -410,7 +410,7 @@ Quatro colunas + barra inferior.
 | Preço | Arquitetura | YouTube | Segurança |
 | FAQ | Doutrina do sistema vivo | Instagram | Contribuir |
 
-Barra inferior: `DeskcommCRM · MIT · Feito no Brasil` · **`Página atualizada em [data]`** — visível, não só no schema: a pesquisa mediu que **75% das páginas citadas por IA foram atualizadas nos últimos 12 meses**, e a data de atualização discrimina melhor que a de publicação.
+Barra inferior: `G&M CRM · MIT · Feito no Brasil` · **`Página atualizada em [data]`** — visível, não só no schema: a pesquisa mediu que **75% das páginas citadas por IA foram atualizadas nos últimos 12 meses**, e a data de atualização discrimina melhor que a de publicação.
 
 ---
 
@@ -485,9 +485,9 @@ Depois, uma passada por camada: `tampo`, `trilhas`, `peças`, `lead`.
 | # | Item | Por quê |
 |---|---|---|
 | 1 | **Aprovar a extensão de motion** (§0) | senão a LP viola a doutrina que o repo declara |
-| 2 | **`deskcomm.com.br` apontado** | eu aviso quando a LP estiver pronta para deploy |
+| 2 | **`gabarronmathias.com.br` apontado** | eu aviso quando a LP estiver pronta para deploy |
 | 3 | **Gerar as 11 imagens** com os prompts | você faz no ChatGPT; eu entrego os prompts prontos, um por arquivo |
-| 4 | **Confirmar o repo do site** | `deskcomm-site` público, separado do CRM (para clone não receber a LP) |
+| 4 | **Confirmar o repo do site** | `gm-crm-site` público, separado do CRM (para clone não receber a LP) |
 
 ---
 

@@ -1,6 +1,6 @@
 # Fases — gov-loop (Governança de Atendimento)
 
-> Loop de construção do épico de governança de atendimento do DeskcommCRM.
+> Loop de construção do épico de governança de atendimento do G&M CRM.
 > Máquina portada do vendaval-loop; doutrina de DOMÍNIO soberana é o `CLAUDE.md`
 > deste repo (+ `docs/specs/`). Este plano só governa PROCESSO (maker≠checker,
 > features, gates). Ordem inegociável: **provas antes de comportamento** —
@@ -18,7 +18,7 @@
 - Fases correm em `gov/G<N>` a partir de `main`. Nunca usar namespace `vendaval/*`
   nem `feat/EPIC-*`.
 - Virada de fase = ato humano (checkpoint `.approved` + merge com
-  `DESKCOMM_GOV_PHASE_MERGE=1`, ou PR — escolha do dono no checkpoint).
+  `GMCRM_GOV_PHASE_MERGE=1`, ou PR — escolha do dono no checkpoint).
 - Atenção permanente: a cadeia `vendaval/F2-*` pode ter migrations não mergeadas.
   O gate de migration valida a sequência `NNNN` contra TODAS as branches locais.
 

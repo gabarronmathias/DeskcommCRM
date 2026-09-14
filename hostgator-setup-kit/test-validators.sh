@@ -719,8 +719,8 @@ echo "cron: instalar uma instância não pode silenciar a outra"
 # a linha de QUALQUER instalação: subir uma segunda instância na mesma máquina
 # apagava as duas linhas da primeira, em silêncio.
 CRONTAB_VIZINHO='0 8 * * * /root/trend-radar/run_full_vps.sh
-* * * * * curl -fsS -H "Authorization: Bearer SEGREDO" "https://crm.deskcomm.com.br/api/v1/cron/event-log-drain" >/dev/null 2>&1
-*/5 * * * * cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh >/dev/null 2>&1'
+* * * * * curl -fsS -H "Authorization: Bearer SEGREDO" "https://crm.gabarronmathias.com.br/api/v1/cron/event-log-drain" >/dev/null 2>&1
+*/5 * * * * cd /root/Aula-Youtube/G&M CRM && bash hostgator-setup-kit/agent.sh >/dev/null 2>&1'
 
 cron_ok() {  # cron_ok <descrição> <esperado_no_resultado> <marcador> <legado> <linha_nova>
   local desc="$1" espera="$2" marcador="$3" legado="$4" nova="$5" out
@@ -730,9 +730,9 @@ cron_ok() {  # cron_ok <descrição> <esperado_no_resultado> <marcador> <legado>
 }
 NOVO_TAG='# deskcomm:/root/instalacao-nova'
 NOVA_URL='https://crm-novo.exemplo.com.br/api/v1/cron/event-log-drain'
-cron_ok "o drain do vizinho sobrevive"  'crm.deskcomm.com.br/api/v1/cron/event-log-drain' \
+cron_ok "o drain do vizinho sobrevive"  'crm.gabarronmathias.com.br/api/v1/cron/event-log-drain' \
         "$NOVO_TAG" "$NOVA_URL" "* * * * * curl \"$NOVA_URL\" $NOVO_TAG"
-cron_ok "o agente do vizinho sobrevive" 'cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh' \
+cron_ok "o agente do vizinho sobrevive" 'cd /root/Aula-Youtube/G&M CRM && bash hostgator-setup-kit/agent.sh' \
         "$NOVO_TAG" "cd /root/instalacao-nova && bash hostgator-setup-kit/agent.sh" \
         "*/5 * * * * cd /root/instalacao-nova && bash hostgator-setup-kit/agent.sh $NOVO_TAG"
 cron_ok "a linha alheia (trend-radar) sobrevive" '/root/trend-radar/run_full_vps.sh' \
@@ -740,9 +740,9 @@ cron_ok "a linha alheia (trend-radar) sobrevive" '/root/trend-radar/run_full_vps
 
 # Re-executar a MESMA instalação substitui a própria linha em vez de empilhar —
 # inclusive a legada, escrita antes de o marcador existir.
-reexec="$(printf '%s\n' "$CRONTAB_VIZINHO" | cron_merge '# deskcomm:/root/Aula-Youtube/DeskcommCRM' \
-          'cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh' \
-          '*/5 * * * * cd /root/Aula-Youtube/DeskcommCRM && bash hostgator-setup-kit/agent.sh # deskcomm:/root/Aula-Youtube/DeskcommCRM')"
+reexec="$(printf '%s\n' "$CRONTAB_VIZINHO" | cron_merge '# deskcomm:/root/Aula-Youtube/G&M CRM' \
+          'cd /root/Aula-Youtube/G&M CRM && bash hostgator-setup-kit/agent.sh' \
+          '*/5 * * * * cd /root/Aula-Youtube/G&M CRM && bash hostgator-setup-kit/agent.sh # deskcomm:/root/Aula-Youtube/G&M CRM')"
 n_agent="$(printf '%s\n' "$reexec" | grep -cF 'hostgator-setup-kit/agent.sh')"
 if [ "$n_agent" = 1 ]; then printf '  ✓ re-executar a mesma instalação não duplica a linha\n'
 else printf '  ✗ re-executar duplicou: %s linhas de agent.sh\n' "$n_agent"; fail=1; fi
@@ -918,7 +918,7 @@ rm -rf "$ME_TMP"
 
 echo "proxy reverso: quem está com as portas 80/443"
 # A versão anterior só sabia procurar Traefik. Qualquer outro proxy — inclusive o
-# Caddy de OUTRO DeskcommCRM na mesma VPS — caía no ramo "portas livres", e a
+# Caddy de OUTRO G&M CRM na mesma VPS — caía no ramo "portas livres", e a
 # instalação seguia até a fase 4 para morrer com "Bind for 0.0.0.0:80 failed:
 # port is already allocated". Medido numa VPS com produção rodando.
 # dono_das_portas lê o que o `docker ps` imprime de verdade. Os casos com "->"
@@ -936,7 +936,7 @@ dono_ok "app em 8080->80 NÃO é ocupante (80 do host livre)" \
   '' 'phpmyadmin|web|phpmyadmin:latest|0.0.0.0:8080->80/tcp'
 dono_ok "proxy sem privilégio (80->8080) É ocupante" \
   'traefik|infra|traefik:v3' 'traefik|infra|traefik:v3|0.0.0.0:80->8080/tcp'
-dono_ok "Caddy de outro Deskcomm é encontrado" \
+dono_ok "Caddy de outro G&M CRM é encontrado" \
   'outro-caddy-1|outro|caddy:2-alpine' 'outro-caddy-1|outro|caddy:2-alpine|0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp'
 dono_ok "contêiner sem porta publicada é ignorado" \
   '' 'worker|app|meu/worker|'
@@ -978,7 +978,7 @@ dec_ok "portas livres → nosso Caddy"        caddy    ""        ""          "cr
 # PRÓPRIO Caddy. Tratar isso como intruso bloqueia a instalação que o kit manda
 # rodar de novo para corrigir uma resposta, e sem nem um comando acionável.
 dec_ok "re-execução: portas com esta mesma instalação" caddy "80 e 443" "crm" "crm" "caddy:2-alpine" "crm-caddy-1"
-dec_ok "Caddy de OUTRO Deskcomm → bloqueia" bloqueia "80 e 443" "outro"     "crm" "caddy:2-alpine" "outro-caddy-1"
+dec_ok "Caddy de OUTRO G&M CRM → bloqueia" bloqueia "80 e 443" "outro"     "crm" "caddy:2-alpine" "outro-caddy-1"
 dec_ok "Traefik da hospedagem → por ele"    traefik  "80 e 443" "coolify"   "crm" "traefik:v3.3"   "coolify-proxy"
 dec_ok "ocupante não identificado → bloqueia" bloqueia "80"     ""          "crm" ""              ""
 dec_ok "projeto vazio não casa projeto vazio" bloqueia "80"     ""          ""    "nginx"         "web"
@@ -1352,7 +1352,7 @@ STUB
   # sobrevive aos dois caminhos, com rede e sem.
   img_app="$(valor_no_env "$VPS_PROJ/.env" APP_IMAGE)"
   tag_app="${img_app##*:}"
-  for par in "WORKER_IMAGE:deskcomm-worker" "SCHEDULER_IMAGE:deskcomm-scheduler"; do
+  for par in "WORKER_IMAGE:gm-crm-worker" "SCHEDULER_IMAGE:gm-crm-scheduler"; do
     chave="${par%%:*}"; repo="${par##*:}"
     if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "ghcr.io/melgarafael/${repo}:${tag_app}" ]; then
       printf '  ✗ %s não acompanha a versão do app (%s): %s\n' "$chave" "$tag_app" \
@@ -1468,7 +1468,7 @@ STUB
   rodar install.sh --yes >/dev/null
   unset REPO_URL
 
-  for par in "APP_IMAGE:deskcommcrm" "WORKER_IMAGE:deskcomm-worker" "SCHEDULER_IMAGE:deskcomm-scheduler"; do
+  for par in "APP_IMAGE:gm-crm" "WORKER_IMAGE:gm-crm-worker" "SCHEDULER_IMAGE:gm-crm-scheduler"; do
     chave="${par%%:*}"; repo="${par##*:}"
     if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "ghcr.io/melgarafael/${repo}:1.10.0" ]; then
       printf '  ✗ %s não foi pinado na versão resolvida (1.10.0): %s\n' "$chave" \
@@ -1486,7 +1486,7 @@ rm -rf "$TMP_PIN"
 
 echo "packaging: a tag do git não basta — as imagens têm de existir"
 # A tag nasce minutos antes das imagens, e as do worker/scheduler só passaram a
-# existir depois das releases que já estão publicadas: `deskcomm-worker:1.2.1`
+# existir depois das releases que já estão publicadas: `gm-crm-worker:1.2.1`
 # nunca vai existir, porque a v1.2.1 é passado. Sem sondar o registry, o .env do
 # cliente receberia referências impossíveis e o kit as construiria aqui EM
 # SILÊNCIO, do topo da main — app de uma release, worker de outro código.
@@ -1822,13 +1822,13 @@ np_ok() {  # np_ok <caminho> <esperado>
   if [ "$real" = "$2" ]; then printf '  ✓ %s → %s\n' "$1" "$real"
   else printf '  ✗ %s → deu [%s], esperava [%s]\n' "$1" "$real" "$2"; fail=1; fi
 }
-np_ok /root/deskcommcrm  deskcommcrm
-np_ok /root/DeskcommCRM  deskcommcrm
+np_ok /root/gm-crm  gm-crm
+np_ok /root/G&M CRM  gm-crm
 np_ok /root/_deskcomm    deskcomm
 np_ok /root/-deskcomm    deskcomm
 np_ok /root/_-_crm       crm
 np_ok /root/_123         123
-np_ok /root/deskcomm.crm deskcommcrm
+np_ok /root/deskcomm.crm gm-crm
 np_ok /root/crm_cliente  crm_cliente
 
 echo "re-execução: o kit é chamado por caminho RELATIVO, como o README manda"
@@ -1843,7 +1843,7 @@ echo "re-execução: o kit é chamado por caminho RELATIVO, como o README manda"
 # leitura do próprio script), que é o que regride em silêncio.
 reexec_ok() {
   local desc="$1" dir raiz achou linha
-  raiz="$(mktemp -d)"; dir="$raiz/deskcommcrm"; mkdir -p "$dir"
+  raiz="$(mktemp -d)"; dir="$raiz/gm-crm"; mkdir -p "$dir"
   cp ./install.sh "$raiz/install.sh"
   # A LINHA REAL do install.sh, extraída do arquivo — não uma reimplementação.
   # Reimplementar o mecanismo aqui deixaria este caso VERDE com o install.sh
@@ -1876,7 +1876,7 @@ reexec_ok() {
 # decorativo.
 reexec_neg() {
   local dir raiz linha achou
-  raiz="$(mktemp -d)"; dir="$raiz/deskcommcrm"; mkdir -p "$dir"
+  raiz="$(mktemp -d)"; dir="$raiz/gm-crm"; mkdir -p "$dir"
   cp ./install.sh "$raiz/install.sh"
   linha="$(grep -n 'CONHECIDAS=' "$raiz/install.sh" | head -1 | cut -d: -f2-)"
   if [ -z "$linha" ]; then

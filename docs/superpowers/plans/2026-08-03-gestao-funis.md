@@ -2,7 +2,7 @@
 
 > Spec: `docs/superpowers/specs/2026-08-03-gestao-funis-design.md`.
 > Execução **inline** nesta sessão (TDD, commit por tarefa). Branch `feat/gestao-funis`,
-> worktree `~/DeskcommCRM-funis`, base `origin/main@5a8f4a7`.
+> worktree `~/G&M CRM-funis`, base `origin/main@5a8f4a7`.
 
 **Goal:** dar ao usuário criar, renomear, reordenar, eleger padrão e arquivar funis
 pela tela do Kanban — e fazer essa tela mostrar só a organização ativa.
@@ -163,7 +163,7 @@ Ambiente fresco estilo VPS: `baseline.sql` + `bootstrap-owner.ts`, `next build &
 
 ### Task 5 — Fechamento
 
-- [ ] **5.1** Mapa vivo: `docs/architecture/deskcomm-system.architecture.json` ganha a peça
+- [ ] **5.1** Mapa vivo: `docs/architecture/gm-crm-system.architecture.json` ganha a peça
       com ≥2 arestas (tela → rotas → `crm_pipelines`).
 - [ ] **5.2** `pnpm typecheck`, `pnpm lint`, `pnpm test:unit`, `pnpm test:db` — os quatro
       verdes, sem `| tail` (mascara exit code).

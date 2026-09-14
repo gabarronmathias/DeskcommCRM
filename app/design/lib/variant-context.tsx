@@ -20,7 +20,7 @@ type Ctx = State & {
 
 const VariantCtx = React.createContext<Ctx | null>(null);
 
-const STORAGE = "deskcomm.designshowcase.v1";
+const STORAGE = "gm-crm.designshowcase.v1";
 
 const TYPO_VAR_MAP: Record<TypoId, { display: string; body: string; mono: string }> = {
   "bricolage-jakarta": {

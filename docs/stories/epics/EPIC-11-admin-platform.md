@@ -40,15 +40,15 @@ owner: Rafael Melgaço
 
 # EPIC-11 — Super-Admin Platform
 
-> **Para o epic-executor**: leia este arquivo inteiro antes de qualquer wave. As stories estão em ordem de dependência. Cada story = 1 wave. Não pular ordem mesmo que pareça independente — `Deps:` é lei. Este epic constrói a camada **cross-tenant** sob o sub-domínio `admin.deskcomm.com`. Toda query depende de `fn_is_platform_admin()` retornando `true` pra bypassar RLS, conforme Spec 01 §3.4 e §3.6 (T-04). Nada aqui pode vazar pra `/app` regular.
+> **Para o epic-executor**: leia este arquivo inteiro antes de qualquer wave. As stories estão em ordem de dependência. Cada story = 1 wave. Não pular ordem mesmo que pareça independente — `Deps:` é lei. Este epic constrói a camada **cross-tenant** sob o sub-domínio `admin.gabarronmathias.com`. Toda query depende de `fn_is_platform_admin()` retornando `true` pra bypassar RLS, conforme Spec 01 §3.4 e §3.6 (T-04). Nada aqui pode vazar pra `/app` regular.
 
 ## 1. Objetivo
 
-Entregar o Super-Admin Platform completo: 14 rotas cross-tenant em `admin.deskcomm.com` que permitem ao operador BPO P2 (Spec 01 §3.4) triagem, observabilidade, impersonate, suspensão de tenants, audit cross-tenant, gestão de LGPD/incidents/usage cross-tenant e visibilidade read-only dos `platform_admins`. Inclui inbox unificada cross-tenant via `fn_is_platform_admin()` bypass de RLS e 3 canais realtime dedicados (`admin-inbox-{platform_admin_id}`, `tenant-health-{tenant_id}`, `alerts-platform`).
+Entregar o Super-Admin Platform completo: 14 rotas cross-tenant em `admin.gabarronmathias.com` que permitem ao operador BPO P2 (Spec 01 §3.4) triagem, observabilidade, impersonate, suspensão de tenants, audit cross-tenant, gestão de LGPD/incidents/usage cross-tenant e visibilidade read-only dos `platform_admins`. Inclui inbox unificada cross-tenant via `fn_is_platform_admin()` bypass de RLS e 3 canais realtime dedicados (`admin-inbox-{platform_admin_id}`, `tenant-health-{tenant_id}`, `alerts-platform`).
 
 ## 2. Resultado esperado (Definition of Done do Epic)
 
-- [ ] Sub-domínio `admin.deskcomm.com` resolve e middleware `requirePlatformAdmin` bloqueia non-admins com 403
+- [ ] Sub-domínio `admin.gabarronmathias.com` resolve e middleware `requirePlatformAdmin` bloqueia non-admins com 403
 - [ ] Layout `/admin/*` distinto: sidebar admin + banner "Modo Plataforma" + tema visualmente diferenciável
 - [ ] Dashboard cross-tenant exibe KPIs (tenants ativos, conversas pendentes >10min, alertas WAHA banimento, SLA LGPD em risco, AI budget warnings)
 - [ ] Inbox cross-tenant lista conversas de TODOS os tenants com badge `<TenantBadge>` em cada item; novas mensagens chegam via canal `admin-inbox-{platform_admin_id}`
@@ -68,7 +68,7 @@ Entregar o Super-Admin Platform completo: 14 rotas cross-tenant em `admin.deskco
 
 - Epics anteriores completos: `EPIC-01` (auth+MFA), `EPIC-03` (inbox + canais realtime), `EPIC-04` (kanban — usado em tenant detail), `EPIC-05` (customer 360 — usado em links), `EPIC-08` (LGPD requests), `EPIC-10` (audit + settings)
 - Migrations 0001-0007 aplicadas (incluindo `platform_admins`, `fn_is_platform_admin()`, RLS policies cross-tabela com bypass)
-- Variáveis de env: `NEXT_PUBLIC_ADMIN_HOST=admin.deskcomm.com`, `INTERNAL_SECRET`, `IMPERSONATE_COOKIE_SECRET`
+- Variáveis de env: `NEXT_PUBLIC_ADMIN_HOST=admin.gabarronmathias.com`, `INTERNAL_SECRET`, `IMPERSONATE_COOKIE_SECRET`
 - Pelo menos 2 tenants seedados pra testar cross-tenant
 - Pelo menos 1 user em `platform_admins` (seed manual via DBA)
 - Dev server rodando em `localhost:3001` com hosts file alias `admin.localhost`
@@ -139,7 +139,7 @@ Entregar o Super-Admin Platform completo: 14 rotas cross-tenant em `admin.deskco
 **Points**: 4 | **Priority**: P0 | **Deps**: (none, mas requer EPIC-01 completo) | **FR refs**: Spec 01 §3.4, §3.6 (T-04), Sitemap §4
 
 #### Contexto
-Primeira story do epic — fornece a fundação visual e de segurança pra todas as outras. O sub-domínio `admin.deskcomm.com` precisa ter middleware específico que valida `fn_is_platform_admin()` server-side antes de renderizar qualquer rota `/admin/*`. Visualmente, o layout precisa ser **inequivocadamente diferente** do `/app` regular — banner persistente "Modo Plataforma" no topo, sidebar admin com ícones distintos, possivelmente acento de cor diferente (mantendo Sage palette). Isso evita confusão operacional e reforça que toda ação ali é cross-tenant.
+Primeira story do epic — fornece a fundação visual e de segurança pra todas as outras. O sub-domínio `admin.gabarronmathias.com` precisa ter middleware específico que valida `fn_is_platform_admin()` server-side antes de renderizar qualquer rota `/admin/*`. Visualmente, o layout precisa ser **inequivocadamente diferente** do `/app` regular — banner persistente "Modo Plataforma" no topo, sidebar admin com ícones distintos, possivelmente acento de cor diferente (mantendo Sage palette). Isso evita confusão operacional e reforça que toda ação ali é cross-tenant.
 
 #### Files to create
 - `app/admin/layout.tsx` — server component, chama `requirePlatformAdmin` + renderiza `<AdminShell>`
@@ -234,9 +234,9 @@ exposes:
 ```
 
 #### Decisões a registrar
-- Sub-domínio é `admin.deskcomm.com` em prod, `admin.localhost:3001` em dev (alias /etc/hosts)
+- Sub-domínio é `admin.gabarronmathias.com` em prod, `admin.localhost:3001` em dev (alias /etc/hosts)
 - Banner usa cor de acento `--sage-warn` (não vermelho — vermelho fica reservado pra suspended/critical)
-- Cookie de sessão é o mesmo `sb-deskcomm-auth` (compartilhado entre app e admin) — diferenciação é por flag `is_platform_admin`, não por cookie separado
+- Cookie de sessão é o mesmo `sb-gm-crm-auth` (compartilhado entre app e admin) — diferenciação é por flag `is_platform_admin`, não por cookie separado
 
 #### Definition of Done
 - [ ] Todos os ACs passam em Playwright
@@ -701,7 +701,7 @@ exposes:
 ```
 
 #### Decisões a registrar
-- Cookie de impersonate é separado de `sb-deskcomm-auth`, nome `deskcomm-impersonate`, HMAC-SHA256 com `IMPERSONATE_COOKIE_SECRET`, expiry 1h, `httpOnly + secure + sameSite=lax`
+- Cookie de impersonate é separado de `sb-gm-crm-auth`, nome `gm-crm-impersonate`, HMAC-SHA256 com `IMPERSONATE_COOKIE_SECRET`, expiry 1h, `httpOnly + secure + sameSite=lax`
 - Renovação: nova chamada explícita ao endpoint (não auto-renew, decisão de segurança)
 
 #### Definition of Done
@@ -1164,8 +1164,8 @@ Ao terminar o epic, a regression suite deve cobrir, no mínimo:
 
 ## 8. Decisões arquiteturais novas que este epic introduz
 
-- **ADR-EPIC-11-01**: Sub-domínio dedicado `admin.deskcomm.com` em vez de path `/admin` no host principal. Razão: isolamento de cookies, robots, possível Vercel password protection, separação clara de superfícies.
-- **ADR-EPIC-11-02**: Cookie de impersonate é separado do `sb-deskcomm-auth` (HMAC, expiry 1h, no auto-renew). Razão: auditabilidade explícita + fail-safe.
+- **ADR-EPIC-11-01**: Sub-domínio dedicado `admin.gabarronmathias.com` em vez de path `/admin` no host principal. Razão: isolamento de cookies, robots, possível Vercel password protection, separação clara de superfícies.
+- **ADR-EPIC-11-02**: Cookie de impersonate é separado do `sb-gm-crm-auth` (HMAC, expiry 1h, no auto-renew). Razão: auditabilidade explícita + fail-safe.
 - **ADR-EPIC-11-03**: Mobile no `/admin` é deliberadamente read-only — composer e mutations escondidos < `md`. Razão: cross-tenant action em mobile é alto-risco; obriga uso em desktop.
 - **ADR-EPIC-11-04**: 3 canais realtime dedicados (`admin-inbox-{platform_admin_id}`, `tenant-health-{tenant_id}`, `alerts-platform`) em vez de subscribe de N `inbox-{org_id}`. Razão: escala e simplicidade de hooks no front; fanout via edge function server-side.
 - **ADR-EPIC-11-05**: `platform_admins` é write-only-via-DBA (T-04 reforçado). Página `/admin/platform-admins` é UI informativa; nenhuma rota API expõe mutation.

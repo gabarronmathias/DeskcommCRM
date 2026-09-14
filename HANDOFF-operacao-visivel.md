@@ -12,7 +12,7 @@
   Ordem: F2(i) transparência anti-ban → F2(ii) knobs → F1 central de avisos → F3 propostas flywheel.
 - **Dono das telas:** Terminal C (FRONTEND). **Backend:** Terminal B (knobs read/write, apply-proposal).
 - **Onde:** branch `feat/operacao-visivel` (base main pós-fusão b1003cf).
-- **VPS de prova:** http://129.121.45.100:18080 (compose `deskcomm-fusion`, deploy por git bundle — ver docs/vendaval-vps-deploy-comandos.md).
+- **VPS de prova:** http://129.121.45.100:18080 (compose `gm-crm-fusion`, deploy por git bundle — ver docs/vendaval-vps-deploy-comandos.md).
 - **Dados do motor:** `before_send_traces` (vetos por tentativa), `channel_knobs` (+ `channel_sessions.daily_message_limit`), `agent_inbox_items`, `flywheel_distiller_proposals`.
 
 ## Estado atual
@@ -36,7 +36,7 @@ Evidências: `.superpowers/evidence/operacao-visivel-{f1,f2i,f2ii,f3}-{localhost
 
 ## Paridade VPS (2ª prova — CONCLUÍDA)
 
-- VPS = http://129.121.45.100:18080, compose `deskcomm-fusion`, banco Supabase cloud `cnbzyadxiwrfrylywejj` (role `agent_worker` no `.env`).
+- VPS = http://129.121.45.100:18080, compose `gm-crm-fusion`, banco Supabase cloud `cnbzyadxiwrfrylywejj` (role `agent_worker` no `.env`).
 - Branch `feat/operacao-visivel` (commit 551ca1f) publicada por git bundle + `git reset --hard`; rebuild da imagem `app` em curso (VPS tinha 7.6G RAM sem swap → o `tsc` do build estourava e derrubava a conexão; criei swapfile 4G, build voltou a passar do tsc).
 - **Bloqueio F3 na VPS:** migration 0053 (colunas `applied_*` em `flywheel_distiller_proposals`) não está no banco da VPS (`applied_cols=0`) e o `agent_worker` não é dono da tabela; projeto está fora do meu token de Management API. Delegado ao Terminal B (dono das credenciais do deploy) aplicar o ALTER idempotente. F1/F2i/F2ii não dependem da 0053.
 

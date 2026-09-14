@@ -184,7 +184,7 @@ begin
     from public.food_order_items oi where oi.organization_id=new.organization_id and oi.order_id=v_last_order_id;
     v_last_order_context:='Último pedido confirmado: '||coalesce(v_last_items,'itens não detalhados')||', total R$ '||replace(to_char(coalesce(v_last_total,0)/100.0,'FM999999990D00'),'.',',')||', realizado em '||to_char(v_last_order_at at time zone 'America/Sao_Paulo','DD/MM/YYYY')||'. ';
   else
-    v_last_order_context:='Não há pedido concluído identificado para este contato no checkout Deskcomm. ';
+    v_last_order_context:='Não há pedido concluído identificado para este contato no checkout G&M CRM. ';
   end if;
 
   if v_pointer_name='Reativação de clientes' then

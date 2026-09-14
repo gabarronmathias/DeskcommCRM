@@ -3,7 +3,7 @@
   "schemaVersion": "1.0",
   "generatedBy": "ecc-tools",
   "generatedAt": "2026-07-06T20:13:26.688Z",
-  "repo": "https://github.com/melgarafael/DeskcommCRM",
+  "repo": "https://github.com/melgarafael/G&M CRM",
   "referenceSetReadiness": {
     "score": 0,
     "present": 0,
@@ -120,59 +120,59 @@
     "runtime-core"
   ],
   "managedFiles": [
-    ".claude/skills/DeskcommCRM/SKILL.md",
-    ".agents/skills/DeskcommCRM/SKILL.md",
-    ".agents/skills/DeskcommCRM/agents/openai.yaml",
+    ".claude/skills/G&M CRM/SKILL.md",
+    ".agents/skills/G&M CRM/SKILL.md",
+    ".agents/skills/G&M CRM/agents/openai.yaml",
     ".claude/identity.json",
     ".codex/config.toml",
     ".codex/AGENTS.md",
     ".codex/agents/explorer.toml",
     ".codex/agents/reviewer.toml",
     ".codex/agents/docs-researcher.toml",
-    ".claude/homunculus/instincts/inherited/DeskcommCRM-instincts.yaml"
+    ".claude/homunculus/instincts/inherited/G&M CRM-instincts.yaml"
   ],
   "packageFiles": {
     "runtime-core": [
-      ".claude/skills/DeskcommCRM/SKILL.md",
-      ".agents/skills/DeskcommCRM/SKILL.md",
-      ".agents/skills/DeskcommCRM/agents/openai.yaml",
+      ".claude/skills/G&M CRM/SKILL.md",
+      ".agents/skills/G&M CRM/SKILL.md",
+      ".agents/skills/G&M CRM/agents/openai.yaml",
       ".claude/identity.json",
       ".codex/config.toml",
       ".codex/AGENTS.md",
       ".codex/agents/explorer.toml",
       ".codex/agents/reviewer.toml",
       ".codex/agents/docs-researcher.toml",
-      ".claude/homunculus/instincts/inherited/DeskcommCRM-instincts.yaml"
+      ".claude/homunculus/instincts/inherited/G&M CRM-instincts.yaml"
     ]
   },
   "moduleFiles": {
     "runtime-core": [
-      ".claude/skills/DeskcommCRM/SKILL.md",
-      ".agents/skills/DeskcommCRM/SKILL.md",
-      ".agents/skills/DeskcommCRM/agents/openai.yaml",
+      ".claude/skills/G&M CRM/SKILL.md",
+      ".agents/skills/G&M CRM/SKILL.md",
+      ".agents/skills/G&M CRM/agents/openai.yaml",
       ".claude/identity.json",
       ".codex/config.toml",
       ".codex/AGENTS.md",
       ".codex/agents/explorer.toml",
       ".codex/agents/reviewer.toml",
       ".codex/agents/docs-researcher.toml",
-      ".claude/homunculus/instincts/inherited/DeskcommCRM-instincts.yaml"
+      ".claude/homunculus/instincts/inherited/G&M CRM-instincts.yaml"
     ]
   },
   "files": [
     {
       "moduleId": "runtime-core",
-      "path": ".claude/skills/DeskcommCRM/SKILL.md",
+      "path": ".claude/skills/G&M CRM/SKILL.md",
       "description": "Repository-specific Claude Code skill generated from git history."
     },
     {
       "moduleId": "runtime-core",
-      "path": ".agents/skills/DeskcommCRM/SKILL.md",
+      "path": ".agents/skills/G&M CRM/SKILL.md",
       "description": "Codex-facing copy of the generated repository skill."
     },
     {
       "moduleId": "runtime-core",
-      "path": ".agents/skills/DeskcommCRM/agents/openai.yaml",
+      "path": ".agents/skills/G&M CRM/agents/openai.yaml",
       "description": "Codex skill metadata so the repo skill appears cleanly in the skill interface."
     },
     {
@@ -207,21 +207,21 @@
     },
     {
       "moduleId": "runtime-core",
-      "path": ".claude/homunculus/instincts/inherited/DeskcommCRM-instincts.yaml",
+      "path": ".claude/homunculus/instincts/inherited/G&M CRM-instincts.yaml",
       "description": "Continuous-learning instincts derived from repository patterns."
     }
   ],
   "workflows": [],
   "adapters": {
     "claudeCode": {
-      "skillPath": ".claude/skills/DeskcommCRM/SKILL.md",
+      "skillPath": ".claude/skills/G&M CRM/SKILL.md",
       "identityPath": ".claude/identity.json",
       "commandPaths": []
     },
     "codex": {
       "configPath": ".codex/config.toml",
       "agentsGuidePath": ".codex/AGENTS.md",
-      "skillPath": ".agents/skills/DeskcommCRM/SKILL.md"
+      "skillPath": ".agents/skills/G&M CRM/SKILL.md"
     }
   }
 }

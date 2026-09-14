@@ -5,10 +5,10 @@
 #   2. mudança em supabase/migrations/MANIFEST.md (linha na tabela Applied)
 # E o NNNN do nome novo não pode existir em NENHUMA branch local — a cadeia
 # vendaval/F2-* tem migrations não mergeadas; colisão de sequência é bug real.
-# Bypass (correção orientada pelo dono): DESKCOMM_GOV_MIGRATION_EDIT=1.
+# Bypass (correção orientada pelo dono): GMCRM_GOV_MIGRATION_EDIT=1.
 set -euo pipefail
 
-[ "${DESKCOMM_GOV_MIGRATION_EDIT:-0}" = "1" ] && exit 0
+[ "${GMCRM_GOV_MIGRATION_EDIT:-0}" = "1" ] && exit 0
 
 # Migrations novas (status A) neste commit
 new_migrations=$(git diff --cached --name-status \
@@ -20,14 +20,14 @@ staged=$(git diff --cached --name-only)
 if ! grep -qx 'supabase/baseline.sql' <<<"$staged"; then
   echo "pre-commit BLOQUEADO: migration nova sem apêndice em supabase/baseline.sql no MESMO commit." >&2
   echo "A tripla é indivisível (CLAUDE.md §Migrations): migrations/*.sql + baseline.sql + MANIFEST.md." >&2
-  echo "Sem o baseline, self-hosters nunca recebem a mudança. Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
+  echo "Sem o baseline, self-hosters nunca recebem a mudança. Correção orientada pelo dono: GMCRM_GOV_MIGRATION_EDIT=1." >&2
   exit 1
 fi
 
 if ! grep -qx 'supabase/migrations/MANIFEST.md' <<<"$staged"; then
   echo "pre-commit BLOQUEADO: migration nova sem linha em supabase/migrations/MANIFEST.md no MESMO commit." >&2
   echo "A tripla é indivisível (CLAUDE.md §Migrations): migrations/*.sql + baseline.sql + MANIFEST.md." >&2
-  echo "Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
+  echo "Correção orientada pelo dono: GMCRM_GOV_MIGRATION_EDIT=1." >&2
   exit 1
 fi
 
@@ -46,7 +46,7 @@ while IFS= read -r path; do
       echo "pre-commit BLOQUEADO: sequência NNNN=$nnnn de '$fname' já existe na branch '$branch':" >&2
       echo "  $conflict" >&2
       echo "Escolha o próximo NNNN livre em TODAS as branches locais (git branch --format='%(refname:short)' + git ls-tree)." >&2
-      echo "Correção orientada pelo dono: DESKCOMM_GOV_MIGRATION_EDIT=1." >&2
+      echo "Correção orientada pelo dono: GMCRM_GOV_MIGRATION_EDIT=1." >&2
       exit 1
     fi
   done < <(git branch --format='%(refname:short)')

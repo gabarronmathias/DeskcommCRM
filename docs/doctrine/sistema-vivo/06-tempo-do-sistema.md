@@ -88,7 +88,7 @@ Consequência de projeto: o sistema precisa **conhecer o próprio prazo real** �
 
 ---
 
-# Aplicação de referência — DeskcommCRM
+# Aplicação de referência — G&M CRM
 
 **Onde a doutrina do tempo já está materializada:**
 

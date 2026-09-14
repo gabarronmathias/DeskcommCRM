@@ -74,7 +74,7 @@ O dono lê o relatório e escolhe UM dos três:
    de virada (abaixo). (Arquivo em vez de comando interativo porque funciona
    idêntico no headless, é auditável no git e não depende de nenhuma ferramenta.)
 2. **Aprovar com ressalvas**: mesmo arquivo + escrever as ressalvas como respostas
-   na inbox e/ou ajustar features da próxima fase (commit com `DESKCOMM_GOV_PLAN_EDIT=1`).
+   na inbox e/ou ajustar features da próxima fase (commit com `GMCRM_GOV_PLAN_EDIT=1`).
 3. **Recusar**: NÃO criar o `.approved`. Em vez disso:
    ```bash
    echo "rejected $(date -Iseconds) by Rafael — <motivo em 1 linha>" > loop/checkpoints/<FASE>.rejected
@@ -88,7 +88,7 @@ O dono lê o relatório e escolhe UM dos três:
    reabrir `passes:false` nas features apontadas (via `node loop/update-feature.ts`)
    + remover o `.rejected` — ato do HUMANO (ou de uma sessão executando a resposta
    `answered` da inbox, LOOP.md §0.2), com o commit feito sob
-   `DESKCOMM_GOV_PLAN_EDIT=1`. O loop nunca reabre nem remove o `.rejected` por
+   `GMCRM_GOV_PLAN_EDIT=1`. O loop nunca reabre nem remove o `.rejected` por
    conta própria. O report renomeado (`<FASE>-report.rejected-<data>.md`) preserva
    a história; o loop reemitirá o relatório quando a fase fechar de novo.
 
@@ -108,13 +108,13 @@ inbox — na dúvida, opção B, que não publica nada sozinha):
 ```bash
 git checkout main
 git merge --no-ff gov/<FASE>
-DESKCOMM_GOV_PHASE_MERGE=1 git push origin main   # o ÚNICO push que o pre-push aceita
+GMCRM_GOV_PHASE_MERGE=1 git push origin main   # o ÚNICO push que o pre-push aceita
 git branch gov/<FASE+1> main
 ```
 
 **Opção B — Pull Request (o push é da branch da fase; o merge é humano no GitHub):**
 ```bash
-DESKCOMM_GOV_PHASE_MERGE=1 git push origin gov/<FASE>
+GMCRM_GOV_PHASE_MERGE=1 git push origin gov/<FASE>
 gh pr create --base main --head gov/<FASE> \
   --title "checkpoint(<FASE>): fase aprovada" \
   --body "Report: loop/checkpoints/<FASE>-report.md — aprovado em loop/checkpoints/<FASE>.approved"
@@ -126,4 +126,4 @@ fase nova.
 
 Racional: o merge/push pós-aprovação transforma o `.approved` num gate real de
 publicação, não só de progresso — e o hook `pre-push` (que só aceita push com
-`DESKCOMM_GOV_PHASE_MERGE=1`, exportada só aqui) torna isso física, não instrução.
+`GMCRM_GOV_PHASE_MERGE=1`, exportada só aqui) torna isso física, não instrução.

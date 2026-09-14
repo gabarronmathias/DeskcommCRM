@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${SMOKE_DB_PORT:-54331}"
-CONTAINER="deskcomm-smoke-db-$$"
+CONTAINER="gm-crm-smoke-db-$$"
 IMAGE="pgvector/pgvector:pg17"
 
 [ -n "${ANTHROPIC_API_KEY:-}" ] || { echo "FATAL: exporte ANTHROPIC_API_KEY (o smoke usa o modelo real)" >&2; exit 1; }

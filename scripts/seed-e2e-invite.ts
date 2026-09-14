@@ -31,7 +31,7 @@ if (!url || !serviceKey) {
 const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
-const INVITE_EMAIL = "convidado.invite@deskcomm.test";
+const INVITE_EMAIL = "convidado.invite@gabarronmathias.test";
 
 interface BaseCreds {
   password: string;

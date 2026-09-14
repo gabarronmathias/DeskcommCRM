@@ -1,6 +1,6 @@
 ---
 title: Spec Técnica 10 — AI Agents Module (Runtime, Schema, Endpoints)
-parent: docs/research/pre-development/ai-agent-framework-deskcomm-whatsapp/09-handoff.md
+parent: docs/research/pre-development/ai-agent-framework-gm-crm-whatsapp/09-handoff.md
 extends: 05-spec-ai-rag-handoff.md
 depends_on: 01-spec-platform-base.md, 03-spec-whatsapp-waha.md, 05-spec-ai-rag-handoff.md, 07-spec-events-workers.md
 related: 11-spec-mcp-server-internal.md, 12-spec-ai-agents-ui.md

@@ -2,7 +2,7 @@
  * POST /api/v1/admin/tenants/[id]/impersonate (S-11.07)
  *
  * Starts a platform-admin impersonation session for a tenant. Issues a signed
- * `deskcomm-impersonate` cookie (HMAC-SHA256, 1h TTL, HttpOnly+Secure+Lax).
+ * `gm-crm-impersonate` cookie (HMAC-SHA256, 1h TTL, HttpOnly+Secure+Lax).
  * Audits start + emits cross-tenant `event_log` row.
  *
  * Security:

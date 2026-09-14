@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { Role } from "@/lib/auth/types";
 
-const KEY = "deskcomm.show_ai_citations";
+const KEY = "gm-crm.show_ai_citations";
 
 function defaultFor(role: Role | null): boolean {
   if (role === "viewer") return false;

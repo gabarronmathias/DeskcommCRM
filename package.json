@@ -1,8 +1,8 @@
 {
-  "name": "deskcomm-crm",
+  "name": "gm-crm",
   "version": "0.1.0",
   "private": true,
-  "description": "DeskcommCRM — sistema operacional de vendas open source com agentes de IA nativos e WhatsApp (WAHA). Self-hosted, multi-tenant, LGPD by-design.",
+  "description": "G&M CRM — sistema operacional de vendas e atendimento com agentes de IA nativos e WhatsApp. Self-hosted, multi-tenant, LGPD by-design. Gabarron & Mathias.",
   "engines": {
     "node": ">=22"
   },

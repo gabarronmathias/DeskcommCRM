@@ -54,7 +54,7 @@ begin
 
   if v_slug is null then return null; end if;
 
-  v_menu := 'https://gabarronmathias.github.io/DeskcommCRM/'||v_slug||'/';
+  v_menu := 'https://gabarronmathias.github.io/G&M CRM/'||v_slug||'/';
   v_hour := extract(hour from (coalesce(v_sent_at,v_inbound_created_at,now()) at time zone v_tz));
   v_period := case
     when v_hour between 5 and 11 then 'bom dia'

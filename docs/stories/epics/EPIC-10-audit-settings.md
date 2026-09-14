@@ -45,7 +45,7 @@ Implemented in 9 waves with documented deferrals:
 - **W6 — Tenant**: `/app/settings/tenant` admin-only edits `display_name/legal_name/cnpj/timezone/locale/media_retention_days/dpo_email/privacy_policy_url` + `settings.lost_reasons_extra` (CSV input). Audited as `org.updated`, emits `org.updated` domain event.
 - **W7 — WhatsApp**: `/app/settings/tenant/whatsapp` admin-only **read-only** list of `channel_sessions`. Edit/re-warm **deferred** (requires WAHA container).
 - **W8 — Pipelines**: `/app/settings/tenant/pipelines` admin-only per-pipeline editor for vocabulary + `settings.fields` (JSON array) + `settings.lost_reasons`. Server Action `updatePipelineConfig` audited as `pipeline.config_updated`.
-- **W9 — Billing**: `/app/settings/billing` static placeholder card pointing to `suporte@deskcomm.app`.
+- **W9 — Billing**: `/app/settings/billing` static placeholder card pointing to `suporte@gabarronmathias.com.br`.
 
 ### Settings hub
 `/app/settings/page.tsx` rewritten as a hub of cards routing to all subsections (admin/manager-aware visibility).
@@ -957,7 +957,7 @@ exposes:
 
 #### Contexto
 
-Placeholder explícito pra não deixar item quebrado na sidebar de settings. Mostra mensagem "Em breve" + benefícios do plano + link `mailto:contato@deskcomm.com.br?subject=Billing` ou link pro WhatsApp da Deskcomm. Nenhuma lógica de billing real.
+Placeholder explícito pra não deixar item quebrado na sidebar de settings. Mostra mensagem "Em breve" + benefícios do plano + link `mailto:contato@gabarronmathias.com.br?subject=Billing` ou link pro WhatsApp da G&M CRM. Nenhuma lógica de billing real.
 
 #### Files to create
 
@@ -979,7 +979,7 @@ Placeholder explícito pra não deixar item quebrado na sidebar de settings. Mos
 Given user abre /app/settings/billing
 When page carrega
 Then mensagem "Em breve" visível
-And botão "Falar com a Deskcomm" abre mailto
+And botão "Falar com a G&M CRM" abre mailto
 ```
 
 ```gherkin

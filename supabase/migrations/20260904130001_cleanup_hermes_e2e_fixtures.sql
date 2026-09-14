@@ -2,7 +2,7 @@
 -- 2026-09-04 13:00:01 — Cleanup dos fixtures do E2E Hermes em
 -- gb-hermes-integration-test e gb-hermes-integration-test-other.
 --
--- Contexto: o E2E de integração Hermes ↔ DeskcommCRM (commit 65da2d09
+-- Contexto: o E2E de integração Hermes ↔ G&M CRM (commit 65da2d09
 -- em produção) criou 3 prospects de teste:
 --   - C1 (campaign=gb-hermes-integration-test): STATUS=created → pending
 --   - C2 (campaign=gb-hermes-integration-test-other): STATUS=created → pending

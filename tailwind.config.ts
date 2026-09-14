@@ -64,6 +64,31 @@ const config: Config = {
           950: "var(--color-neutral-950)",
         },
 
+        // Brand shell — Gabarron & Mathias (azul-marinho + dourado).
+        // Vive ao lado da rampa de accent: aquela pinta o produto inteiro, esta
+        // só a casca onde a marca G&M é proprietária (sidebar, brasão). Outras
+        // instalações do white-label não veem estas classes.
+        navy: {
+          50:  "var(--color-navy-50)",
+          100: "var(--color-navy-100)",
+          200: "var(--color-navy-200)",
+          300: "var(--color-navy-300)",
+          400: "var(--color-navy-400)",
+          500: "var(--color-navy-500)",
+          600: "var(--color-navy-600)",
+          700: "var(--color-navy-700)",
+          800: "var(--color-navy-800)",
+          900: "var(--color-navy-900)",
+          950: "var(--color-navy-950)",
+        },
+        gold: {
+          300: "var(--color-gold-300)",
+          400: "var(--color-gold-400)",
+          500: "var(--color-gold-500)",
+          600: "var(--color-gold-600)",
+          700: "var(--color-gold-700)",
+        },
+
         // States
         success: {
           DEFAULT: "var(--color-success)",
@@ -120,6 +145,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
+          "var(--font-body)",
           "var(--font-atkinson)",
           "ui-sans-serif",
           "system-ui",
@@ -127,6 +153,13 @@ const config: Config = {
           "Segoe UI",
           "Roboto",
           "sans-serif",
+        ],
+        display: [
+          "var(--font-display)",
+          "var(--font-body)",
+          "ui-serif",
+          "Georgia",
+          "serif",
         ],
         mono: [
           "var(--font-mono)",

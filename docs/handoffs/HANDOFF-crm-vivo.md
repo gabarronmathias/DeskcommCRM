@@ -16,7 +16,7 @@ do repositório.
 ### O que entrou
 
 - **Base nova.** A branch `feat/operacao-visivel` (worktree original) estava **246 commits atrás da `main`** — `git diff --stat main HEAD` = 384 arquivos, 49.100 deleções. Faltavam as migrations `0054`–`0066` inteiras (`followup_flows`, `media_multimodal`, `message_templates`, `agent_followup_selector`, `conversation_snooze`, `conversation_notes`, `human_cases`). O working tree ainda tinha **cópias não-versionadas** de arquivos que já existem na main (`app/app/radar/`, `lib/leads/`, `app/api/v1/leads/at-risk/`). Construir ali custaria um merge de 384 arquivos no fim.
-  → Worktree novo `/Users/rafaelmelgaco/DeskcommCRM-crm-vivo`, branch `feat/crm-vivo` a partir de `origin/main` (`3b4c193`). Próxima migration livre: **0070**.
+  → Worktree novo `/Users/rafaelmelgaco/G&M CRM-crm-vivo`, branch `feat/crm-vivo` a partir de `origin/main` (`3b4c193`). Próxima migration livre: **0070**.
 - **`BRIEFING-crm-vivo.md`** — contrato único de trabalho do time (missão, 7 achados verificados, decisões fechadas, 5 CORES, contrato de UI, 9 waves, protocolo de verificação visual, checklist `sistema-vivo`, não-negociáveis do repo, regras de operação do time, DoD por wave).
 - **Time montado.** `@DevVivo` (DEVELOPER, único com escrita em código de produção) e `@QAVivo` (QA, escreve só em `tests/`, `evidence/`, `scripts/seed-*`) criados via `lina spawn`. `@Arquiteto` recrutado para contratos.
 - **Plano compartilhado** — itens `CRMV0`..`CRMV8` registrados em `.lina/plan.md`.
@@ -141,11 +141,11 @@ O diagnóstico do briefing aparece na tela, sem precisar de instrumentação:
 | Sintoma | Causa raiz | Correção | Re-testado |
 |---|---|---|---|
 | Dev server morria com `EADDRINUSE :3020` | Primeira instância havia sobrevivido a uma interrupção e já ocupava a porta; o `curl` inicial deu `000` porque o Next ainda compilava, o que me fez concluir errado que estava morto | Reusar a instância viva em vez de subir outra | ✅ `curl /login` → 200 |
-| Hook `lina guard --pretooluse` interrompia a execução pedindo yes/no | Gate do modo de autonomia *assistido*, em `DeskcommCRM/.claude/settings.json` | Removido o hook do bloco `hooks.PreToolUse` (o hook HTTP assíncrono de telemetria permanece) | ✅ sem prompts desde então |
+| Hook `lina guard --pretooluse` interrompia a execução pedindo yes/no | Gate do modo de autonomia *assistido*, em `G&M CRM/.claude/settings.json` | Removido o hook do bloco `hooks.PreToolUse` (o hook HTTP assíncrono de telemetria permanece) | ✅ sem prompts desde então |
 | Migration 0070 escrita mas **não aplicada**; `psql` recusa com `must be owner of table crm_leads` | `SUPABASE_DB_URL` conecta como role `agent_worker`; o dono de `crm_leads` é `postgres`, e `agent_worker` não é membro de nenhum role | Escalado ao Rafael (regra: terminal não fala com o humano, eu falo). Aguardando `SUPABASE_DB_URL_ADMIN` no `.env.local` | ⏳ |
 | `evidence/wave-0-card-antes.png` "existe" e não prova nada — contém só o texto do título | `capture-wave-0.ts:137` — `card.screenshot().catch(fallback)` onde o fallback screenshota o próprio `getByText`. O locator do card falhou, o `catch` engoliu e produziu artefato inferior | **Regra nova para todo o time:** em script de evidência, `catch` nunca degrada para artefato pior — ou captura o alvo, ou falha alto dizendo qual locator não resolveu. Correção: subir do heading para o ancestral arrastável e validar o retângulo (falhar se `width<200` ou `height<80`) | ✅ `wave-0-card-antes.png` = **302×143px**, `wave-0-card-titulo-longo-antes.png` = **302×154px**, ambos o card inteiro (borda, valor, tag, dono). Sem `catch` degradante no script |
 | Selector do card proposto na revisão (`data-rbd-draggable-id`) não existe no DOM | O board usa `@hello-pangea/dnd`, cujo prefixo é **`rfd`** (`data-rfd-draggable-id`), não o `rbd` do `react-beautiful-dnd` original. Uma letra | `CARD_ATTR = "data-rfd-draggable-id"`. A falha passou a **se autodiagnosticar**: quando o ancestral não resolve, despeja a cadeia real de ancestrais com tag, atributos e retângulo de cada nível — em vez de só acusar ausência | ✅ diagnosticado e corrigido em 1 execução, sem tentativa e erro |
-| **Todo o time travava sem produzir nada** — terminais consumiam o despacho e voltavam a `Idle`/`Blocked`, cinco despachos sem um byte no disco | `lina check` revelou `Blocked (motivo: permission_prompt)`. O worktree novo `DeskcommCRM-crm-vivo` **não tinha `.claude/settings.local.json`** (o arquivo é gitignored, então não veio de `origin/main`). Sem ele, todo comando de todo terminal caía num prompt de permissão que ninguém respondia. Não era o canal A2A do Lina — as mensagens chegavam e eram consumidas | Copiado `.claude/settings.local.json` do projeto (`defaultMode: bypassPermissions`) para o worktree | ✅ time voltou a produzir no despacho seguinte |
+| **Todo o time travava sem produzir nada** — terminais consumiam o despacho e voltavam a `Idle`/`Blocked`, cinco despachos sem um byte no disco | `lina check` revelou `Blocked (motivo: permission_prompt)`. O worktree novo `G&M CRM-crm-vivo` **não tinha `.claude/settings.local.json`** (o arquivo é gitignored, então não veio de `origin/main`). Sem ele, todo comando de todo terminal caía num prompt de permissão que ninguém respondia. Não era o canal A2A do Lina — as mensagens chegavam e eram consumidas | Copiado `.claude/settings.local.json` do projeto (`defaultMode: bypassPermissions`) para o worktree | ✅ time voltou a produzir no despacho seguinte |
 | Navegação por clique pode não ter sido exercida | `capture-wave-0.ts:124` — se o link/picker não resolve, cai em `page.goto` direto da URL do pipeline. Viola a §7 e, pior, **esconde regressão de navegação**: o screenshot sai bonito e ninguém sabe | Fallback removido; o script agora falha se o clique não chegar ao pipeline do seed. O `picker` genérico (combobox) foi substituído pelo caminho real: menu **Kanban** → linha **"CRM Vivo — Clínica"** na lista de pipelines | ✅ log da execução mostra os 2 cliques e a URL final = pipeline do seed. O run que gerou o PNG **reprovado** (18:17) tinha de fato caído no fallback — daí o registro |
 | `kanban-owner-filter.spec.ts` vermelho: filtrar por "Sem responsável" **esconde o lead sem responsável** | Fixture contaminado: `"Pedido E2E sem responsavel"` estava com `owner_user_id` preenchido. E não dava mais para consertar: `seed-e2e-kanban.ts` limpa **só** `owner_user_id`, o que agora viola o CHECK `crm_leads_owner_kind_coherence` da 0070 → erro `23514`, **0 linhas afetadas** — e o seed **não checa o erro no UPDATE**, então falhava em silêncio e reportava "lead existing" | Limpar `owner_user_id` **e** `owner_kind` juntos restaura o fixture. Pendente para `@DevVivo`: **verificar todo caminho de produção que desatribui lead** — quem zera só `owner_user_id` passa a receber `23514`. Pendente para mim: `seed-e2e-kanban.ts` precisa checar o erro do UPDATE (anti-pattern nº 14) | ✅ após restaurar, **7/7 verdes** nos 3 specs |
 
@@ -708,7 +708,7 @@ passa de código que não vaza entre tenants.
    que existir um modo "só meus leads".
 2. **Mapa vivo (item 7 do `sistema-vivo`) fica em aberto por AUSÊNCIA DE BASE, não por omissão.**
    Achado real do implementer: `docs/architecture/` na `origin/main` só tem
-   `agent-turn.workflow.json`; o `deskcomm-system.architecture.json` **nunca foi commitado** —
+   `agent-turn.workflow.json`; o `gm-crm-system.architecture.json` **nunca foi commitado** —
    vive solto na `feat/operacao-visivel`. A lista das 3 peças a acrescentar quando o mapa
    chegar está em `HANDOFF-wave1-devvivo.md`.
 3. **Tooltip é `title` nativo**, não o `Tooltip` do design system (não há `TooltipProvider`
@@ -874,7 +874,7 @@ briefing (*"sem violação nova"*) cumprido, dívida transferida para a Wave 2 c
 - **`axe nested-interactive`** (11 nós, *serious*) — herdado; morre na reconstrução do card na
   Wave 2, onde sai de graça.
 - **Mapa vivo (item 7 do `sistema-vivo`)** — em aberto por **ausência de base**: o
-  `deskcomm-system.architecture.json` nunca foi commitado na `main`. As 3 peças a acrescentar
+  `gm-crm-system.architecture.json` nunca foi commitado na `main`. As 3 peças a acrescentar
   estão listadas em `HANDOFF-wave1-devvivo.md`.
 - **Tooltip é `title` nativo**, que não abre no foco por teclado. Débito até a Wave 6, que traz
   o `TooltipProvider`.
@@ -1737,7 +1737,7 @@ na tela. O time ficou parado por uma dependência que **eu inventei**.
 
 ### ⚠️ O worker da 8787 (de OUTRA sessão) morreu
 
-Estava vivo às 18:15 (PID 19673, cwd `/Users/rafaelmelgaco/DeskcommCRM`); depois, nada escutando
+Estava vivo às 18:15 (PID 19673, cwd `/Users/rafaelmelgaco/G&M CRM`); depois, nada escutando
 na porta em 3 amostras. **Ninguém deste time reiniciou** — o briefing §0 é explícito ("não mate,
 não reinicie"), e o vigia registrou sem tocar.
 
@@ -3302,7 +3302,7 @@ antes e depois). Em worktree compartilhada, `git add` sem caminhos é uma aposta
 
 **Exceção de governança usada e justificada.** `tests/invariants/**` é congelado. O diff é
 **+30 −0** — adição de um terceiro par, zero linhas removidas, nenhum invariante existente tocado.
-`DESKCOMM_GOV_INVARIANTS_EDIT=1` com o motivo citado no commit, como o próprio hook exige.
+`GMCRM_GOV_INVARIANTS_EDIT=1` com o motivo citado no commit, como o próprio hook exige.
 
 ### Verificação do bloco 4.5 (o último salto, que a sonda dele não cobria)
 
@@ -3355,7 +3355,7 @@ conserto errado, porque o caminho de menor atrito é ceder na *outra* ponta — 
 impedir que ele continue **compilando**; acrescentar uma linha a um fixture é adição. Quando o guard
 bloquear, a pergunta não é *"como faço isto passar?"*, é *"o que este bloqueio está tentando me
 dizer, e o meu contorno paga o preço em qual outro lugar?"*. A exceção documentada existe e pede
-prova: `DESKCOMM_GOV_INVARIANTS_EDIT=1` com o `+N −0` **medido** no corpo do commit — se o `−0` não
+prova: `GMCRM_GOV_INVARIANTS_EDIT=1` com o `+N −0` **medido** no corpo do commit — se o `−0` não
 aparecer, o bloqueio estava certo.
 
 ### O ataque à minha sonda — e ele achou (`cfedaf7`)

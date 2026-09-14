@@ -186,7 +186,7 @@ reprovações espera — reprovar menos que o previsto denuncia mecanismo redund
 
 #### Ambiente de prova (montado pelo maestro, pronto antes da 1ª entrega)
 
-- **Banco**: Supabase local `pg17` já de pé (`supabase_db_deskcomm-crm`), que é o alvo
+- **Banco**: Supabase local `pg17` já de pé (`supabase_db_gm-crm`), que é o alvo
   que a doutrina exige (o `baseline.sql` usa `GRANT MAINTAIN`, privilégio pg17+).
 - **Isolamento de produção**: os worktrees `fv-*` nasceram do git limpos, **sem
   `.env.local`** — que é exatamente a configuração segura. Esta base já teve
@@ -195,7 +195,7 @@ reprovações espera — reprovar menos que o previsto denuncia mecanismo redund
   (`pnpm e2e:env` + `pnpm e2e:build`, que ainda prova que o host de produção não
   sobreviveu no bundle do browser); estou usando essa receita, não uma minha.
 - **Porta**: `E2E_PORT=3101`. Há um `next` vivo de **outra sessão** no worktree
-  `DeskcommCRM-qa-main`; porta própria para não colidir, e não matei processo nenhum —
+  `G&M CRM-qa-main`; porta própria para não colidir, e não matei processo nenhum —
   `pkill` amplo nesta máquina mata o trabalho alheio.
 - **Ressalva declarada**: o Supabase local é **compartilhado** entre sessões. Não vou
   resetá-lo. As specs semeiam a própria org por rodada; se um vizinho rodar o seed no
@@ -362,7 +362,7 @@ para quem definir a convenção.
 O hook de pre-commit reprova commit de **merge** alegando `NNNN já existe na branch
 de origem` — condição que **todo merge satisfaz por definição**, já que o arquivo
 vem de lá. Conferido que não havia colisão real (`0145` só em `fv/fila`) antes de
-usar `DESKCOMM_GOV_MIGRATION_EDIT=1`. Falso positivo em gate treina a equipe a
+usar `GMCRM_GOV_MIGRATION_EDIT=1`. Falso positivo em gate treina a equipe a
 driblar o gate; vale consertar.
 
 #### Quando rodar o conjunto — a regra que faltava

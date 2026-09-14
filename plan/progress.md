@@ -1,4 +1,4 @@
-# Progress — gov-loop (DeskcommCRM · Governança de Atendimento)
+# Progress — gov-loop (G&M CRM · Governança de Atendimento)
 
 > Diário de bordo append-only. Cada sessão do loop fecha com 3-5 linhas aqui:
 > o que fez, evidência observada (output real, não intenção), o que ficou.
@@ -13,7 +13,7 @@
   + recon do código real (baseline.sql, specs 04/05, MCP tools).
 - Spec 13 (esqueleto) criada; apêndices A/B e §3-§5 são entregues por G1-03/04/05.
 - Próximo: dono revisa `gov/setup`, mergeia em `main`, e o loop abre G1
-  (`/deskcomm-gov-loop`). G1-06 é human_input — as 5 decisões de produto.
+  (`/gmcrm-gov-loop`). G1-06 é human_input — as 5 decisões de produto.
 
 ## 2026-07-16 — sessão 1 do loop (core) — REPARO DE MAIN
 
@@ -144,7 +144,7 @@
 - INB-03 aberto (follow-ups: onboarding/whatsapp/session sem gate de role;
   nota pro bulk-assign ≥manager na G3-04).
 - Handoff: próximas sessões (G2-02+) delegadas ao terminal Arquiteto e Executor
-  (cooperação A2A retomada pelo dono); Maestro-DeskcommCRM vira watchdog.
+  (cooperação A2A retomada pelo dono); Maestro-G&M CRM vira watchdog.
 
 ## 2026-07-16 — sessão 10 do loop (core) — G2-02
 
@@ -170,7 +170,7 @@
   SELECT byte-idêntico ao antigo (leitura NÃO estreitada — own-scope é G4-01)
   + write agent+ (viewer read-only). Policies ALL antigas dropadas (sem OR órfão).
 - Flip da catraca: 2 it.fails GAP(G2) de gov-1-rbac viraram testes normais
-  (única mudança no arquivo; commit com DESKCOMM_GOV_INVARIANTS_EDIT=1).
+  (única mudança no arquivo; commit com GMCRM_GOV_INVARIANTS_EDIT=1).
   Novo invariante gov-1-rbac-config-write.test.ts (positivos+negativos).
 - Auditoria de policies registrada como spec 13 §4.1; Apêndice A: 2 GAP G2 → passa.
 - gov-verifier: PASS 1ª rodada, hash-check OK. test:db install+update verdes,
@@ -296,7 +296,7 @@
 - G3 aprovada pelo dono via chat; gov/G3 mergeada em main e pushada (bff9bae);
   gov/G4 criada.
 - INB-07 aprovado → feature G4-00 (hardening SECURITY DEFINER anon) criada no
-  plano com DESKCOMM_GOV_PLAN_EDIT=1 (ca36202); agrupa INB-09.
+  plano com GMCRM_GOV_PLAN_EDIT=1 (ca36202); agrupa INB-09.
 - INB-06b executado: banco dev (rrydmwnporysaiysiztn) reconciliado — histórico
   supabase reparado (16 versões MCP revertidas, 17 locais applied) e migrations
   0030/0032/0033 aplicadas via supabase db push --include-all. 0031 já estava.
@@ -429,7 +429,7 @@
 - Watchdog liberou 6.5Gi (caches npm/uv/puppeteer/pnpm) → 8Gi livres.
 - 17:11: Terminal B criou loop/STOP alegando git clean ~17h apagando trabalho
   da fusão. Apuração: gov-loop usa stash (não clean); trabalho confirmado salvo
-  no worktree ../DeskcommCRM-vendaval. Principal chegou a ser trocado pra
+  no worktree ../G&M CRM-vendaval. Principal chegou a ser trocado pra
   fusion/vendaval por engano e foi revertido pelo Maestro do Vendaval.
 - Acordo de convivência: fusão vive no worktree (branch vendaval-fusion);
   NNNN 0038-0049 reservados pro gov-loop, fusão renumera 0050+.
