@@ -91,6 +91,11 @@ function semear(): void {
       ('${USER_A}', '${ORG_A}', 'admin'),
       ('${USER_B}', '${ORG_B}', 'admin');
 
+    -- Produtos tenant-scoped exigidos pela FK composta de food_order_items.
+    insert into public.food_products (id, organization_id, name, slug, price_cents) values
+      ('${productId(1)}', '${ORG_A}', 'Pizza Margherita', 'pizza-margherita', 5000),
+      ('${productId(9)}', '${ORG_B}', 'Pizza Margherita', 'pizza-margherita', 5000);
+
     -- contatos da org A
     -- slot 1: happy path, opt-in de marketing, ultimo pedido 60 dias atras
     -- slot 2: blocked -> NAO aparece
@@ -164,7 +169,7 @@ function semear(): void {
       ('${itemId(6)}', '${ORG_A}', '${orderId(6)}', '${productId(1)}', 'Pizza Margherita', 5000, 1, 5000),
       ('${itemId(7)}', '${ORG_A}', '${orderId(7)}', '${productId(1)}', 'Pizza Margherita', 5000, 1, 5000),
       ('${itemId(8)}', '${ORG_A}', '${orderId(8)}', '${productId(1)}', 'Pizza Margherita', 5000, 1, 5000),
-      ('${itemId(9)}', '${ORG_B}', '${orderId(9)}', '${productId(1)}', 'Pizza Margherita', 5000, 1, 5000);
+      ('${itemId(9)}', '${ORG_B}', '${orderId(9)}', '${productId(9)}', 'Pizza Margherita', 5000, 1, 5000);
   `);
 }
 
