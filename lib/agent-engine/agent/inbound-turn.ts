@@ -126,6 +126,7 @@ import {
   decideFoodserviceSalesFastPath,
   type FoodserviceHistoryMessage,
 } from './foodservice-sales-fast-path';
+import { tryHandleAthosOrderBridge } from './athos-bridge-handler';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -388,6 +389,14 @@ export interface InboundTurnKnobs {
   maxContextTokens: number;
   /** Fast path comercial foodservice, opt-in e conservador. */
   foodserviceSalesFastPath?: boolean;
+  /**
+   * Bridge Athos x Sarah (briefing recovery 2026-09-13). Quando presente e
+   * nao-vazio, cart_selection e confirmation sao tratados ANTES do fast path
+   * (via lib/foodservice/athos/runtime-wiring.ts). Ausente = bridge off;
+   * segue para full pipeline. Setado por workers/agent-worker/main.ts quando o
+   * tenant tem food_commerce_settings.is_enabled e slug.
+   */
+  athosTenantSlug?: string | null;
   /** orçamento fixo do índice de notas do lead injetado no sufixo (LEAD_NOTES_INDEX_MAX_TOKENS) */
   notesIndexMaxTokens: number;
   /** teto de steps do loop de tools por run (AGENT_MAX_STEPS) — circuit breaker fino é F2-15 */
@@ -2577,7 +2586,7 @@ export async function tryFoodserviceSalesFastPath(
   let duplicateSuppressed = false;
   let logged = false;
   let matched = false;
-  let kind: 'party_size' | 'simple_sales' | null = null;
+  let kind: 'party_size' | 'simple_sales' | 'athos_bridge' | null = null;
   let reason = 'not_evaluated';
 
   const emit = (fallbackToFullPipeline: boolean): void => {
@@ -2649,6 +2658,98 @@ export async function tryFoodserviceSalesFastPath(
       return 'full_pipeline';
     }
 
+    // BRIEFING RECOVERY ATHOS x SARAH E2E 2026-09-13 (fix/sarah-athos-e2e-runtime).
+    // Tentar o bridge Athos ANTES do fast path foodservice — cart_selection
+    // e confirmation sao deterministicos e NAO devem ir pro LLM. Quando
+    // handled=true, o runtime-wiring ja persistiu estado (cart/confirmation)
+    // e/ou tentou o adapter Athos. Reusamos o caminho de runBeforeSend com
+    // uma synthetic decision (kind='athos_bridge') para preservar a
+    // cadeia de safety (jailbreak/promise/juridico/etc).
+    const athosBridge = await tryHandleAthosOrderBridge({
+      pool,
+      organizationId: job.organization_id,
+      contactId: payload.contact_id,
+      conversationId: payload.conversation_id,
+      tenantSlug: deps.knobs.athosTenantSlug ?? null,
+      text: current.body,
+      log: deps.log,
+    });
+    if (athosBridge !== null) {
+      const decisionStarted = Date.now();
+      decisionMs = Date.now() - decisionStarted;
+      reason = athosBridge.reason;
+      matched = true;
+      kind = 'athos_bridge';
+      const renderStarted = Date.now();
+      const response = athosBridge.responseText;
+      renderMs = Date.now() - renderStarted;
+      const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool);
+      let physicalSendStarted = 0;
+      const chain = await runBeforeSend({
+        pool,
+        log: deps.log,
+        tenantId: job.organization_id,
+        leadId: payload.contact_id,
+        jobId: job.id,
+        channelSessionId: payload.channel_session_id,
+        body: response,
+        optedOutThisTurn: contextResult.context.contact.is_blocked,
+        crmDailyLimit: null,
+        now: deps.clock?.() ?? new Date(),
+        sleep: deps.sleep,
+        lgpd: contextResult.lgpd,
+        send: async (finalBody) => {
+          physicalSendStarted = Date.now();
+          const outcome = await channel.send({
+            tenantId: job.organization_id,
+            leadId: payload.contact_id,
+            jobId: job.id,
+            seq: 1,
+            inboundMessageId: payload.inbound_message_id,
+            logicalResponseSlot: 'assistant_primary',
+            conversationId: payload.conversation_id,
+            body: finalBody,
+          });
+          sendMs = Date.now() - physicalSendStarted;
+          duplicateSuppressed = outcome.kind === 'already_sent';
+          return outcome;
+        },
+      });
+      if (chain.status === 'vetoed') {
+        reason = `guard_veto_${chain.code}`;
+        emit(true);
+        return 'full_pipeline';
+      }
+      const outcome = chain.outcome;
+      if (outcome.kind === 'sent' || outcome.kind === 'already_sent') {
+        emit(false);
+        return 'handled';
+      }
+      if (outcome.kind === 'blocked' || outcome.kind === 'queued') {
+        await applySendOutcome(
+          pool,
+          outcome.kind === 'queued'
+            ? {
+                kind: 'queued',
+                idempotencyKey: outcome.idempotencyKey,
+                crmMessageId: outcome.messageId,
+              }
+            : outcome,
+          {
+            jobId: job.id,
+            workerId: ctx.workerId,
+            tenantId: job.organization_id,
+            leadId: payload.contact_id,
+          },
+          { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
+        );
+        emit(true);
+        return 'full_pipeline';
+      }
+      emit(true);
+      return 'full_pipeline';
+    }
+
     const decisionStarted = Date.now();
     const decision = decideFoodserviceSalesFastPath({
       enabled: true,
@@ -2662,6 +2763,37 @@ export async function tryFoodserviceSalesFastPath(
     reason = decision.reason;
     matched = decision.matched;
     kind = decision.kind;
+
+    // BRIEFING RECOVERY ATHOS x SARAH E2E 2026-09-13 (fix/sarah-athos-e2e-runtime).
+    // Persiste party_size real quando o fast path reconhece "somos em 6 pessoas"
+    // (e variantes) em contacts.source_metadata.foodservice.party_size.
+    // Sem migration; usa jsonb existente. Fogo-e-esquece — falha de persist
+    // NAO bloqueia a resposta comercial do fast path.
+    if (
+      decision.matched &&
+      decision.kind === 'party_size' &&
+      decision.partySize !== null
+    ) {
+      try {
+        await pool.query(
+          `update contacts
+              set source_metadata = coalesce(source_metadata, '{}'::jsonb)
+                                  || jsonb_build_object('foodservice',
+                                                         jsonb_build_object(
+                                                           'party_size', $3::int,
+                                                           'updated_at', now()::text
+                                                         )),
+                  updated_at = now()
+            where organization_id = $1 and id = $2`,
+          [job.organization_id, payload.contact_id, decision.partySize],
+        );
+      } catch (err) {
+        deps.log.warn('athos-bridge: party_size persist falhou (turno segue sem persist)', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     if (!decision.matched) {
       emit(true);
       return 'full_pipeline';

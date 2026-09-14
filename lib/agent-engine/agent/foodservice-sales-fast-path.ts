@@ -1,4 +1,4 @@
-export type FoodserviceFastPathKind = 'party_size' | 'simple_sales';
+export type FoodserviceFastPathKind = 'party_size' | 'simple_sales' | 'athos_bridge';
 
 export interface FoodserviceHistoryMessage {
   direction: 'inbound' | 'outbound';
