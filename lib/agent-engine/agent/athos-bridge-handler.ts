@@ -5,7 +5,7 @@
  *
  * Quando o fast path foodservice NAO casa (matched=false), tentamos o
  * bridge Athos para dois casos deterministicos:
- *   1. cart_selection — cliente escolhe itens do catalogo real
+ *   1. cart_selection — cliente escolhe itens do catalogo CRM configurado
  *   2. confirmation    — cliente confirma explicitamente ("confirmo", "pode
  *                        fechar", "fechar pedido")
  *
@@ -23,13 +23,13 @@ import {
   handleFoodserviceOrderTurn,
   type RuntimeWiringOutcome,
 } from '../../foodservice/athos/runtime-wiring';
+import { resolveEnabledAthosTenantSlug } from '../../foodservice/athos/runtime-repository';
 
 export interface AthosBridgeHandlerDeps {
   pool: pg.Pool;
   organizationId: string;
   contactId: string;
   conversationId: string;
-  tenantSlug: string | null;
   text: string;
   log: Logger;
 }
@@ -43,8 +43,9 @@ export interface AthosBridgeResult {
 export async function tryHandleAthosOrderBridge(
   deps: AthosBridgeHandlerDeps,
 ): Promise<AthosBridgeResult | null> {
-  if (deps.tenantSlug === null || deps.tenantSlug === '') {
-    deps.log.info('athos-bridge: tenantSlug ausente — segue para full pipeline');
+  const tenantSlug = await resolveEnabledAthosTenantSlug(deps.pool, deps.organizationId);
+  if (tenantSlug === null) {
+    deps.log.info('athos-bridge: food commerce desabilitado — segue para full pipeline');
     return null;
   }
   const outcome = await handleFoodserviceOrderTurn(
@@ -53,7 +54,7 @@ export async function tryHandleAthosOrderBridge(
       organizationId: deps.organizationId,
       contactId: deps.contactId,
       conversationId: deps.conversationId,
-      tenantSlug: deps.tenantSlug,
+      tenantSlug,
     },
     deps.text,
   );

@@ -3,7 +3,7 @@
  * Athos x Sarah E2E 2026-09-13, branch fix/sarah-athos-e2e-runtime).
  *
  * Cobre:
- *   - tryHandleAthosOrderBridge: tenantSlug ausente -> null (full pipeline)
+ *   - tryHandleAthosOrderBridge: resolve tenant no banco; disabled -> null
  *   - cart_selection: match por "quero 2 Bolo de chocolate" persiste snapshot
  *   - confirmation: confirma pedido -> consome token, chama adapter fake
  *   - confirmation: sem cart_items -> nao casa (handled=false)
@@ -87,16 +87,34 @@ class MockTable {
   }
 }
 
-function makeMockPool(): pg.Pool {
+interface MockPoolOptions {
+  enabledTenantSlug?: string;
+  contactSourceMetadata?: Record<string, unknown>;
+}
+
+function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
   const contacts = new MockTable();
   const conversations = new MockTable();
   const orders = new MockTable();
   const foodOrderItems = new MockTable();
   const idempotencyKeys = new MockTable();
 
+  if (options.contactSourceMetadata !== undefined) {
+    contacts.rows.push({
+      id: baseDeps.contactId,
+      organization_id: baseDeps.organizationId,
+      source_metadata: structuredClone(options.contactSourceMetadata),
+    });
+  }
+
   const pool = {
     query: vi.fn(async (sql: string, params: unknown[] = []) => {
       const trimmed = sql.trim().toLowerCase();
+      if (trimmed.includes('from organizations o') && trimmed.includes('food_commerce_settings')) {
+        return options.enabledTenantSlug === undefined
+          ? { rows: [], rowCount: 0 }
+          : { rows: [{ tenant_slug: options.enabledTenantSlug }], rowCount: 1 };
+      }
       // contacts
       if (trimmed.startsWith('select source_metadata')) {
         const [orgId, contactId] = params as [string, string];
@@ -356,7 +374,7 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     clearAthosCatalogCache();
   });
 
-  it('tryHandleAthosOrderBridge com tenantSlug=null -> null (full pipeline)', async () => {
+  it('worker/runtime resolver: tenant desabilitado -> null (full pipeline)', async () => {
     const pool = makeMockPool();
     const log = makeLog();
     const out = await tryHandleAthosOrderBridge({
@@ -364,11 +382,48 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
       organizationId: 'org-1',
       contactId: 'c-1',
       conversationId: 'conv-1',
-      tenantSlug: null,
       text: 'oi',
       log,
     });
     expect(out).toBeNull();
+  });
+
+  it('worker/runtime resolver: org habilitada resolve slug e trata cart + confirmation sem injecao manual', async () => {
+    const pool = makeMockPool({ enabledTenantSlug: 'tenant-runtime' });
+    const log = makeLog();
+    const adapter = makeFakeAdapter('athos-runtime-001');
+    setAthosAdapter(adapter);
+
+    const cart = await tryHandleAthosOrderBridge({
+      pool,
+      organizationId: baseDeps.organizationId,
+      contactId: baseDeps.contactId,
+      conversationId: baseDeps.conversationId,
+      text: 'quero 1 Bolo de Chocolate',
+      log,
+    });
+    expect(cart?.outcome.handled).toBe(true);
+    expect(cart?.outcome.state).toBe('awaiting_confirmation');
+
+    const confirmation = await tryHandleAthosOrderBridge({
+      pool,
+      organizationId: baseDeps.organizationId,
+      contactId: baseDeps.contactId,
+      conversationId: baseDeps.conversationId,
+      text: 'confirmo',
+      log,
+    });
+    expect(confirmation?.outcome.handled).toBe(true);
+    expect(confirmation?.outcome.state).toBe('completed');
+    expect(confirmation?.responseText).toContain('athos-runtime-001');
+    expect(adapter.calls).toBe(1);
+    expect(
+      vi.mocked(pool.query).mock.calls.some(
+        ([sql]) =>
+          String(sql).includes('from organizations o') &&
+          String(sql).includes('food_commerce_settings'),
+      ),
+    ).toBe(true);
   });
 
   it('cart_selection: "quero 1 Bolo de Chocolate" -> handled=true, cart persistido', async () => {
@@ -550,8 +605,13 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(adapter.calls).toBe(1);
   });
 
-  it('persistPartySizeFromFastPath: nao quebra, persiste em contacts.source_metadata', async () => {
-    const pool = makeMockPool();
+  it('nested JSONB preservation: party_size preserva chaves foodservice e externas', async () => {
+    const pool = makeMockPool({
+      contactSourceMetadata: {
+        foodservice: { existing_key: 'keep_me' },
+        other: 'keep_me_too',
+      },
+    });
     await persistPartySizeFromFastPath(
       {
         pool,
@@ -562,8 +622,20 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
       },
       6,
     );
-    // sucesso = nao throws
-    expect(true).toBe(true);
+    const persisted = await pool.query<{ source_metadata: Record<string, unknown> }>(
+      `select source_metadata
+         from contacts
+        where organization_id = $1 and id = $2
+        limit 1`,
+      [baseDeps.organizationId, baseDeps.contactId],
+    );
+    expect(persisted.rows[0]?.source_metadata).toMatchObject({
+      foodservice: {
+        existing_key: 'keep_me',
+        party_size: 6,
+      },
+      other: 'keep_me_too',
+    });
   });
 
   it('LGPD-safe: cart snapshot NAO inclui cartao, CVV ou documento', async () => {

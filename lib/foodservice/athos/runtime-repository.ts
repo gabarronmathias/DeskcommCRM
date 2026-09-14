@@ -21,6 +21,29 @@ import type { AthosOrderWriteResult } from './order-adapter';
 import type { OrderMirrorClient, OrderMirrorResult } from './order-mirror';
 import { fetchAthosCatalog, type AthosCatalog } from './athos-catalog';
 
+/**
+ * Resolve o slug no banco para a organizacao do turno. A configuracao e
+ * deliberadamente tenant-agnostic: somente food commerce habilitado liga o
+ * bridge, e desabilitar a linha passa a valer no turno seguinte.
+ */
+export async function resolveEnabledAthosTenantSlug(
+  pool: pg.Pool,
+  organizationId: string,
+): Promise<string | null> {
+  const result = await pool.query<{ tenant_slug: string }>(
+    `select o.slug::text as tenant_slug
+       from organizations o
+       join food_commerce_settings f on f.organization_id = o.id
+      where o.id = $1
+        and f.is_enabled = true
+        and nullif(trim(o.slug::text), '') is not null
+      limit 1`,
+    [organizationId],
+  );
+  const slug = result.rows[0]?.tenant_slug?.trim();
+  return slug === undefined || slug === '' ? null : slug;
+}
+
 export async function readContactSourceMetadata(
   pool: pg.Pool,
   organizationId: string,

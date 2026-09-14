@@ -127,6 +127,7 @@ import {
   type FoodserviceHistoryMessage,
 } from './foodservice-sales-fast-path';
 import { tryHandleAthosOrderBridge } from './athos-bridge-handler';
+import { persistPartySize } from '../../foodservice/athos/runtime-repository';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -389,14 +390,6 @@ export interface InboundTurnKnobs {
   maxContextTokens: number;
   /** Fast path comercial foodservice, opt-in e conservador. */
   foodserviceSalesFastPath?: boolean;
-  /**
-   * Bridge Athos x Sarah (briefing recovery 2026-09-13). Quando presente e
-   * nao-vazio, cart_selection e confirmation sao tratados ANTES do fast path
-   * (via lib/foodservice/athos/runtime-wiring.ts). Ausente = bridge off;
-   * segue para full pipeline. Setado por workers/agent-worker/main.ts quando o
-   * tenant tem food_commerce_settings.is_enabled e slug.
-   */
-  athosTenantSlug?: string | null;
   /** orçamento fixo do índice de notas do lead injetado no sufixo (LEAD_NOTES_INDEX_MAX_TOKENS) */
   notesIndexMaxTokens: number;
   /** teto de steps do loop de tools por run (AGENT_MAX_STEPS) — circuit breaker fino é F2-15 */
@@ -2670,7 +2663,6 @@ export async function tryFoodserviceSalesFastPath(
       organizationId: job.organization_id,
       contactId: payload.contact_id,
       conversationId: payload.conversation_id,
-      tenantSlug: deps.knobs.athosTenantSlug ?? null,
       text: current.body,
       log: deps.log,
     });
@@ -2775,17 +2767,13 @@ export async function tryFoodserviceSalesFastPath(
       decision.partySize !== null
     ) {
       try {
-        await pool.query(
-          `update contacts
-              set source_metadata = coalesce(source_metadata, '{}'::jsonb)
-                                  || jsonb_build_object('foodservice',
-                                                         jsonb_build_object(
-                                                           'party_size', $3::int,
-                                                           'updated_at', now()::text
-                                                         )),
-                  updated_at = now()
-            where organization_id = $1 and id = $2`,
-          [job.organization_id, payload.contact_id, decision.partySize],
+        await persistPartySize(
+          {
+            pool,
+            organizationId: job.organization_id,
+            contactId: payload.contact_id,
+          },
+          decision.partySize,
         );
       } catch (err) {
         deps.log.warn('athos-bridge: party_size persist falhou (turno segue sem persist)', {

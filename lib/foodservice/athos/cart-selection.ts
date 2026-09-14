@@ -7,7 +7,7 @@
  *   "2 bolos de chocolate"
  *   "1 torta de morango e 1 bolo"
  *
- * Resolve cada item contra o catalogo REAL (athos-catalog.ts) e retorna
+ * Resolve cada item contra o catalogo CRM do bridge (athos-catalog.ts) e retorna
  * a lista de AthosCartItem. Itens nao encontrados sao IGNORADOS com aviso -
  * NAO inventamos preco (regra do briefing: preco sempre do catalogo, nunca
  * do LLM).

@@ -1,13 +1,11 @@
 /**
- * Wrapper read-only do catalogo Athos (briefing recovery
+ * Wrapper read-only do catalogo CRM usado pelo bridge Athos (briefing recovery
  * Athos x Sarah E2E 2026-09-13).
  *
- * FONTE DA VERDADE: a RPC `public.fn_food_public_catalog(p_tenant_slug)`
- * (criada em 0158_food_commerce, estavel em 0175_food_read_functions_stable).
- * Esta e a mesma RPC que serve o cardapio publico
- * (https://cardapio.sistemaathos.com.br/tortasdocalmon) via GET
- * /api/v1/food/{tenant} - portanto o preco/availability/modifiers aqui
- * sao os mesmos que o cliente ve no cardapio.
+ * FONTE DE LEITURA: a RPC `public.fn_food_public_catalog(p_tenant_slug)`
+ * (criada em 0158_food_commerce, estavel em 0175_food_read_functions_stable),
+ * sobre as tabelas `food_*` do CRM. Este modulo nao prova sincronizacao com o
+ * cardapio externo da Athos; essa equivalencia exige validacao operacional.
  *
  * O catalogo e cacheado em memoria por (org, slug) para evitar chamadas
  * repetidas a RPC dentro do mesmo turno (cada turno pode tocar
