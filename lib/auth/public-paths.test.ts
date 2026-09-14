@@ -9,6 +9,16 @@ import { describe, it, expect } from "vitest";
 import { isPublicPath } from "@/lib/auth/public-paths";
 
 describe("isPublicPath", () => {
+  it("libera somente as duas APIs Athos que autenticam por Bearer próprio", () => {
+    expect(isPublicPath("/api/v1/customers/purchase-recency")).toBe(true);
+    expect(isPublicPath("/api/v1/customers/5511999999999/order-history")).toBe(true);
+
+    expect(isPublicPath("/api/v1/customers")).toBe(false);
+    expect(isPublicPath("/api/v1/customers/5511999999999")).toBe(false);
+    expect(isPublicPath("/api/v1/customers/purchase-recency/extra")).toBe(false);
+    expect(isPublicPath("/api/v1/customers/5511999999999/order-history/extra")).toBe(false);
+  });
+
   it("libera o heartbeat do agente do host (bearer, sem cookie)", () => {
     expect(isPublicPath("/api/v1/system/agent")).toBe(true);
   });
