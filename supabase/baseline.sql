@@ -16051,11 +16051,11 @@ begin
     select coalesce(jsonb_agg(
       o || jsonb_build_object(
         'items', coalesce((
-          select jsonb_agg(row_to_json(i) order by i.created_at)
+          select jsonb_agg(to_jsonb(i) - 'item_created_at' order by i.item_created_at)
             from (
               select id, product_id, product_name_snapshot, unit_price_cents,
                      quantity, line_total_cents, selected_modifiers,
-                     added_via_recommendation
+                     added_via_recommendation, created_at as item_created_at
                 from public.food_order_items
                where order_id = (o->>'id')::uuid
                  and organization_id = p_org
