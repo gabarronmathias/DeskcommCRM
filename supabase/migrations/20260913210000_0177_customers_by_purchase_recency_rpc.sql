@@ -68,6 +68,7 @@ declare
   v_threshold timestamptz := p_now - make_interval(days => p_inactive_days);
   v_cursor_ts timestamptz;
   v_cursor_id uuid;
+  v_cursor_is_cold boolean := false;
   v_candidates jsonb;
   v_next_cursor text;
 begin
@@ -81,7 +82,18 @@ begin
         v_decoded text;
       begin
         v_decoded := convert_from(decode(p_cursor, 'base64'), 'UTF8');
-        v_cursor_ts := split_part(v_decoded, '|', 1)::timestamptz;
+        v_cursor_is_cold := split_part(v_decoded, '|', 1) = 'cold';
+        if v_cursor_is_cold then
+          if p_has_orders then
+            raise exception 'cursor_mode_mismatch';
+          end if;
+          v_cursor_ts := null;
+        else
+          if not p_has_orders then
+            raise exception 'cursor_mode_mismatch';
+          end if;
+          v_cursor_ts := split_part(v_decoded, '|', 1)::timestamptz;
+        end if;
         v_cursor_id := split_part(v_decoded, '|', 2)::uuid;
       end;
     exception when others then
@@ -105,6 +117,7 @@ begin
       and c.is_merged_into is null
       and c.is_blocked = false
       and c.is_anonymized = false
+      and (c.consent -> 'marketing' ->> 'granted_at') is not null
   ),
   -- CTE 2: agregado por contato (ULTIMO pedido elegivel + total orders +
   -- total spent + ticket medio). Filtra pelo p_status uma vez -- o mesmo
@@ -169,7 +182,17 @@ begin
       from filtered f
      where
        p_cursor is null
-       or (f.last_order_at, f.contact_id) < (v_cursor_ts, v_cursor_id)
+       or (
+         p_has_orders = true
+         and not v_cursor_is_cold
+         and (f.last_order_at, f.contact_id) < (v_cursor_ts, v_cursor_id)
+       )
+       or (
+         p_has_orders = false
+         and v_cursor_is_cold
+         and f.last_order_at is null
+         and f.contact_id < v_cursor_id
+       )
      order by
        case when p_has_orders then f.last_order_at end desc nulls last,
        f.contact_id desc
@@ -186,18 +209,22 @@ begin
            coalesce(last_order_at::text, 'cold') as cursor_ts_part
       from page
      order by
-       case when p_has_orders then last_order_at end desc nulls last,
-       contact_id desc
+       case when p_has_orders then last_order_at end asc nulls first,
+       contact_id asc
      limit 1
   )
   select
     coalesce(jsonb_agg(row_to_json(p)), '[]'::jsonb),
     case
       when (select more from has_more) then
-        encode(convert_to(
-          (select cursor_ts_part from last_row) || '|' || (select contact_id::text from last_row),
-          'UTF8'
-        ), 'base64')
+        replace(
+          encode(convert_to(
+            (select cursor_ts_part from last_row) || '|' || (select contact_id::text from last_row),
+            'UTF8'
+          ), 'base64'),
+          E'\n',
+          ''
+        )
       else null
     end
     into v_candidates, v_next_cursor

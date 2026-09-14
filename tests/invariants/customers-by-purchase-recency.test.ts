@@ -247,7 +247,7 @@ describe("fn_customers_by_purchase_recency — audiencia inactive_days=30", () =
     const out = call(ORG_A, INACTIVE_DAYS);
     expect(pick(out, "inactive_days")).toBe("30");
     expect(pick(out, "has_orders")).toBe("true");
-    expect(pick(out, "queried_at")).toBe(P_NOW);
+    expect(new Date(pick(out, "queried_at")!).toISOString()).toBe(new Date(P_NOW).toISOString());
     // next_cursor pode ser null (so 2 candidatos) ou string (mais paginas)
     const cursor = pick(out, "next_cursor");
     expect(cursor === "null" || (cursor && cursor.length > 0)).toBe(true);
@@ -286,7 +286,7 @@ describe("fn_customers_by_purchase_recency — LGPD (PARTE 7 do briefing)", () =
   it("candidato retornado tem flag has_marketing_consent=true (para o agente decidir copy)", () => {
     const out = call(ORG_A, INACTIVE_DAYS);
     // Quando o contato aparece, deve ter a flag = true
-    expect(out).toContain('"has_marketing_consent":true');
+    expect(out).toMatch(/"has_marketing_consent":\s*true/);
   });
 });
 
@@ -446,10 +446,10 @@ describe("fn_customers_by_purchase_recency — bordas e validacao", () => {
     sql(`delete from public.orders where organization_id = '${ORG_B}'`);
     sql(`delete from public.contacts where organization_id = '${ORG_B}'`);
     const out = call(ORG_B, INACTIVE_DAYS);
-    expect(pick(out, "candidates")).not.toBe(null); // chave existe
+    expect(Array.isArray(JSON.parse(out).candidates)).toBe(true);
     expect(pick(out, "next_cursor")).toBe("null");
     expect(pick(out, "inactive_days")).toBe("30");
-    expect(pick(out, "queried_at")).toBe(P_NOW);
+    expect(new Date(pick(out, "queried_at")!).toISOString()).toBe(new Date(P_NOW).toISOString());
   });
 
   it("inactive_days negativo levanta inactive_days_out_of_range (22023)", () => {
