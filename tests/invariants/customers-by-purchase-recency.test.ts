@@ -415,10 +415,10 @@ describe("fn_customers_by_purchase_recency — paginacao cursor (PARTE 8)", () =
     const cursor = pick(p1, "next_cursor");
     expect(cursor).toBeTruthy();
     const p2 = call(ORG_A, INACTIVE_DAYS, { p_limit: "1", p_cursor: cursor! });
-    // p1 contem slot 1 (mais recente) e p2 contem slot 8 (proximo)
-    expect(p1).toContain(contactId(1));
-    expect(p2).not.toContain(contactId(1));
-    expect(p2).toContain(contactId(8));
+    // DESC: slot 8 (30d) e mais recente; slot 1 (60d) vem na pagina seguinte.
+    expect(p1).toContain(contactId(8));
+    expect(p2).not.toContain(contactId(8));
+    expect(p2).toContain(contactId(1));
   });
 
   it("ultima pagina tem next_cursor=null", () => {
