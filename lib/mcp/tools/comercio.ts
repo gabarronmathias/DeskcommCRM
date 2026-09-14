@@ -268,7 +268,10 @@ export const crmGetCustomerLastOrder: McpToolDefinition<typeof customerLastOrder
       };
     }
 
-    const o = payload.orders[0];
+    // Garantido pelo `length === 0` acima, mas o TS nao afrouxa com
+    // noUncheckedIndexedAccess. Assertion explicita para silenciar e manter
+    // o controle.
+    const o = payload.orders[0]!;
     return {
       customer_found: true,
       query_phone_e164: payload.query_phone_e164,
