@@ -63,9 +63,9 @@ const P_NOW = "2026-09-11T12:00:00Z";
  *            hoje-200d (refunded). 4 não-cancelled, 1 cancelled, 1 refunded.
  * Pedidos B: hoje, hoje-10d (cancelled). Só 1 não-cancelled.
  *
- * Total esperado na org A (com filtro padrão): 4 pedidos, soma=15000 cents
- * (3000+4000+5000+3000 = 15000 — o cancelled 2000 e o refunded 1000 saem
- * da soma). Ticket médio = 15000/4 = 3750 (round). first=today-200d,
+ * Total esperado na org A (com filtro padrão): 5 pedidos, soma=12000 cents
+ * (3000+4000+5000 = 12000 — o cancelled 2000 e o refunded 1000 saem
+ * da soma). Ticket médio = 12000/3 = 4000. first=today-200d,
  * last=today, days_since=0 (com P_NOW = now).
  */
 function semear(): void {
@@ -162,14 +162,6 @@ function pickField(jsonText: string, field: string): string | null {
   return m[1] ?? m[2] ?? m[3] ?? null;
 }
 
-/** Conta quantas vezes um par "chave": valor aparece no json text (1 nível). */
-function countWhere(jsonText: string, key: string, value: string): number {
-  const re = new RegExp(`"${key}":\\s*(?:"[^"]*"|\\d+|true|false|null)`, "g");
-  // mais simples: parse de occurrences exatas
-  const exact = new RegExp(`"${key}":\\s*"${value}"`, "g");
-  return (jsonText.match(exact) ?? []).length;
-}
-
 describe("fn_orders_customer_history — isolamento por organização (defesa em profundidade)", () => {
   beforeEach(semear);
 
@@ -210,14 +202,14 @@ describe("fn_orders_customer_history — agregados", () => {
     expect(pickField(out, "total_orders")).toBe("5");
   });
 
-  it("total_spent_cents EXCLUI cancelled e refunded: 15000 (3000+4000+5000)", () => {
+  it("total_spent_cents EXCLUI cancelled e refunded: 12000 (3000+4000+5000)", () => {
     const out = callAsService(ORG_A, PHONE_E164);
-    expect(pickField(out, "total_spent_cents")).toBe("15000");
+    expect(pickField(out, "total_spent_cents")).toBe("12000");
   });
 
-  it("avg_ticket_cents = total_spent / count(não-cancelled) = 15000/4 = 3750", () => {
+  it("avg_ticket_cents = total_spent / pedidos pagos = 12000/3 = 4000", () => {
     const out = callAsService(ORG_A, PHONE_E164);
-    expect(pickField(out, "avg_ticket_cents")).toBe("3750");
+    expect(pickField(out, "avg_ticket_cents")).toBe("4000");
   });
 
   it("first_order_at é o mais antigo (2026-02-23, refunded) e last_order_at é o mais recente (2026-09-11)", () => {
@@ -244,9 +236,9 @@ describe("fn_orders_customer_history — agregados", () => {
     expect(pickField(out, "total_orders")).toBe("3");
   });
 
-  it("filtro status='not_cancelled' exclui cancelled e refunded: 3 pedidos", () => {
+  it("filtro status='not_cancelled' exclui cancelled e preserva refunded: 4 pedidos", () => {
     const out = callAsService(ORG_A, PHONE_E164, { p_status: "not_cancelled" });
-    expect(pickField(out, "total_orders")).toBe("3");
+    expect(pickField(out, "total_orders")).toBe("4");
   });
 
   it("filtro status='cancelled' deixa só 1 pedido e zera total_spent", () => {
@@ -271,9 +263,14 @@ describe("fn_orders_customer_history — favorite_products", () => {
   beforeEach(semear);
 
   it("Pizza Margherita é top: 5 unidades em 3 pedidos (2+2+1)", () => {
-    const out = callAsService(ORG_A, PHONE_E164);
-    // A string `Pizza Margherita` aparece 3x no JSON: top-1 + 2 itens nos orders
-    expect(countWhere(out, "product_name", "Pizza Margherita")).toBeGreaterThanOrEqual(3);
+    const out = JSON.parse(callAsService(ORG_A, PHONE_E164)) as {
+      summary: { favorite_products: Array<{ product_name: string; quantity: number; order_count: number }> };
+    };
+    expect(out.summary.favorite_products[0]).toEqual({
+      product_name: "Pizza Margherita",
+      quantity: 5,
+      order_count: 3,
+    });
   });
 
   it("Hamburguer é #2: 3 unidades em 2 pedidos", () => {

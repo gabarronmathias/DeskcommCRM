@@ -16022,7 +16022,7 @@ begin
   ),
   last_row as (
     select ordered_at, id from page
-     order by ordered_at desc, id desc
+     order by ordered_at asc, id asc
      limit 1
   )
   select
@@ -16039,10 +16039,14 @@ begin
     ), '[]'::jsonb),
     case
       when (select more from has_more) then
-        encode(convert_to(
-          (select ordered_at::text from last_row) || '|' || (select id::text from last_row),
-          'UTF8'
-        ), 'base64')
+        replace(
+          encode(convert_to(
+            (select ordered_at::text from last_row) || '|' || (select id::text from last_row),
+            'UTF8'
+          ), 'base64'),
+          E'\n',
+          ''
+        )
       else null
     end
     into v_orders, v_next_cursor;
