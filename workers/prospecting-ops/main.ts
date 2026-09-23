@@ -200,13 +200,28 @@ async function runDiscovery(db: SupabaseClient, organizationId: string): Promise
 
 async function main(): Promise<void> {
   const db = createAdminClient();
-  const organizationId = await targetOrganizationId(db);
-  const dispatchEveryMs = intEnv("PROSPECTING_DISPATCH_INTERVAL_MINUTES", 15, 5, 120) * 60_000;
-  const discoveryEveryMs = intEnv("HERMES_DISCOVERY_INTERVAL_MINUTES", 60, 15, 1440) * 60_000;
-
   let stopping = false;
   process.on("SIGTERM", () => { stopping = true; });
   process.on("SIGINT", () => { stopping = true; });
+
+  let organizationId: string;
+  try {
+    organizationId = await targetOrganizationId(db);
+  } catch (error) {
+    // Dockerfile.worker runs prospecting and the inbound agent worker in one
+    // container and uses `wait -n`: a prospecting config failure used to kill
+    // the healthy inbound worker too. Fail closed and stay idle so WhatsApp
+    // inbound processing remains available; never guess another tenant.
+    log("warn", "prospecting worker paused: target organization unavailable", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    while (!stopping) await sleep(60_000);
+    log("info", "prospecting operations worker stopped");
+    return;
+  }
+
+  const dispatchEveryMs = intEnv("PROSPECTING_DISPATCH_INTERVAL_MINUTES", 15, 5, 120) * 60_000;
+  const discoveryEveryMs = intEnv("HERMES_DISCOVERY_INTERVAL_MINUTES", 60, 15, 1440) * 60_000;
 
   log("info", "prospecting operations worker started", {
     organizationId,
