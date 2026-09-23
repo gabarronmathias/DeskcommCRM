@@ -45,8 +45,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     .limit(limit);
   if (error) return fail("internal_error", error.message, 500, { requestId });
   const contactIds = Array.from(new Set((msgs ?? []).map((m) => m.contact_id).filter(Boolean)));
-  let contactById = new Map();
-  let leadByContactId = new Map();
+  const contactById = new Map();
+  const leadByContactId = new Map();
   if (contactIds.length > 0) {
     const { data: contacts } = await admin.from("contacts").select("id, phone_number, display_name, push_name").in("id", contactIds);
     for (const c of contacts ?? []) contactById.set(c.id, c);
