@@ -16395,10 +16395,10 @@ create table if not exists public.partner_launches (
   accessed_at timestamptz,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  constraint partner_launches_contact_org_fk foreign key (contact_id, organization_id)
-    references public.contacts(id, organization_id) on delete cascade,
-  constraint partner_launches_conversation_org_fk foreign key (conversation_id, organization_id)
-    references public.conversations(id, organization_id) on delete restrict,
+  constraint partner_launches_contact_fk foreign key (contact_id)
+    references public.contacts(id) on delete cascade,
+  constraint partner_launches_conversation_fk foreign key (conversation_id)
+    references public.conversations(id) on delete restrict,
   constraint partner_launches_expiry_check check (expires_at > created_at)
 );
 create index if not exists partner_launches_org_provider_idx
