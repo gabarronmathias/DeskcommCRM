@@ -251,7 +251,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     p_organization_id: run.organization_id,
   } as never).then(({ error }) => {
     if (error) console.warn("[agent-runtime] run_started event failed", error.message);
-  }).catch((error: unknown) => {
+  }, (error: unknown) => {
     console.warn("[agent-runtime] run_started event failed", error);
   });
 
