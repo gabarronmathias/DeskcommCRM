@@ -291,6 +291,28 @@ describe("UPDATE — implementado depois, e por pressão do próprio adaptador",
     expect(error).toBeNull();
     expect(data).toBeNull();
   });
+
+  it("`.neq` em UPDATE exclui as linhas com o valor informado", async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `insert into crm_pipelines (organization_id, name, slug, position)
+       values ($1, 'Estado inicial', 'neq-update-alvo', 96) returning id`,
+      [ORG],
+    );
+    const id = rows[0]!.id;
+
+    const { error } = await db
+      .from("crm_pipelines")
+      .update({ name: "Não deve mudar" })
+      .eq("id", id)
+      .neq("name", "Estado inicial");
+    expect(error).toBeNull();
+
+    const { rows: atualizado } = await pool.query<{ name: string }>(
+      "select name from crm_pipelines where id = $1",
+      [id],
+    );
+    expect(atualizado[0]!.name).toBe("Estado inicial");
+  });
 });
 
 describe("rpc — argumentos NOMEADOS, como o PostgREST", () => {
