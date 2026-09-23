@@ -78,18 +78,68 @@ export async function handleFoodserviceOrderTurn(
   deps: RuntimeWiringDeps,
   inboundText: string,
 ): Promise<RuntimeWiringOutcome> {
-  const catalog = await readAthosCatalogForTenant(deps);
-
   const previousSnapshot = await loadAthosSnapshotFromMetadata(deps);
   const confirmationMatch = detectExplicitConfirmation(inboundText);
+
+  // Saudações e conversa geral não precisam carregar o cardápio. Mantém o
+  // GPT responsável pelo atendimento normal e reserva este bridge para turnos
+  // que realmente podem alterar um pedido.
+  if (
+    previousSnapshot.cartItems.length === 0 &&
+    !confirmationMatch &&
+    !ORDER_OR_MENU_SIGNAL_RE.test(inboundText)
+  ) {
+    return {
+      handled: false,
+      responseText: '',
+      partySize: previousSnapshot.partySize,
+      cartItems: previousSnapshot.cartItems,
+      state: 'no_change',
+      errorCode: null,
+    };
+  }
+
+  const catalog = await readAthosCatalogForTenant(deps);
 
   if (confirmationMatch && previousSnapshot.cartItems.length > 0) {
     return handleConfirmation(deps, previousSnapshot, inboundText, catalog);
   }
 
   const cartSelection = detectAndResolveCartSelection(inboundText, catalog);
+  if (cartSelection.unresolvedNames.length > 0) {
+    return {
+      handled: true,
+      responseText:
+        `Não consegui confirmar no cardápio: ${cartSelection.unresolvedNames.join(', ')}. ` +
+        'Por isso, ainda não registrei o pedido. Pode me dizer o nome do item como aparece no cardápio?',
+      partySize: previousSnapshot.partySize,
+      cartItems: previousSnapshot.cartItems,
+      state: previousSnapshot.state,
+      errorCode: 'athos_product_not_found',
+    };
+  }
   if (cartSelection.matched) {
     return handleCartSelection(deps, previousSnapshot, cartSelection);
+  }
+
+  if (
+    previousSnapshot.cartItems.length > 0 &&
+    previousSnapshot.state !== 'completed' &&
+    previousSnapshot.state !== 'crm_recorded'
+  ) {
+    const responseText = previousSnapshot.state === 'awaiting_confirmation'
+      ? 'Entendi os detalhes. O pedido ainda não foi enviado nem registrado. ' +
+        'Para eu tentar concluir pela integração, responda “confirmo o pedido”.'
+      : 'Não consegui confirmar o registro do pedido na integração. Portanto, ele ainda não está confirmado. ' +
+        'O carrinho ficou salvo para conferência.';
+    return {
+      handled: true,
+      responseText,
+      partySize: previousSnapshot.partySize,
+      cartItems: previousSnapshot.cartItems,
+      state: previousSnapshot.state,
+      errorCode: null,
+    };
   }
 
   return {
@@ -101,6 +151,9 @@ export async function handleFoodserviceOrderTurn(
     errorCode: null,
   };
 }
+
+const ORDER_OR_MENU_SIGNAL_RE =
+  /\b(?:card[aá]pio|menu|pedido|pedir|encomenda|comprar|quero|preciso|tortas?|bolos?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar|amanh[aã]|hoje)\b/i;
 
 async function handleConfirmation(
   deps: RuntimeWiringDeps,

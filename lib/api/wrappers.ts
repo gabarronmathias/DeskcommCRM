@@ -5,7 +5,7 @@
  * Garante:
  *  - Formato consistente { data, meta? } / { error: { code, message, details? } }
  *  - Header X-Request-Id correlacionando com audit log
- *  - Status codes corretos (200/201/204/400/401/403/404/409/422/429/500)
+ *  - Status codes corretos (200/201/202/204/400/401/403/404/409/422/429/500)
  */
 
 import { NextResponse } from "next/server";
@@ -42,7 +42,7 @@ export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 // -----------------------------------------------------------------------------
 
 type OkOptions = {
-  status?: 200 | 201 | 204;
+  status?: 200 | 201 | 202 | 204;
   meta?: ApiSuccess<unknown>["meta"];
   requestId?: string;
   headers?: HeadersInit;
