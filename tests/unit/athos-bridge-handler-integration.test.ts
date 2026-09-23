@@ -539,7 +539,6 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     );
 
     // 5x confirmacao
-    let crmOrderId = '';
     for (let i = 0; i < 5; i++) {
       const out = await handleFoodserviceOrderTurn(
         {
