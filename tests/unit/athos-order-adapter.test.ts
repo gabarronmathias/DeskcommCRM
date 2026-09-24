@@ -94,18 +94,25 @@ describe('athos-order-adapter (briefing recovery)', () => {
     expect(event.order.items[0]?.sku).toBe('SKU-1');
   });
 
-  it('não abre launch quando um item não tem SKU Athos', async () => {
+  it('envia pedido mapeado sem SKU, pois o contrato Athos exige o UUID do produto', async () => {
     process.env['ATHOS_ORDER_WRITE_ENDPOINT'] = 'https://athos.example/functions/v1/athos-sandbox';
     process.env['ATHOS_BEARER_TOKEN'] = 'test-bearer';
     process.env['ATHOS_HMAC_SECRET'] = 'test-hmac';
     process.env['ATHOS_STORE_REF'] = 'store-1';
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { environment: 'sandbox', launch_id: 'launch-1', crm_contact_id: 'contact-2' } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { accepted: true, order_id: 'order-1' } }), { status: 202 }));
     vi.stubGlobal('fetch', fetchMock);
-    await expect(createAthosOrder({
+    const result = await createAthosOrder({
       ...baseInput,
-      cartItems: [{ ...baseInput.cartItems[0]!, sku: null }],
-    })).rejects.toMatchObject({ code: 'athos_item_mapping_missing' });
-    expect(fetchMock).not.toHaveBeenCalled();
+      cartItems: [{ ...baseInput.cartItems[0]!, sku: null, externalProductId: 'b5b5f1df-1b01-4d2a-9359-00e8c1a41000' }],
+    });
+    expect(result.externalOrderId).toBe('order-1');
+    const event = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      order: { items: Array<Record<string, unknown>> };
+    };
+    expect(event.order.items[0]?.['product_id']).toBe('b5b5f1df-1b01-4d2a-9359-00e8c1a41000');
+    expect(event.order.items[0]).not.toHaveProperty('sku');
   });
 
   it('com fake adapter injetado: createAthosOrder retorna external_order_id', async () => {

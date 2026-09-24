@@ -130,11 +130,11 @@ async function writeAthosSandboxOrder(
 ): Promise<AthosOrderWriteResult> {
   const authorization = { Authorization: `Bearer ${config.bearerToken}` };
   const items = input.cartItems.map((item) => {
-    if (!item.sku || !item.externalProductId) throw athosError('athos_item_mapping_missing');
+    if (!item.externalProductId) throw athosError('athos_item_mapping_missing');
     const unitPriceCents = item.unitPriceCents + item.modifiers.reduce((sum, modifier) => sum + modifier.priceDeltaCents, 0);
     return {
       product_id: item.externalProductId,
-      sku: item.sku,
+      ...(item.sku ? { sku: item.sku } : {}),
       name: item.productName,
       quantity: item.quantity,
       unit_price_cents: unitPriceCents,
