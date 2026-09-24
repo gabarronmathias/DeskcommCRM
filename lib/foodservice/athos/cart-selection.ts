@@ -75,7 +75,7 @@ function toCartItem(
 ): AthosCartItem {
   return {
     productId: product.id,
-    externalProductId: product.athosProductId,
+    externalProductId: product.athosProductId!,
     sku: product.sku,
     productName: product.name,
     quantity,
