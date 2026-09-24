@@ -112,9 +112,9 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
       if (trimmed === 'begin' || trimmed === 'commit' || trimmed === 'rollback' || trimmed.includes('pg_advisory_xact_lock')) {
         return { rows: [], rowCount: 0 };
       }
-      if (trimmed.startsWith('select athos_product_id::text') && trimmed.includes('from athos_store_products')) {
+      if (trimmed.startsWith('select external_product_id, athos_product_id::text') && trimmed.includes('from food_athos_product_map')) {
         return {
-          rows: [{ athos_product_id: 'athos-prod-1', athos_code: 'SKU-1', display_name: 'Bolo de Chocolate' }],
+          rows: [{ external_product_id: 'bolo-de-chocolate', athos_product_id: 'b5b5f1df-1b01-4d2a-9359-00e8c1a41000' }],
           rowCount: 1,
         };
       }
@@ -449,8 +449,27 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(out.handled).toBe(true);
     expect(out.cartItems.length).toBe(1);
     expect(out.cartItems[0]?.productName).toBe('Bolo de Chocolate');
+    expect(out.cartItems[0]?.externalProductId).toBe('b5b5f1df-1b01-4d2a-9359-00e8c1a41000');
     expect(out.state).toBe('awaiting_confirmation');
     expect(adapter.calls).toBe(0);
+  });
+
+  it('cart_selection: reconhece quantidade natural "uma" e usa o UUID Athos mapeado', async () => {
+    const pool = makeMockPool();
+    const out = await handleFoodserviceOrderTurn(
+      {
+        pool,
+        organizationId: baseDeps.organizationId,
+        contactId: baseDeps.contactId,
+        conversationId: baseDeps.conversationId,
+        tenantSlug: baseDeps.tenantSlug,
+      },
+      'quero uma Bolo de Chocolate',
+    );
+    expect(out.handled).toBe(true);
+    expect(out.cartItems).toHaveLength(1);
+    expect(out.cartItems[0]?.quantity).toBe(1);
+    expect(out.cartItems[0]?.externalProductId).toBe('b5b5f1df-1b01-4d2a-9359-00e8c1a41000');
   });
 
   it('cart_selection: produto inexistente -> handled=false (nada casa, segue LLM)', async () => {

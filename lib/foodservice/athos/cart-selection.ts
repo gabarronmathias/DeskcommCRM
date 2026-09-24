@@ -21,7 +21,7 @@ import { resolveAthosCatalogProductByName } from './athos-catalog';
 import type { AthosCartItem } from './order-state';
 
 const CART_SELECTION_RE =
-  /\b(?:(?:quero|qero|preciso|seria|seriam)\s+)?(\d{1,3})\s+(?:de\s+|x\s+)?([\p{L}\p{N}\s\-']{3,80}?)(?=\s*(?:,|\.|;|e\s+\d|por\s+favor|$|pra\s+\d|brigad|$))(?=\s*(?:,|\.|;|e\s+|$|por favor|$|brigad|$))/giu;
+  /\b(?:(?:quero|qero|preciso|seria|seriam)\s+)?(\d{1,3}|um|uma|dois|duas)\s+(?:de\s+|x\s+)?([\p{L}\p{N}\s\-']{3,80}?)(?=\s*(?:,|\.|;|e\s+(?:\d|um|uma|dois|duas)|por\s+favor|$|pra\s+\d|brigad|$))(?=\s*(?:,|\.|;|e\s+|$|por favor|$|brigad|$))/giu;
 
 export interface CartSelectionResult {
   matched: boolean;
@@ -39,7 +39,7 @@ export function detectAndResolveCartSelection(
   for (const match of text.matchAll(CART_SELECTION_RE)) {
     const quantityRaw = match[1] ?? '';
     const nameRaw = match[2] ?? '';
-    const quantity = Number.parseInt(quantityRaw, 10);
+    const quantity = parseQuantity(quantityRaw);
     const name = nameRaw.trim();
     if (!Number.isFinite(quantity) || quantity < 1 || quantity > 99) continue;
     if (name.length < 3) continue;
@@ -50,7 +50,7 @@ export function detectAndResolveCartSelection(
       unresolved.push(name);
       continue;
     }
-    if (product.athosProductId === null || !product.sku) {
+    if (product.athosProductId === null) {
       unresolved.push(name);
       continue;
     }
@@ -63,13 +63,19 @@ export function detectAndResolveCartSelection(
   };
 }
 
+function parseQuantity(raw: string): number {
+  const normalized = raw.toLocaleLowerCase('pt-BR');
+  const words: Record<string, number> = { um: 1, uma: 1, dois: 2, duas: 2 };
+  return words[normalized] ?? Number.parseInt(normalized, 10);
+}
+
 function toCartItem(
   product: AthosCatalogProduct,
   quantity: number,
 ): AthosCartItem {
   return {
     productId: product.id,
-    externalProductId: product.athosProductId ?? '',
+    externalProductId: product.athosProductId,
     sku: product.sku,
     productName: product.name,
     quantity,
