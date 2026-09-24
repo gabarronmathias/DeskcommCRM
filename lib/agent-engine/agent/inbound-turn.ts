@@ -129,6 +129,11 @@ import {
 import { tryHandleAthosOrderBridge } from './athos-bridge-handler';
 import { persistPartySize } from '../../foodservice/athos/runtime-repository';
 import { attachAthosLaunchToMenuLink } from '../../athos/menu-launch';
+import {
+  claimsOrderWasConfirmed,
+  shouldBlockUnverifiedAthosConfirmation,
+  UNVERIFIED_ATHOS_ORDER_REPLY,
+} from '../../foodservice/athos/order-confirmation-guard';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -1481,13 +1486,28 @@ export async function runAgentTurn(
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body }) => {
         let outboundBody = body;
+        if (claimsOrderWasConfirmed(body)) {
+          try {
+            if (await shouldBlockUnverifiedAthosConfirmation(pool, tenantId, leadId, input.conversationId)) {
+              outboundBody = UNVERIFIED_ATHOS_ORDER_REPLY;
+              runLog.warn('athos_order_confirmation_blocked', { reason: 'no_verified_order_for_conversation' });
+            }
+          } catch (error) {
+            // A database failure cannot be interpreted as proof of an order.
+            outboundBody = UNVERIFIED_ATHOS_ORDER_REPLY;
+            runLog.warn('athos_order_confirmation_blocked', {
+              reason: 'verification_failed',
+              error_code: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
+            });
+          }
+        }
         try {
           outboundBody = await attachAthosLaunchToMenuLink({
             pool,
             organizationId: tenantId,
             contactId: leadId,
             conversationId: input.conversationId,
-            body,
+            body: outboundBody,
             requestId: job.id,
           });
         } catch (error) {
