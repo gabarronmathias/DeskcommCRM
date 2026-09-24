@@ -17,6 +17,8 @@ import { createHash } from 'node:crypto';
 
 export interface AthosCatalogProduct {
   id: string;
+  athosProductId: string | null;
+  sku?: string | null;
   categoryId: string;
   name: string;
   slug: string;
@@ -63,7 +65,8 @@ export async function fetchAthosCatalog(
   organizationId: string,
   tenantSlug: string,
 ): Promise<AthosCatalog> {
-  const cacheKey = makeCacheKey(organizationId, tenantSlug);
+  const storeRef = process.env['ATHOS_STORE_REF'] ?? '';
+  const cacheKey = makeCacheKey(organizationId, tenantSlug, storeRef);
   const cached = catalogCache.get(cacheKey);
   if (cached !== undefined && cached.expiresAt > Date.now()) {
     return cached.value;
@@ -79,6 +82,32 @@ export async function fetchAthosCatalog(
   }
   const raw = data as unknown as RawCatalogShape;
   const catalog = normalizeCatalog(tenantSlug, raw);
+  if (storeRef) {
+    const mappings = await pool.query<{
+      athos_product_id: string;
+      athos_code: string | null;
+      display_name: string;
+    }>(
+      `select athos_product_id::text, athos_code, display_name
+         from athos_store_products
+        where organization_id = $1 and store_ref = $2 and is_active = true`,
+      [organizationId, storeRef],
+    );
+    const byName = new Map<string, { athosProductId: string; sku: string | null } | null>();
+    for (const mapping of mappings.rows) {
+      const key = normalize(mapping.display_name);
+      const value = { athosProductId: mapping.athos_product_id, sku: mapping.athos_code };
+      byName.set(key, byName.has(key) ? null : value);
+    }
+    catalog.products = catalog.products.map((product) => {
+      const mapping = byName.get(normalize(product.name));
+      return {
+        ...product,
+        athosProductId: mapping?.athosProductId ?? null,
+        sku: mapping?.sku ?? null,
+      };
+    });
+  }
   catalogCache.set(cacheKey, { value: catalog, expiresAt: Date.now() + CACHE_TTL_MS });
   return catalog;
 }
@@ -106,8 +135,8 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const catalogCache = new Map<string, { value: AthosCatalog; expiresAt: number }>();
 
-function makeCacheKey(orgId: string, slug: string): string {
-  return createHash('sha256').update(`${orgId}|${slug}`).digest('hex').slice(0, 16);
+function makeCacheKey(orgId: string, slug: string, storeRef: string): string {
+  return createHash('sha256').update(`${orgId}|${slug}|${storeRef}`).digest('hex').slice(0, 16);
 }
 
 async function getSupabaseServiceClient(): Promise<SupabaseRpcLike> {
@@ -138,6 +167,7 @@ interface RawCatalogShape {
   }>;
   products: Array<{
     id: string;
+    sku?: string | null;
     category_id: string;
     name: string;
     slug: string;
@@ -174,6 +204,10 @@ function normalizeCatalog(tenantSlug: string, raw: RawCatalogShape): AthosCatalo
     })),
     products: raw.products.map((p) => ({
       id: p.id,
+      athosProductId: null,
+      // `food_products.sku` is CRM-internal; the Athos bridge replaces it
+      // only with the mapped `athos_code` from athos_store_products.
+      sku: null,
       categoryId: p.category_id,
       name: p.name,
       slug: p.slug,

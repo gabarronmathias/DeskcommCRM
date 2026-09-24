@@ -110,8 +110,8 @@ export async function handleFoodserviceOrderTurn(
     return {
       handled: true,
       responseText:
-        `Não consegui confirmar no cardápio: ${cartSelection.unresolvedNames.join(', ')}. ` +
-        'Por isso, ainda não registrei o pedido. Pode me dizer o nome do item como aparece no cardápio?',
+        `Não consegui encontrar ou mapear no catálogo Athos: ${cartSelection.unresolvedNames.join(', ')}. ` +
+        'Por isso, ainda não registrei o pedido. Confira o item no cardápio e tente novamente.',
       partySize: previousSnapshot.partySize,
       cartItems: previousSnapshot.cartItems,
       state: previousSnapshot.state,
@@ -185,10 +185,12 @@ async function handleConfirmation(
   const confirmation = confirmAthosOrder(previousSnapshot, previousSnapshot.confirmationToken, previousSnapshot.partySize);
   let next = confirmation.snapshot;
 
-  const idempotencyKey = computeIdempotencyKeyFromConversation(deps);
+  const idempotencyKey = next.idempotencyKey ?? computeIdempotencyKeyFromConversation(deps);
+  next = { ...next, idempotencyKey };
   const orderInput: AthosOrderWriteInput = {
     organizationId: deps.organizationId,
     contactId: deps.contactId,
+    conversationId: deps.conversationId,
     partySize: next.partySize,
     cartItems: next.cartItems,
     idempotencyKey,
@@ -259,18 +261,21 @@ async function handleCartSelection(
   previousSnapshot: AthosOrderSnapshot,
   selection: { items: ReadonlyArray<AthosCartItem>; unresolvedNames: ReadonlyArray<string> },
 ): Promise<RuntimeWiringOutcome> {
-  const merged = mergeCart(previousSnapshot.cartItems, selection.items);
-  const partySize = previousSnapshot.partySize;
+  const startsNewOrder = previousSnapshot.state === 'completed' || previousSnapshot.state === 'crm_recorded';
+  const baseSnapshot = startsNewOrder
+    ? { ...emptyAthosOrderSnapshot(), partySize: previousSnapshot.partySize }
+    : previousSnapshot;
+  const merged = mergeCart(baseSnapshot.cartItems, selection.items);
+  const partySize = baseSnapshot.partySize;
   let next: AthosOrderSnapshot = {
-    ...previousSnapshot,
+    ...baseSnapshot,
     cartItems: merged,
-    state: previousSnapshot.state === 'completed' || previousSnapshot.state === 'crm_recorded'
-      ? previousSnapshot.state
-      : 'awaiting_confirmation',
-    confirmationToken: previousSnapshot.confirmationToken === ''
+    state: 'awaiting_confirmation',
+    confirmationToken: baseSnapshot.confirmationToken === ''
       ? createConfirmationToken()
-      : previousSnapshot.confirmationToken,
-    attempts: previousSnapshot.attempts,
+      : baseSnapshot.confirmationToken,
+    idempotencyKey: baseSnapshot.idempotencyKey ?? newIdempotencyKey(),
+    attempts: baseSnapshot.attempts,
     updatedAt: new Date().toISOString(),
   };
   next = await persistAthosSnapshot(deps, next);
@@ -319,7 +324,7 @@ export async function runAthosRecovery(deps: RuntimeWiringDeps): Promise<OrderMi
       conversationId: deps.conversationId,
       cartItems: snapshot.cartItems,
       partySize: snapshot.partySize,
-      idempotencyKey: computeIdempotencyKeyFromConversation(deps),
+      idempotencyKey: snapshot.idempotencyKey ?? computeIdempotencyKeyFromConversation(deps),
       athosCreated: {
         externalOrderId: snapshot.externalOrderId,
         externalStatus: 'created',

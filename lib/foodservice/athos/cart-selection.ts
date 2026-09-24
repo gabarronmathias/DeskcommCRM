@@ -50,6 +50,10 @@ export function detectAndResolveCartSelection(
       unresolved.push(name);
       continue;
     }
+    if (product.athosProductId === null || !product.sku) {
+      unresolved.push(name);
+      continue;
+    }
     items.push(toCartItem(product, quantity));
   }
   return {
@@ -64,7 +68,9 @@ function toCartItem(
   quantity: number,
 ): AthosCartItem {
   return {
-    externalProductId: product.id,
+    productId: product.id,
+    externalProductId: product.athosProductId ?? '',
+    sku: product.sku,
     productName: product.name,
     quantity,
     unitPriceCents: product.priceCents,

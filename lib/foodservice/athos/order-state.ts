@@ -56,13 +56,16 @@ export interface AthosOrderSnapshot {
   cartItems: ReadonlyArray<AthosCartItem>;
   externalOrderId: string | null;
   crmOrderId: string | null;
+  idempotencyKey?: string | null;
   updatedAt: string;
   attempts: number;
   lastError: string | null;
 }
 
 export interface AthosCartItem {
+  productId?: string;
   externalProductId: string;
+  sku?: string | null;
   productName: string;
   quantity: number;
   unitPriceCents: number;
@@ -77,6 +80,7 @@ export function emptyAthosOrderSnapshot(): AthosOrderSnapshot {
     cartItems: [],
     externalOrderId: null,
     crmOrderId: null,
+    idempotencyKey: null,
     updatedAt: new Date(0).toISOString(),
     attempts: 0,
     lastError: null,

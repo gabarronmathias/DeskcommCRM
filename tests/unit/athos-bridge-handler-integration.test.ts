@@ -107,9 +107,17 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
     });
   }
 
-  const pool = {
-    query: vi.fn(async (sql: string, params: unknown[] = []) => {
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
       const trimmed = sql.trim().toLowerCase();
+      if (trimmed === 'begin' || trimmed === 'commit' || trimmed === 'rollback' || trimmed.includes('pg_advisory_xact_lock')) {
+        return { rows: [], rowCount: 0 };
+      }
+      if (trimmed.startsWith('select athos_product_id::text') && trimmed.includes('from athos_store_products')) {
+        return {
+          rows: [{ athos_product_id: 'athos-prod-1', athos_code: 'SKU-1', display_name: 'Bolo de Chocolate' }],
+          rowCount: 1,
+        };
+      }
       if (trimmed.includes('from organizations o') && trimmed.includes('food_commerce_settings')) {
         return options.enabledTenantSlug === undefined
           ? { rows: [], rowCount: 0 }
@@ -163,12 +171,12 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
       }
       // idempotency_keys
       if (trimmed.startsWith('insert into idempotency_keys')) {
-        const [orgId, key, provider] = params as [string, string, string];
+        const [orgId, key, endpoint] = params as [string, string, string];
         const existing = idempotencyKeys.rows.find(
           (r) =>
             r['organization_id'] === orgId &&
             r['key'] === key &&
-            r['external_provider'] === provider,
+            r['endpoint'] === endpoint,
         );
         if (existing) {
           return { rows: [], rowCount: 0 };
@@ -177,18 +185,18 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
           id: `ik-${idempotencyKeys.rows.length + 1}`,
           organization_id: orgId,
           key,
-          external_provider: provider,
+          endpoint,
         };
         idempotencyKeys.rows.push(row);
         return { rows: [{ id: row.id }], rowCount: 1 };
       }
       if (trimmed.startsWith('select id') && trimmed.includes('from idempotency_keys')) {
-        const [orgId, key, provider] = params as [string, string, string];
+        const [orgId, key, endpoint] = params as [string, string, string];
         const found = idempotencyKeys.rows.find(
           (r) =>
             r['organization_id'] === orgId &&
             r['key'] === key &&
-            r['external_provider'] === provider,
+            r['endpoint'] === endpoint,
         );
         return { rows: found ? [{ id: found.id }] : [], rowCount: found ? 1 : 0 };
       }
@@ -205,45 +213,33 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
       }
       // orders insert
       if (trimmed.startsWith('insert into orders')) {
-        const [
-          orderId,
-          orgId,
-          contactId,
-          provider,
-          externalId,
-          externalStatus,
-          payloadJson,
-          status,
-          currency,
-          totalCents,
-          conversationId,
-          reservationId,
-        ] = params as [string, string, string, string, string, string, string, string, string, number, string, string];
+        const [orderId, orgId, contactId, provider, externalId, currency, totalCents, payloadJson] =
+          params as [string, string, string, string, string, string, number, string];
         const row: Row = {
           id: orderId,
           organization_id: orgId,
           contact_id: contactId,
           external_provider: provider,
           external_id: externalId,
-          external_status: externalStatus,
-          external_payload: payloadJson,
-          status,
+          payload: JSON.parse(payloadJson) as Record<string, unknown>,
+          status: 'pending',
           currency,
           total_cents: totalCents,
-          conversation_id: conversationId,
-          idempotency_key_id: reservationId,
         };
         orders.rows.push(row);
         return { rows: [{ id: orderId }], rowCount: 1 };
       }
       // food_order_items insert
       if (trimmed.startsWith('insert into food_order_items')) {
-        const [id, orgId, orderId, productId, productName, unitPriceCents, quantity, lineTotalCents, modifiers] = params as [
+        const [id, orgId, orderId, productId, externalProductId, sku, productName, unitPriceCents, quantity, modifiersDelta, modifiers] = params as [
           string,
           string,
           string,
           string,
           string,
+          string | null,
+          string,
+          number,
           number,
           number,
           number,
@@ -254,10 +250,12 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
           organization_id: orgId,
           order_id: orderId,
           product_id: productId,
+          external_product_id: externalProductId,
+          external_sku: sku,
           product_name_snapshot: productName,
           unit_price_cents: unitPriceCents,
           quantity,
-          line_total_cents: lineTotalCents,
+          line_total_cents: (unitPriceCents + modifiersDelta) * quantity,
           selected_modifiers: modifiers,
         };
         foodOrderItems.rows.push(row);
@@ -265,20 +263,18 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
       }
       // select food_order_items
       if (trimmed.startsWith('select id') && trimmed.includes('from food_order_items')) {
-        const [orderId, orgId] = params as [string, string];
+        const [orgId, orderId] = params as [string, string];
         const found = foodOrderItems.rows.filter(
           (r) => r['order_id'] === orderId && r['organization_id'] === orgId,
         );
         return { rows: found.map((r) => ({ id: r.id })), rowCount: found.length };
       }
-      // select order by idempotency_key join
-      if (trimmed.startsWith('select id, organization_id, external_payload')) {
+      // select order by idempotency key embedded in current orders.payload
+      if (trimmed.startsWith('select id, organization_id, payload')) {
         const [orgId, key] = params as [string, string];
         const order = orders.rows.find((o) => {
-          const ik = idempotencyKeys.rows.find(
-            (k) => k['id'] === o['idempotency_key_id'] && k['key'] === key,
-          );
-          return o['organization_id'] === orgId && ik !== undefined;
+          const payload = o['payload'] as Record<string, unknown> | undefined;
+          return o['organization_id'] === orgId && payload?.['athos_idempotency_key'] === key;
         });
         if (order) {
           return {
@@ -286,7 +282,7 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
               {
                 id: order.id,
                 organization_id: order['organization_id'],
-                external_payload: order['external_payload'],
+                payload: order['payload'],
               },
             ],
             rowCount: 1,
@@ -319,7 +315,13 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
       }
       // fallback
       throw new Error(`mock pool: SQL nao tratada -> ${sql.slice(0, 80)}`);
-    }),
+    });
+  const pool = {
+    query,
+    connect: vi.fn(async () => ({
+      query,
+      release: vi.fn(),
+    })),
   } as unknown as pg.Pool;
 
   return pool;
@@ -372,6 +374,7 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
   beforeEach(() => {
     clearAthosAdapter();
     clearAthosCatalogCache();
+    process.env['ATHOS_STORE_REF'] = 'store-1';
   });
 
   it('worker/runtime resolver: tenant desabilitado -> null (full pipeline)', async () => {
