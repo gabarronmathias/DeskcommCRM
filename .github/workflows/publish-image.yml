@@ -14,7 +14,8 @@ name: Publicar imagem Docker (GHCR)
 on:
   push:
     tags: ["v*"]
-    branches: ["main"]
+    # Isolated Athos homologation tag; leaves latest and stable untouched.
+    branches: ["main", "release/athos-homologation-ready"]
   release:
     types: [published]
   # Em PR a imagem é CONSTRUÍDA e não publicada. Sem isto, nada no PR consegue
