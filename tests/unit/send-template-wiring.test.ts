@@ -107,7 +107,7 @@ describe("send_template — o execute não pode virar rota de fuga dos guardrail
     // (template é cobrado por entrega) e de CONFORMIDADE (fora da janela, só template).
     // Mandar só o corpo renderizado gravaria `type: 'text'` — compila, e mente no banco.
     const corpo = corpoDoExecute();
-    expect(corpo).toMatch(/template:\s*\{\s*name:\s*template_name,\s*language,\s*values\s*\}/);
+    expect(corpo).toMatch(/sendThroughChannel\(finalBody,\s*\{\s*name:\s*template_name,\s*language,\s*values\s*\}\)/);
   });
 
   it("'existe' não é 'pode disparar': status não-APPROVED é recusado ANTES da Meta", () => {

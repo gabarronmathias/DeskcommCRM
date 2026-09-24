@@ -16376,6 +16376,307 @@ grant execute on function public.fn_customers_by_purchase_recency(
 -- orders_external_provider_check; nao reconstruir constraints no apendice.
 
 
+-- ---- 20260923120000_0179_athos_order_event_projection ----
+alter table public.tenant_integrations
+  add column if not exists partner_api_token_id uuid references public.api_tokens(id) on delete set null;
+alter table public.orders add column if not exists athos_event_id text;
+alter table public.food_order_items
+  add column if not exists external_product_id text,
+  add column if not exists external_sku text;
+create table if not exists public.partner_launches (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  provider text not null default 'athos' check (provider = 'athos'),
+  contact_id uuid not null,
+  conversation_id uuid,
+  store_ref text not null,
+  created_by uuid references auth.users(id) on delete set null,
+  expires_at timestamptz not null,
+  accessed_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint partner_launches_contact_fk foreign key (contact_id)
+    references public.contacts(id) on delete cascade,
+  constraint partner_launches_conversation_fk foreign key (conversation_id)
+    references public.conversations(id) on delete restrict,
+  constraint partner_launches_expiry_check check (expires_at > created_at)
+);
+create index if not exists partner_launches_org_provider_idx
+  on public.partner_launches (organization_id, provider, created_at desc);
+alter table public.partner_launches enable row level security;
+revoke all on public.partner_launches from anon, authenticated;
+grant all on public.partner_launches to service_role;
+create or replace function public.fn_apply_athos_order_event(
+  p_organization_id uuid, p_contact_id uuid, p_conversation_id uuid, p_event jsonb
+) returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_order jsonb := p_event -> 'order';
+  v_external_id text := v_order ->> 'id';
+  v_event_id text := p_event ->> 'event_id';
+  v_status text := v_order ->> 'status';
+  v_remote_updated timestamptz := coalesce(nullif(v_order ->> 'updated_at', '')::timestamptz, nullif(p_event ->> 'occurred_at', '')::timestamptz, now());
+  v_ordered_at timestamptz := coalesce(nullif(v_order ->> 'created_at', '')::timestamptz, v_remote_updated);
+  v_crm_status text;
+  v_order_id uuid;
+  v_applied boolean;
+  v_existing_event_id text;
+  v_item jsonb;
+begin
+  if p_organization_id is null or p_contact_id is null or v_external_id is null or v_event_id is null then
+    raise exception using errcode = '22023', message = 'invalid_athos_order_event';
+  end if;
+  if not exists (select 1 from contacts where id = p_contact_id and organization_id = p_organization_id) then
+    raise exception using errcode = '23503', message = 'athos_contact_not_in_tenant';
+  end if;
+  if p_conversation_id is not null and not exists (
+    select 1 from conversations where id = p_conversation_id and organization_id = p_organization_id
+  ) then
+    raise exception using errcode = '23503', message = 'athos_conversation_not_in_tenant';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_organization_id::text || ':athos:' || v_external_id, 0));
+  select id, athos_event_id into v_order_id, v_existing_event_id from orders
+    where organization_id = p_organization_id and external_provider = 'athos' and external_id = v_external_id for update;
+  if v_order_id is not null and v_existing_event_id = v_event_id then
+    return jsonb_build_object('order_id', v_order_id, 'duplicate', true);
+  end if;
+  v_order_id := null;
+  v_crm_status := case v_status when 'cancelled' then 'cancelled' when 'completed' then 'fulfilled' else 'pending' end;
+  insert into orders (organization_id, external_id, external_provider, customer_external_id, contact_id,
+    status, total_cents, currency, payload, ordered_at, updated_at_remote, athos_event_id)
+  values (p_organization_id, v_external_id, 'athos', nullif(p_event #>> '{customer,athos_customer_id}', ''), p_contact_id,
+    v_crm_status, (v_order ->> 'total_cents')::bigint, upper(coalesce(nullif(v_order ->> 'currency', ''), 'BRL')),
+    jsonb_build_object('source','athos','athos_status',v_status,'event',p_event,'correlation',p_event -> 'correlation'),
+    v_ordered_at, v_remote_updated, v_event_id)
+  on conflict (organization_id, external_provider, external_id) do update set
+    customer_external_id=excluded.customer_external_id, contact_id=excluded.contact_id, status=excluded.status,
+    total_cents=excluded.total_cents, currency=excluded.currency, payload=excluded.payload,
+    updated_at_remote=excluded.updated_at_remote, athos_event_id=excluded.athos_event_id, updated_at=now()
+  where orders.updated_at_remote is null or excluded.updated_at_remote >= orders.updated_at_remote
+  returning id into v_order_id;
+  v_applied := v_order_id is not null;
+  if not v_applied then
+    select id into v_order_id from orders where organization_id=p_organization_id and external_provider='athos' and external_id=v_external_id;
+  else
+    delete from food_order_items where organization_id=p_organization_id and order_id=v_order_id;
+    for v_item in select value from jsonb_array_elements(v_order -> 'items') loop
+      insert into food_order_items (organization_id, order_id, product_id, external_product_id, external_sku,
+        product_name_snapshot, unit_price_cents, quantity, line_total_cents, selected_modifiers)
+      values (p_organization_id, v_order_id, null, v_item ->> 'product_id', v_item ->> 'sku', v_item ->> 'name',
+        (v_item ->> 'unit_price_cents')::bigint, (v_item ->> 'quantity')::integer,
+        (v_item ->> 'line_total_cents')::bigint, coalesce(v_item -> 'modifiers', '[]'::jsonb));
+    end loop;
+  end if;
+  return jsonb_build_object('order_id', v_order_id, 'duplicate', not v_applied);
+end;
+$$;
+revoke all on function public.fn_apply_athos_order_event(uuid, uuid, uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.fn_apply_athos_order_event(uuid, uuid, uuid, jsonb) to service_role;
+
+-- ---- 20260923123000_0180_athos_launch_fk_install_fix ----
+alter table public.partner_launches
+  drop constraint if exists partner_launches_contact_org_fk,
+  drop constraint if exists partner_launches_conversation_org_fk;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.partner_launches'::regclass
+      and conname = 'partner_launches_contact_fk'
+  ) then
+    alter table public.partner_launches
+      add constraint partner_launches_contact_fk
+      foreign key (contact_id) references public.contacts(id) on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.partner_launches'::regclass
+      and conname = 'partner_launches_conversation_fk'
+  ) then
+    alter table public.partner_launches
+      add constraint partner_launches_conversation_fk
+      foreign key (conversation_id) references public.conversations(id) on delete restrict;
+  end if;
+end;
+$$;
+
+-- ---- 20260904000000_prospecting_campaign_filter ----
+drop function if exists public.fn_claim_prospecting_outbound(uuid, integer);
+create or replace function public.fn_claim_prospecting_outbound(
+  p_org uuid,
+  p_limit integer default 1,
+  p_campaign text default null
+)
+returns setof public.prospecting_outbound_queue
+language sql
+volatile
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+  with candidates as (
+    select q.id
+      from public.prospecting_outbound_queue q
+     where q.organization_id = p_org
+       and q.status = 'pending'
+       and q.scheduled_for <= now()
+       and (p_campaign is null or q.metadata->>'campaign' = p_campaign)
+     order by q.scheduled_for, q.created_at
+     limit greatest(1, least(coalesce(p_limit, 1), 20))
+     for update skip locked
+  )
+  update public.prospecting_outbound_queue q
+     set status = 'processing', claimed_at = now(),
+         attempts = q.attempts + 1, updated_at = now()
+   where q.id in (select id from candidates)
+  returning q.*;
+$$;
+revoke execute on function public.fn_claim_prospecting_outbound(uuid, integer, text)
+  from public, anon, authenticated;
+grant execute on function public.fn_claim_prospecting_outbound(uuid, integer, text)
+  to service_role;
+
+create or replace function public.fn_cancel_prospecting_followup_on_inbound()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+  if new.direction = 'inbound' then
+    update public.prospecting_outbound_queue
+       set status = 'cancelled', error_code = 'replied',
+           error_message = null, updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.contact_id
+       and kind = 'followup'
+       and status in ('pending', 'processing');
+
+    update public.crm_leads
+       set custom_fields = jsonb_set(
+             jsonb_set(coalesce(custom_fields, '{}'::jsonb),
+                       '{last_reply_at}',
+                       to_jsonb(coalesce(new.sent_at, now())), true),
+             '{next_followup_at}', 'null'::jsonb, true
+           ),
+           last_activity_at = coalesce(new.sent_at, now()),
+           updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.contact_id
+       and source in ('google_places', 'manual_curated');
+
+    insert into public.crm_lead_activities
+      (organization_id, lead_id, contact_id, source_module, source_id, type, payload, metadata, performed_at)
+    select l.organization_id, l.id, l.contact_id, 'prospecting', new.id,
+           'prospecting_reply_received',
+           jsonb_build_object('conversation_id', new.conversation_id, 'message_id', new.id),
+           jsonb_build_object('source', l.source, 'outcome', 'followup_cancelled'),
+           coalesce(new.sent_at, now())
+      from public.crm_leads l
+     where l.organization_id = new.organization_id
+       and l.contact_id = new.contact_id
+       and l.source in ('google_places', 'manual_curated');
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.fn_apply_prospecting_opt_out()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+  if new.is_blocked and not old.is_blocked and exists (
+    select 1 from public.crm_leads l
+     where l.organization_id = new.organization_id
+       and l.contact_id = new.id
+       and l.source in ('google_places', 'manual_curated')
+  ) then
+    update public.contacts
+       set tags = array(select distinct x from unnest(coalesce(tags, '{}'::text[]) || array['nao-contatar']) x),
+           updated_at = now()
+     where id = new.id and organization_id = new.organization_id;
+
+    update public.crm_leads
+       set tags = array(select distinct x from unnest(coalesce(tags, '{}'::text[]) || array['nao-contatar']) x),
+           custom_fields = jsonb_set(
+             jsonb_set(coalesce(custom_fields, '{}'::jsonb),
+                       '{opt_out}', 'true'::jsonb, true),
+             '{next_followup_at}', 'null'::jsonb, true
+           ),
+           updated_at = now()
+     where organization_id = new.organization_id and contact_id = new.id;
+
+    update public.prospecting_outbound_queue
+       set status = 'cancelled', error_code = 'opt_out',
+           error_message = null, updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.id
+       and status in ('pending', 'processing');
+
+    update public.followup_enrollments
+       set status = 'cancelled', outcome = 'opted_out',
+           cancel_reason = 'contact_is_blocked',
+           next_eval_at = null, claimed_until = null,
+           completed_at = now(), updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.id
+       and status in ('active', 'waiting_reply', 'paused_handoff', 'paused_manual');
+
+    insert into public.crm_lead_activities
+      (organization_id, lead_id, contact_id, source_module, type, payload, metadata)
+    select l.organization_id, l.id, l.contact_id, 'prospecting', 'prospecting_opt_out',
+           jsonb_build_object('reason', 'explicit_do_not_contact'),
+           jsonb_build_object('source', l.source, 'outcome', 'automations_cancelled')
+      from public.crm_leads l
+     where l.organization_id = new.organization_id
+       and l.contact_id = new.id
+       and l.source in ('google_places', 'manual_curated');
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_cancel_prospecting_followup_on_inbound()
+  from public, anon, authenticated;
+revoke execute on function public.fn_apply_prospecting_opt_out()
+  from public, anon, authenticated;
+grant execute on function public.fn_cancel_prospecting_followup_on_inbound(),
+  public.fn_apply_prospecting_opt_out() to service_role;
+
+-- ---- 20260905173000_command_center_controls ----
+create table if not exists public.command_center_state (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  prospecting_paused boolean not null default false,
+  outbound_paused boolean not null default false,
+  emergency_stop boolean not null default false,
+  paused_by uuid references auth.users(id),
+  paused_reason text,
+  updated_at timestamptz not null default now()
+);
+comment on table public.command_center_state is
+  'Estado operacional da GB Command Center. 1 linha por org. Flags de pausa: se true, dispatcher no-op.';
+alter table public.command_center_state enable row level security;
+drop policy if exists command_center_state_select on public.command_center_state;
+create policy command_center_state_select on public.command_center_state
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+drop policy if exists command_center_state_update on public.command_center_state;
+create policy command_center_state_update on public.command_center_state
+  for update using (
+    public.fn_role_at_least(organization_id, 'manager')
+    or public.fn_is_platform_admin()
+  ) with check (
+    public.fn_role_at_least(organization_id, 'manager')
+    or public.fn_is_platform_admin()
+  );
+insert into public.command_center_state (organization_id)
+select id from public.organizations where slug = 'gabarron-mathias'
+on conflict (organization_id) do nothing;
+
 -- ---- VARREDURA anon: fechamento auto-curativo do baseline ----
 -- O dump concede EXECUTE em funções novas a anon por default. Como o baseline
 -- cresce por apêndice, este fechamento precisa permanecer depois de TODA DDL

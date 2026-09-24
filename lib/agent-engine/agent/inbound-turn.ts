@@ -128,6 +128,7 @@ import {
 } from './foodservice-sales-fast-path';
 import { tryHandleAthosOrderBridge } from './athos-bridge-handler';
 import { persistPartySize } from '../../foodservice/athos/runtime-repository';
+import { attachAthosLaunchToMenuLink } from '../../athos/menu-launch';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -1479,6 +1480,22 @@ export async function runAgentTurn(
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body }) => {
+        let outboundBody = body;
+        try {
+          outboundBody = await attachAthosLaunchToMenuLink({
+            pool,
+            organizationId: tenantId,
+            contactId: leadId,
+            conversationId: input.conversationId,
+            body,
+            requestId: job.id,
+          });
+        } catch (error) {
+          runLog.warn('link de cardápio Athos não correlacionado; envio bloqueado', {
+            error_code: error instanceof Error ? error.message.slice(0, 80) : 'athos_launch_create_failed',
+          });
+          return { ok: false, error: { code: 'athos_menu_launch_failed', message: 'Não consegui preparar o link do cardápio agora. Tente novamente.' } };
+        }
         // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
         // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
         // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
@@ -1508,7 +1525,7 @@ export async function runAgentTurn(
             leadId,
             jobId: job.id,
             channelSessionId: input.channelSessionId,
-            body,
+            body: outboundBody,
             optedOutThisTurn,
             // ponytail: channel_sessions.daily_message_limit do CRM ainda não é lido
             // no runtime — null cai nos degraus de warm-up (conservadores). Injetar
@@ -2566,8 +2583,6 @@ export async function tryFoodserviceSalesFastPath(
   ctx: { workerId: string },
   payload: z.infer<typeof inboundTurnPayloadSchema>,
 ): Promise<FoodserviceFastPathOutcome> {
-  if (deps.knobs.foodserviceSalesFastPath !== true) return 'full_pipeline';
-
   const startedAt = Date.now();
   const dedupeHash = createHash('sha256')
     .update(`${job.organization_id}:${payload.inbound_message_id}:assistant_primary`)
@@ -2738,6 +2753,15 @@ export async function tryFoodserviceSalesFastPath(
         emit(true);
         return 'full_pipeline';
       }
+      emit(true);
+      return 'full_pipeline';
+    }
+
+    // O bridge transacional precisa rodar mesmo quando a conversa comercial
+    // determinística está desligada. Esse knob só controla o fast path leve;
+    // não pode liberar pedidos para o LLM confirmar sem gravação na Athos/CRM.
+    if (deps.knobs.foodserviceSalesFastPath !== true) {
+      reason = 'commercial_fast_path_disabled';
       emit(true);
       return 'full_pipeline';
     }

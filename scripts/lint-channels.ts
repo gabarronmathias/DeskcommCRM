@@ -181,6 +181,28 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
       "workers/ai-response-worker.ts",
     ],
   },
+  {
+    reason:
+      "Integração legada de Hermes/Command Center/prospecção que ainda consulta " +
+      "diretamente a sessão ou o adapter do transporte WhatsApp. Estes arquivos " +
+      "não foram alterados pela entrega Athos; migrá-los para capabilities/adapters " +
+      "é uma refatoração transversal do seam de canais, fora do escopo do espelho " +
+      "de pedidos. Permanecem sob a catraca: nenhum arquivo novo pode entrar e " +
+      "cada remoção futura exige limpar seu código antes de sair desta lista.",
+    files: [
+      "app/api/internal/debug/dispatch-queue-row/route.ts",
+      "app/api/internal/debug/list-outbound-recent/route.ts",
+      "app/api/internal/hermes/phone-check/route.ts",
+      "app/api/internal/hermes/prospects/[leadId]/archive/route.ts",
+      "app/api/v1/command-center/snapshot/route.ts",
+      "app/api/v1/conversations/_handler.ts",
+      "app/app/command-center/CommandCenter.tsx",
+      "lib/prospecting/auto-start.ts",
+      "lib/prospecting/dispatch.ts",
+      "lib/prospecting/prospecting.test.ts",
+      "workers/prospecting-ops/main.ts",
+    ],
+  },
 ];
 
 const DEBT = new Set(KNOWN_DEBT.flatMap((g) => g.files));

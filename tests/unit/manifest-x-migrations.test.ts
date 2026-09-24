@@ -42,7 +42,7 @@ const MANIFEST = join(DIR, "MANIFEST.md");
  * era registrada. Prender o formato do timestamp mediria a FORMATAÇÃO da tabela;
  * o que importa é se a migration está registrada.
  */
-const LINHA = /^\| [^|]+ \| `(\d{4,5}_[a-z0-9_]+)`/;
+const LINHA = /^\| [^|]+ \| `([a-z0-9_]+)`/;
 
 /**
  * As duas divergências que já existiam antes desta catraca, cada uma com o

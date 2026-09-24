@@ -5576,6 +5576,7 @@ export type Database = {
           oauth_access_token_encrypted: string
           oauth_refresh_token_encrypted: string | null
           organization_id: string
+          partner_api_token_id: string | null
           provider: string
           scopes: string[]
           status: string
@@ -5595,6 +5596,7 @@ export type Database = {
           oauth_access_token_encrypted: string
           oauth_refresh_token_encrypted?: string | null
           organization_id: string
+          partner_api_token_id?: string | null
           provider: string
           scopes?: string[]
           status?: string
@@ -5614,6 +5616,7 @@ export type Database = {
           oauth_access_token_encrypted?: string
           oauth_refresh_token_encrypted?: string | null
           organization_id?: string
+          partner_api_token_id?: string | null
           provider?: string
           scopes?: string[]
           status?: string
@@ -5631,6 +5634,63 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_launches: {
+        Row: {
+          accessed_at: string | null
+          contact_id: string
+          conversation_id: string | null
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          id: string
+          metadata: Json
+          organization_id: string
+          provider: string
+          store_ref: string
+        }
+        Insert: {
+          accessed_at?: string | null
+          contact_id: string
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          id?: string
+          metadata?: Json
+          organization_id: string
+          provider?: string
+          store_ref: string
+        }
+        Update: {
+          accessed_at?: string | null
+          contact_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          id?: string
+          metadata?: Json
+          organization_id?: string
+          provider?: string
+          store_ref?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_launches_contact_org_fk"
+            columns: ["contact_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "partner_launches_conversation_org_fk"
+            columns: ["conversation_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id", "organization_id"]
           },
         ]
       }

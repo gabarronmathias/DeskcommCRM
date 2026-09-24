@@ -366,7 +366,8 @@ describe("GET /api/v1/customers/[phone]/order-history — audit", () => {
       error: null,
     };
     await call(PHONE_E164);
-    expect(auditCalls[0]!.resourceId).toBe(customerId);
+    expect(auditCalls[0]!.resourceId).toBeNull();
+    expect(auditCalls[0]!.metadata).toMatchObject({ customer_id: customerId });
   });
 });
 

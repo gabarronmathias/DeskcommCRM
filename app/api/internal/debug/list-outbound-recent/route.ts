@@ -17,6 +17,7 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { isAuthorizedProspectingCron } from "@/lib/prospecting/cron-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,8 +41,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     .limit(limit);
   if (error) return fail("internal_error", error.message, 500, { requestId });
   const contactIds = Array.from(new Set((msgs ?? []).map((m) => m.contact_id).filter(Boolean)));
-  let contactById = new Map();
-  let leadByContactId = new Map();
+  const contactById = new Map();
+  const leadByContactId = new Map();
   if (contactIds.length > 0) {
     const { data: contacts } = await admin.from("contacts").select("id, phone_number, display_name, push_name").in("id", contactIds);
     for (const c of contacts ?? []) contactById.set(c.id, c);
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const cf = (l?.custom_fields ?? {}) as Record<string, unknown>;
     return {
       at: m.created_at,
-      contact_name: c?.push_name || c?.display_name || null,
+      contact_name: c ? rotuloDoContato(c) : null,
       contact_phone: c?.phone_number || null,
       lead_id: l?.id ?? null,
       lead_title: l?.title ?? null,

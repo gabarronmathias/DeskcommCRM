@@ -14,7 +14,7 @@
  * valendo — inbox filtrado, às vezes vazio, sem nada na tela dizendo por quê.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 
 import { InboxFilters, visibleInboxTabs, type InboxFiltersValue } from "@/components/inbox/InboxFilters";
 import type * as CanaisModule from "@/hooks/channels/useChannelSessions";
@@ -101,23 +101,25 @@ describe("InboxFilters render — 3 visões + escopo", () => {
   it("agent em modo own*: mostra Minhas e Fila, esconde Todas", () => {
     setOrg("agent", "own_and_unassigned");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Minhas/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Fila/ })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /Todas/ })).not.toBeInTheDocument();
+    const views = screen.getAllByRole("tablist")[0]!;
+    expect(within(views).getByRole("tab", { name: /Minhas/ })).toBeInTheDocument();
+    expect(within(views).getByRole("tab", { name: /Fila/ })).toBeInTheDocument();
+    expect(within(views).queryByRole("tab", { name: /^Todas$/ })).not.toBeInTheDocument();
   });
 
   it("manager: mostra Todas", () => {
     setOrg("manager", "own_and_unassigned");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Todas/ })).toBeInTheDocument();
+    expect(within(screen.getAllByRole("tablist")[0]!).getByRole("tab", { name: /^Todas/ })).toBeInTheDocument();
   });
 
   it("contagens por visão são renderizadas (Fila=3, Minhas=2)", () => {
     setOrg("manager", "all");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Fila/ })).toHaveTextContent("3");
-    expect(screen.getByRole("tab", { name: /Minhas/ })).toHaveTextContent("2");
-    expect(screen.getByRole("tab", { name: /Todas/ })).toHaveTextContent("5");
+    const views = within(screen.getAllByRole("tablist")[0]!);
+    expect(views.getByRole("tab", { name: /Fila/ })).toHaveTextContent("3");
+    expect(views.getByRole("tab", { name: /Minhas/ })).toHaveTextContent("2");
+    expect(views.getByRole("tab", { name: /^Todas/ })).toHaveTextContent("5");
   });
 });
 

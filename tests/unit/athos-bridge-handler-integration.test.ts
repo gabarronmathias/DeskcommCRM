@@ -41,7 +41,7 @@ vi.mock('../../lib/supabase/admin', () => ({
       data: {
         tenant: {
           slug: 'tortasdocalmon',
-          display_name: 'Tortas do Calmon',
+          display_name: 'Sandbox Food',
           currency: 'BRL',
           free_shipping_threshold_cents: null,
           whatsapp_number: null,
@@ -299,7 +299,7 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
         return {
           rows: [
             {
-              tenant: { id: 'tenant-1', slug: 'tortasdocalmon', name: 'Tortas do Calmon' },
+              tenant: { id: 'tenant-1', slug: 'sandbox-food', name: 'Sandbox Food' },
               categories: [{ id: 'cat-bolos', name: 'Bolos' }],
               products: [
                 {
@@ -539,7 +539,6 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     );
 
     // 5x confirmacao
-    let crmOrderId = '';
     for (let i = 0; i < 5; i++) {
       const out = await handleFoodserviceOrderTurn(
         {
