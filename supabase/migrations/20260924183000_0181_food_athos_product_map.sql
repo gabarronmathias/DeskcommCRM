@@ -47,6 +47,6 @@ SELECT
   m.last_synced_at,
   (SELECT fp.name FROM public.food_products fp
     WHERE fp.organization_id = m.organization_id
-      AND fp.external_product_id = m.external_product_id
+      AND fp.slug = m.external_product_id
     LIMIT 1) AS internal_product_name
 FROM public.food_athos_product_map m;
