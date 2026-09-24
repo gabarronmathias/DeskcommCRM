@@ -119,7 +119,7 @@ export async function handleFoodserviceOrderTurn(
     };
   }
   if (cartSelection.matched) {
-    return handleCartSelection(deps, previousSnapshot, cartSelection);
+    return handleCartSelection(deps, previousSnapshot, cartSelection, inboundText);
   }
 
   if (
@@ -154,6 +154,8 @@ export async function handleFoodserviceOrderTurn(
 
 const ORDER_OR_MENU_SIGNAL_RE =
   /\b(?:card[aá]pio|menu|pedido|pedir|encomenda|comprar|quero|preciso|tortas?|bolos?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar|amanh[aã]|hoje)\b/i;
+const NEW_ORDER_INTENT_RE =
+  /\b(?:quero\s+fazer\s+(?:um\s+)?pedido|fazer\s+(?:um\s+)?pedido|novo\s+pedido|iniciar\s+(?:um\s+)?pedido|come[cç]ar\s+(?:um\s+)?pedido)\b/i;
 
 async function handleConfirmation(
   deps: RuntimeWiringDeps,
@@ -260,8 +262,12 @@ async function handleCartSelection(
   deps: RuntimeWiringDeps,
   previousSnapshot: AthosOrderSnapshot,
   selection: { items: ReadonlyArray<AthosCartItem>; unresolvedNames: ReadonlyArray<string> },
+  inboundText: string,
 ): Promise<RuntimeWiringOutcome> {
-  const startsNewOrder = previousSnapshot.state === 'completed' || previousSnapshot.state === 'crm_recorded';
+  const startsNewOrder =
+    previousSnapshot.state === 'completed' ||
+    previousSnapshot.state === 'crm_recorded' ||
+    NEW_ORDER_INTENT_RE.test(inboundText);
   const baseSnapshot = startsNewOrder
     ? { ...emptyAthosOrderSnapshot(), partySize: previousSnapshot.partySize }
     : previousSnapshot;

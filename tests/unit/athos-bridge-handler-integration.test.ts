@@ -90,6 +90,7 @@ class MockTable {
 interface MockPoolOptions {
   enabledTenantSlug?: string;
   contactSourceMetadata?: Record<string, unknown>;
+  conversationMetadata?: Record<string, unknown>;
 }
 
 function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
@@ -104,6 +105,13 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
       id: baseDeps.contactId,
       organization_id: baseDeps.organizationId,
       source_metadata: structuredClone(options.contactSourceMetadata),
+    });
+  }
+  if (options.conversationMetadata !== undefined) {
+    conversations.rows.push({
+      id: baseDeps.conversationId,
+      organization_id: baseDeps.organizationId,
+      metadata: structuredClone(options.conversationMetadata),
     });
   }
 
@@ -391,6 +399,22 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(out).toBeNull();
   });
 
+  it('falha fechada quando há intenção de pedido mas nenhum item é reconhecido', async () => {
+    const pool = makeMockPool({ enabledTenantSlug: baseDeps.tenantSlug });
+    const out = await tryHandleAthosOrderBridge({
+      pool,
+      organizationId: baseDeps.organizationId,
+      contactId: baseDeps.contactId,
+      conversationId: baseDeps.conversationId,
+      text: 'quero uma torta',
+      log: makeLog(),
+    });
+
+    expect(out?.reason).toBe('athos_bridge_failed_closed');
+    expect(out?.outcome.errorCode).toBe('athos_order_selection_unresolved');
+    expect(out?.responseText).toContain('ainda não está confirmado');
+  });
+
   it('worker/runtime resolver: org habilitada resolve slug e trata cart + confirmation sem injecao manual', async () => {
     const pool = makeMockPool({ enabledTenantSlug: 'tenant-runtime' });
     const log = makeLog();
@@ -451,6 +475,52 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(out.cartItems[0]?.productName).toBe('Bolo de Chocolate');
     expect(out.state).toBe('awaiting_confirmation');
     expect(adapter.calls).toBe(0);
+  });
+
+  it('cart_selection: aceita “1x” e inicia pedido novo sem misturar carrinho anterior', async () => {
+    const pool = makeMockPool({
+      enabledTenantSlug: baseDeps.tenantSlug,
+      conversationMetadata: {
+        athos_order: {
+          state: 'awaiting_confirmation',
+          confirmationToken: 'old-confirmation',
+          partySize: null,
+          cartItems: [
+            {
+              externalProductId: 'athos-prod-1',
+              sku: 'SKU-1',
+              productName: 'Bolo de Chocolate',
+              quantity: 2,
+              unitPriceCents: 12000,
+              modifiers: [],
+            },
+          ],
+          externalOrderId: null,
+          crmOrderId: null,
+          idempotencyKey: 'old-idempotency-key',
+          updatedAt: new Date().toISOString(),
+          attempts: 0,
+          lastError: null,
+        },
+      },
+    });
+
+    const out = await handleFoodserviceOrderTurn(
+      {
+        pool,
+        organizationId: baseDeps.organizationId,
+        contactId: baseDeps.contactId,
+        conversationId: baseDeps.conversationId,
+        tenantSlug: baseDeps.tenantSlug,
+      },
+      'Quero fazer um pedido, quero 1x Bolo de Chocolate',
+    );
+
+    expect(out.handled).toBe(true);
+    expect(out.cartItems).toHaveLength(1);
+    expect(out.cartItems[0]?.quantity).toBe(1);
+    expect(out.state).toBe('awaiting_confirmation');
+    expect(out.responseText).toContain('Total parcial: R$ 120.00');
   });
 
   it('cart_selection: produto inexistente -> handled=false (nada casa, segue LLM)', async () => {

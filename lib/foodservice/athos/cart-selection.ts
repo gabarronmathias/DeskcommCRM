@@ -21,7 +21,7 @@ import { resolveAthosCatalogProductByName } from './athos-catalog';
 import type { AthosCartItem } from './order-state';
 
 const CART_SELECTION_RE =
-  /\b(?:(?:quero|qero|preciso|seria|seriam)\s+)?(\d{1,3})\s+(?:de\s+|x\s+)?([\p{L}\p{N}\s\-']{3,80}?)(?=\s*(?:,|\.|;|e\s+\d|por\s+favor|$|pra\s+\d|brigad|$))(?=\s*(?:,|\.|;|e\s+|$|por favor|$|brigad|$))/giu;
+  /\b(?:(?:quero|qero|preciso|seria|seriam)\s+)?(\d{1,3})\s*(?:x\s*|de\s+)?([\p{L}\p{N}\s\-']{3,80}?)(?=\s*(?:,|\.|;|e\s+\d|por\s+favor|$|pra\s+\d|brigad|$))(?=\s*(?:,|\.|;|e\s+|$|por favor|$|brigad|$))/giu;
 
 export interface CartSelectionResult {
   matched: boolean;
