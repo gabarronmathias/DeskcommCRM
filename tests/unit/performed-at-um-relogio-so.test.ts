@@ -49,22 +49,17 @@ const MARCAS = ["crm_lead_activities", "emitLeadActivity", "buildLeadActivityRow
 
 function arquivosQueEscrevemAtividade(): string[] {
   const achados = new Set<string>();
+  const fontes = execFileSync("git", ["ls-files", ...PASTAS], {
+    cwd: RAIZ,
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter((arquivo) => /\.(ts|tsx)$/u.test(arquivo) && !/\.test\.tsx?$/u.test(arquivo));
+
   for (const marca of MARCAS) {
-    let saida = "";
-    try {
-      saida = execFileSync(
-        "rg",
-        ["-l", "-g", "*.ts", "-g", "*.tsx", marca, ...PASTAS],
-        { cwd: RAIZ, encoding: "utf8" },
-      );
-    } catch {
-      // `rg` sai com 1 quando não acha nada, e o `execFileSync` LANÇA. Sem
-      // este catch, a sabotagem da varredura vazia derrubava o arquivo inteiro
-      // com "Command failed" e nem chegava na guarda — o teste não passava por
-      // vacuidade, ele simplesmente NÃO RODAVA, que é igualmente cego.
-      saida = "";
+    for (const arquivo of fontes) {
+      if (readFileSync(path.join(RAIZ, arquivo), "utf8").includes(marca)) achados.add(arquivo);
     }
-    for (const a of saida.split("\n").filter(Boolean)) achados.add(a);
   }
   return [...achados].sort();
 }

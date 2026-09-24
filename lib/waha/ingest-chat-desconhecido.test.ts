@@ -34,6 +34,12 @@ interface Duplo {
 function bancoDeMentira(): Duplo {
   const rpcs: Array<{ fn: string; args: Record<string, unknown> }> = [];
   const messages: Array<Record<string, unknown>> = [];
+  const mutation = {
+    eq: () => mutation,
+    contains: () => mutation,
+    then: (resolve: (value: { error: null }) => unknown) =>
+      Promise.resolve({ error: null }).then(resolve),
+  };
   const consulta = () => {
     const q = {
       eq: () => q,
@@ -46,6 +52,7 @@ function bancoDeMentira(): Duplo {
   const admin = {
     from: () => ({
       select: () => consulta(),
+      update: () => mutation,
       insert: (linha: Record<string, unknown>) => ({
         select: () => ({
           maybeSingle: async () => {
