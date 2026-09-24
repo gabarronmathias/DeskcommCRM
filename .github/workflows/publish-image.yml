@@ -14,8 +14,7 @@ name: Publicar imagem Docker (GHCR)
 on:
   push:
     tags: ["v*"]
-    # Publica uma tag exclusiva para a homologação Athos sem mover `latest`
-    # (main) nem `stable` (releases versionadas).
+    # Isolated Athos homologation tag; leaves latest and stable untouched.
     branches: ["main", "release/athos-homologation-ready"]
   release:
     types: [published]
@@ -159,4 +158,3 @@ jobs:
         run: |
           echo "resultado do build-and-push: ${{ needs.build-and-push.result }}"
           [ "${{ needs.build-and-push.result }}" = "success" ]
-
