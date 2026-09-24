@@ -116,25 +116,40 @@ export async function reserveAthosIdempotencyKey(
   idempotencyKey: string,
   externalProvider: 'athos',
 ): Promise<{ reservationId: string; wasReplay: boolean }> {
-  const insert = await pool.query<{ id: string }>(
-    `insert into idempotency_keys
-       (organization_id, key, external_provider, created_at)
-     values ($1, $2, $3, now())
-     on conflict (organization_id, key, external_provider) do nothing
-     returning id`,
-    [organizationId, idempotencyKey, externalProvider],
-  );
-  if (insert.rows[0] !== undefined) {
-    return { reservationId: insert.rows[0].id, wasReplay: false };
+  const client = await pool.connect();
+  const endpoint = `athos_order:${externalProvider}`;
+  try {
+    await client.query('begin');
+    await client.query(
+      `select pg_advisory_xact_lock(hashtextextended($1, 0))`,
+      [`${organizationId}:${endpoint}:${idempotencyKey}`],
+    );
+    const lookup = await client.query<{ id: string }>(
+      `select id from idempotency_keys
+        where organization_id = $1 and key = $2 and endpoint = $3 and expires_at > now()
+        order by created_at desc limit 1`,
+      [organizationId, idempotencyKey, endpoint],
+    );
+    if (lookup.rows[0]) {
+      await client.query('commit');
+      return { reservationId: lookup.rows[0].id, wasReplay: true };
+    }
+    const hash = createHash('sha256').update(`${organizationId}:${endpoint}:${idempotencyKey}`).digest();
+    const insert = await client.query<{ id: string }>(
+      `insert into idempotency_keys
+         (organization_id, key, endpoint, request_hash, status_code, response_body, expires_at)
+       values ($1, $2, $3, $4, 202, '{}'::jsonb, now() + interval '24 hours')
+       returning id`,
+      [organizationId, idempotencyKey, endpoint, hash],
+    );
+    await client.query('commit');
+    return { reservationId: insert.rows[0]?.id ?? '', wasReplay: false };
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
-  const lookup = await pool.query<{ id: string }>(
-    `select id
-       from idempotency_keys
-      where organization_id = $1 and key = $2 and external_provider = $3
-      limit 1`,
-    [organizationId, idempotencyKey, externalProvider],
-  );
-  return { reservationId: lookup.rows[0]?.id ?? '', wasReplay: true };
 }
 
 export function makePgOrderMirrorClient(pool: pg.Pool): OrderMirrorClient {
@@ -156,18 +171,25 @@ export function makePgOrderMirrorClient(pool: pg.Pool): OrderMirrorClient {
             limit 1`,
           [input.organizationId, input.externalProvider, input.externalId],
         );
-        const orderId = existing.rows[0]?.id ?? '';
-        return { orderId, wasReplay: true };
+        if (existing.rows[0]) return { orderId: existing.rows[0].id, wasReplay: true };
       }
       const totalCents = Math.max(0, input.totalCents);
       const orderId = randomUUID();
-      const insert = await pool.query(
+      const payload = {
+        source: 'athos',
+        athos_status: input.externalStatus,
+        athos_payload: input.externalPayload,
+        athos_idempotency_key: input.idempotencyKey,
+        conversation_id: input.conversationId,
+      };
+      const insert = await pool.query<{ id: string }>(
         `insert into orders
            (id, organization_id, contact_id, external_provider, external_id,
-            external_status, external_payload, status, currency,
-            total_cents, conversation_id, idempotency_key_id, created_at, updated_at)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10,
-                 $11, $12, now(), now())
+            customer_external_id, status, currency, total_cents, payload, ordered_at,
+            updated_at_remote, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, null, 'pending', $6, $7, $8::jsonb,
+                 now(), now(), now(), now())
+         on conflict (organization_id, external_provider, external_id) do nothing
          returning id`,
         [
           orderId,
@@ -175,39 +197,48 @@ export function makePgOrderMirrorClient(pool: pg.Pool): OrderMirrorClient {
           input.contactId,
           input.externalProvider,
           input.externalId,
-          input.externalStatus,
-          JSON.stringify(input.externalPayload),
-          'pending',
           input.currency,
           totalCents,
-          input.conversationId,
-          reservation.reservationId,
+          JSON.stringify(payload),
         ],
       );
-      return { orderId: insert.rows[0]?.id ?? orderId, wasReplay: false };
+      if (insert.rows[0]) return { orderId: insert.rows[0].id, wasReplay: false };
+      const existing = await pool.query<{ id: string }>(
+        `select id from orders
+          where organization_id = $1 and external_provider = $2 and external_id = $3 limit 1`,
+        [input.organizationId, input.externalProvider, input.externalId],
+      );
+      return { orderId: existing.rows[0]?.id ?? '', wasReplay: true };
     },
     async insertFoodOrderItems(input) {
       if (input.items.length === 0) return [] as string[];
+      const existing = await pool.query<{ id: string }>(
+        `select id from food_order_items where organization_id = $1 and order_id = $2`,
+        [input.organizationId, input.orderId],
+      );
+      if (existing.rows.length > 0) return existing.rows.map((row) => row.id);
       const ids: string[] = [];
       for (const item of input.items) {
         const id = randomUUID();
+        const modifiersDelta = item.modifiers.reduce((sum, modifier) => sum + modifier.priceDeltaCents, 0);
         await pool.query(
           `insert into food_order_items
-             (id, organization_id, order_id, product_id,
+             (id, organization_id, order_id, product_id, external_product_id, external_sku,
               product_name_snapshot, unit_price_cents, quantity,
               line_total_cents, selected_modifiers, created_at)
-           values ($1, $2, $3, $4, $5, $6, $7,
-                   ($6 * $8), $9::jsonb, now())`,
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                   ($8 + $10) * $9, $11::jsonb, now())`,
           [
             id,
             input.organizationId,
             input.orderId,
+            item.productId ?? item.externalProductId,
             item.externalProductId,
+            item.sku ?? null,
             item.productName,
             item.unitPriceCents,
             item.quantity,
-            item.modifiers.reduce((s, m) => s + m.priceDeltaCents, 0) +
-              item.unitPriceCents,
+            modifiersDelta,
             JSON.stringify(item.modifiers),
           ],
         );
@@ -349,18 +380,13 @@ export async function loadOrderMirrorResultByIdempotencyKey(
   const order = await pool.query<{
     id: string;
     organization_id: string;
-    external_payload: Record<string, unknown> | null;
+    payload: Record<string, unknown> | null;
   }>(
-    `select id, organization_id, external_payload
+    `select id, organization_id, payload
        from orders
       where organization_id = $1
         and external_provider = 'athos'
-        and exists (
-          select 1 from idempotency_keys k
-           where k.organization_id = orders.organization_id
-             and k.id = orders.idempotency_key_id
-             and k.key = $2
-        )
+        and payload->>'athos_idempotency_key' = $2
       limit 1`,
     [organizationId, idempotencyKey],
   );

@@ -119,6 +119,7 @@ describe('athos-order-replay (briefing recovery)', () => {
       const result = await createAthosOrder({
         organizationId: 'org-1',
         contactId: 'contact-1',
+        conversationId: 'conv-1',
         partySize: 6,
         cartItems: [
           {
@@ -186,6 +187,7 @@ describe('athos-order-replay (briefing recovery)', () => {
     const a1 = await createAthosOrder({
       organizationId: 'org-1',
       contactId: 'contact-1',
+      conversationId: 'conv-1',
       partySize: 4,
       cartItems: [],
       idempotencyKey: 'idem-A',
@@ -199,6 +201,7 @@ describe('athos-order-replay (briefing recovery)', () => {
     const a2 = await createAthosOrder({
       organizationId: 'org-1',
       contactId: 'contact-1',
+      conversationId: 'conv-1',
       partySize: 6,
       cartItems: [],
       idempotencyKey: 'idem-B',
@@ -219,6 +222,7 @@ describe('athos-order-replay (briefing recovery)', () => {
       createAthosOrder({
         organizationId: 'org-1',
         contactId: 'contact-1',
+        conversationId: 'conv-1',
         partySize: 6,
         cartItems: [],
         idempotencyKey: 'idem-y',

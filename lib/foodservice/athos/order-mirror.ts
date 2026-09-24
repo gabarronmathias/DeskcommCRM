@@ -3,20 +3,20 @@
  *
  * Estado `athos_created` → `crm_recorded` grava em `orders` +
  * `food_order_items` o espelho do pedido criado na Athos. Sem migration:
- * usa colunas existentes (`orders.external_id`, `orders.external_payload`,
+ * usa colunas existentes (`orders.external_id`, `orders.payload`,
  * `orders.external_provider`).
  *
  * IMPORTANTE: o CHECK `orders_external_provider_check` no schema atual
  * aceita apenas (nuvemshop, vtex, shopify, deskcomm_food, gm_crm_food).
  * Para uma instalacao self-host com baseline fresco, o espelho usa
  * `gm_crm_food` como `external_provider` e sinaliza `athos` em
- * `external_payload.source` ate que uma migration adicione 'athos' ao
+ * `payload.source` ate que uma migration adicione 'athos' ao
  * CHECK. O mirror NAO falha por isso — apenas rotula a origem do
  * pedido de forma fiel.
  *
- * Idempotencia: o espelho usa `idempotency_keys` (tabela existente) com
- * chave (organization_id, idempotency_key). Replay da mesma confirmacao
- * nao cria 2 orders — o segundo insert cai no unique constraint.
+ * Idempotencia: o espelho usa `idempotency_keys` (tabela existente) e a
+ * chave externa unica de `orders`; replay da mesma confirmacao nao cria
+ * outra ordem nem duplica os itens.
  *
  * Recovery: quando o espelho falha DEPOIS de `athos_created` (ex.: worker
  * caiu entre adapter e mirror), o recovery busca conversas em
@@ -61,7 +61,9 @@ export interface OrderMirrorClient {
     orderId: string;
     organizationId: string;
     items: ReadonlyArray<{
+      productId?: string;
       externalProductId: string;
+      sku?: string | null;
       productName: string;
       quantity: number;
       unitPriceCents: number;
