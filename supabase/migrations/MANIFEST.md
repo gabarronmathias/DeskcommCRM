@@ -221,6 +221,12 @@ aplica.
 | `20260913220000` | `0178_orders_external_provider_athos` | Adiciona `athos` ao CHECK `orders_external_provider_check`, preservando `nuvemshop`, `vtex`, `shopify`, `deskcomm_food` e `gm_crm_food`; permite o espelho idempotente de pedidos Athos no CRM. Refletida no `baseline.sql`. |
 | `20260923120000` | `0179_athos_order_event_projection` | Vincula token server-to-server Athos à integração, cria correlação temporária de cardápio por conversa e projeta eventos assinados em `orders` + `food_order_items` dentro de uma RPC transacional e idempotente. Sandbox apenas. |
 | `20260923123000` | `0180_athos_launch_fk_install_fix` | Usa FKs pelos IDs globais de contato/conversa (e valida organização no serviço), para o baseline de instalação limpa não depender de chaves compostas que o schema não define. Corrige instalações existentes idempotentemente. |
+| `20260904000000` | `prospecting_campaign_filter` | Filtra claims de outbound pela campanha solicitada e aplica cancelamento/opt-out também a leads `manual_curated`. Incluída no baseline para instalações self-host limpas. |
+| `20260905173000` | `command_center_controls` | Cria estado operacional por organização e controles de pausa do Command Center, com políticas RLS. Incluída no baseline para instalações self-host limpas. |
+| `20260821120000` | `foodservice_prospecting_queue` | Cria fila tenant-scoped, claims atômicos, idempotência e cancelamento de prospecção; refletida no baseline self-host. |
+| `20260904130000` | `pause_480graus_revert_paizzani` | Correção pontual de dados operacionais de uma organização existente; não aplicável a banco self-host vazio. |
+| `20260904130001` | `cleanup_hermes_e2e_fixtures` | Remove fixtures E2E residuais de ambiente existente; não aplicável a banco self-host vazio. |
+| `20260909120000` | `external_provider_gm_crm_food` | Corrige o provedor em registros históricos específicos; não aplicável a banco self-host vazio. |
 
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.
 

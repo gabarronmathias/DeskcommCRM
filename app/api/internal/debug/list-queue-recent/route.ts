@@ -15,6 +15,7 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { isAuthorizedProspectingCron } from "@/lib/prospecting/cron-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       lead_title: lead?.title ?? null,
       contact_id: r.contact_id,
       contact_phone: contact?.phone_number ?? null,
-      contact_name: contact?.push_name || contact?.display_name || null,
+      contact_name: contact ? rotuloDoContato(contact) : null,
       metadata: meta,
       idempotency_key: r.idempotency_key,
       sarah_proativa: meta.sarah_proativa === true,

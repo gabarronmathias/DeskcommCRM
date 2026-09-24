@@ -146,13 +146,13 @@ export async function GET(
     actorApiTokenId: auth.apiTokenId,
     organizationId: auth.organizationId,
     resourceType: "contact",
-    resourceId:
-      typeof payload.customer?.id === "string" ? payload.customer.id : null,
+    resourceId: null,
     requestId,
     ip,
     userAgent,
     metadata: {
       query_phone_e164: payload.query_phone_e164,
+      customer_id: payload.customer?.id ?? null,
       customer_found: payload.customer_found,
       orders_returned: payload.orders?.length ?? 0,
       filters: {

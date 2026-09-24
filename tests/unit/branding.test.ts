@@ -196,6 +196,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "User-Agent exigido pela Nuvemshop, que identifica a aplicação registrada na plataforma deles. Trocar pelo nome do revendedor descreveria uma aplicação que não existe lá",
     marcas: ["deskcommcrm"],
   },
+  "lib/athos/contract.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "namespace de derivação HMAC compartilhado com o emissor do sandbox Athos; alterá-lo invalida assinaturas quando não há segredo dedicado configurado",
+    marcas: ["deskcomm-athos-sandbox-v1"],
+  },
   "app/api/v1/orders/route.ts": {
     categoria: "PROTOCOLO",
     motivo:
@@ -277,6 +283,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     motivo:
       "fixture que reproduz o CHANGELOG real, incluindo as URLs do repositório no GitHub. A marca aqui é o nome do repositório upstream, que o clone não renomeia",
     marcas: ["deskcommcrm", "deskcommcrm", "deskcommcrm"],
+  },
+  "app/api/v1/orders/route.test.ts": {
+    categoria: "DEV",
+    motivo:
+      "fixture que cobre os identificadores persistidos dos provedores de pedidos legados; não é texto de produto nem é embarcada",
+    marcas: ["deskcomm", "deskcomm_food", "deskcomm_food"],
   },
 
   // ─── PADRAO — a marca padrão precisa existir em algum lugar. ───

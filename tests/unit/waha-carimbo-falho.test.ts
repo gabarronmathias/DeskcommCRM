@@ -29,7 +29,13 @@ function adminQueFalhaEm(rpcQueFalha: string): {
     insert: () => ({
       select: () => ({ maybeSingle: async () => ({ data: { id: "msg-1" }, error: null }) }),
     }),
-    update: () => ({ eq: async () => ({ error: null }) }),
+    update: () => {
+      const query = {
+        eq: () => query,
+        contains: async () => ({ error: null }),
+      };
+      return query;
+    },
     select: () => ({
       eq: () => ({
         maybeSingle: async () => ({ data: null, error: null }),

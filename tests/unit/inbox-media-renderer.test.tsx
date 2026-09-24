@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
@@ -33,6 +34,11 @@ function msg(over: Partial<Message>): Message {
   } as Message;
 }
 
+function renderWithQueryClient(ui: React.ReactNode) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
 describe("MediaRenderer", () => {
   it("image → ImageMedia", () => {
     render(<MediaRenderer message={msg({ type: "image" })} />);
@@ -58,12 +64,12 @@ describe("MediaRenderer", () => {
 
 describe("MessageBubble com mídia", () => {
   it("renderiza mídia E caption juntos", () => {
-    render(<MessageBubble message={msg({ type: "image", body: "olha isso" })} />);
+    renderWithQueryClient(<MessageBubble message={msg({ type: "image", body: "olha isso" })} />);
     expect(screen.getByAltText("Imagem recebida")).toBeInTheDocument();
     expect(screen.getByText("olha isso")).toBeInTheDocument();
   });
   it("mensagem só-texto não renderiza mídia", () => {
-    render(<MessageBubble message={msg({ type: "text", body: "oi", media_url: null })} />);
+    renderWithQueryClient(<MessageBubble message={msg({ type: "text", body: "oi", media_url: null })} />);
     expect(screen.queryByAltText("Imagem recebida")).not.toBeInTheDocument();
   });
 });

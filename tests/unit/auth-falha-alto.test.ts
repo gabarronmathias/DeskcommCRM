@@ -97,7 +97,7 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
     };
     const u = await loadAuthUser();
     expect(u?.organizations).toEqual([
-      { organization_id: "o1", organization_name: "Acme", role: "admin" },
+      { organization_id: "o1", organization_name: "Acme", role: "admin", workspace_profile: "standard" },
     ]);
   });
 });

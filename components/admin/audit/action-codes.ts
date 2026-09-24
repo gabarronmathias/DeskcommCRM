@@ -105,6 +105,8 @@ export const ACTION_CODES: string[] = [
   "tenant.reactivated",
   "platform_admin.audit_listed",
   "platform_admin.audit_entry_viewed",
+  "athos.launch.created",
+  "orders.read.history",
   // Marca da instalação trocada (migration 0155). Entra aqui E em
   // lib/audit/actions.ts — sem isto o filtro do painel não oferece o código e a
   // linha existiria no banco sem porta na tela.

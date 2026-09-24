@@ -64,6 +64,7 @@ export const DICIONARIO: Traducoes = {
   Relatórios: { es: "Informes" },
   "Evolução da IA": { es: "Evolución de la IA" },
   "Audit Log": { es: "Registro de auditoría" },
+  "Command Center": { es: "Centro de control" },
   Configurações: { es: "Configuración" },
   Recolher: { es: "Contraer" },
   Buscar: { es: "Buscar" },

@@ -16474,6 +16474,209 @@ $$;
 revoke all on function public.fn_apply_athos_order_event(uuid, uuid, uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.fn_apply_athos_order_event(uuid, uuid, uuid, jsonb) to service_role;
 
+-- ---- 20260923123000_0180_athos_launch_fk_install_fix ----
+alter table public.partner_launches
+  drop constraint if exists partner_launches_contact_org_fk,
+  drop constraint if exists partner_launches_conversation_org_fk;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.partner_launches'::regclass
+      and conname = 'partner_launches_contact_fk'
+  ) then
+    alter table public.partner_launches
+      add constraint partner_launches_contact_fk
+      foreign key (contact_id) references public.contacts(id) on delete cascade;
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.partner_launches'::regclass
+      and conname = 'partner_launches_conversation_fk'
+  ) then
+    alter table public.partner_launches
+      add constraint partner_launches_conversation_fk
+      foreign key (conversation_id) references public.conversations(id) on delete restrict;
+  end if;
+end;
+$$;
+
+-- ---- 20260904000000_prospecting_campaign_filter ----
+drop function if exists public.fn_claim_prospecting_outbound(uuid, integer);
+create or replace function public.fn_claim_prospecting_outbound(
+  p_org uuid,
+  p_limit integer default 1,
+  p_campaign text default null
+)
+returns setof public.prospecting_outbound_queue
+language sql
+volatile
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+  with candidates as (
+    select q.id
+      from public.prospecting_outbound_queue q
+     where q.organization_id = p_org
+       and q.status = 'pending'
+       and q.scheduled_for <= now()
+       and (p_campaign is null or q.metadata->>'campaign' = p_campaign)
+     order by q.scheduled_for, q.created_at
+     limit greatest(1, least(coalesce(p_limit, 1), 20))
+     for update skip locked
+  )
+  update public.prospecting_outbound_queue q
+     set status = 'processing', claimed_at = now(),
+         attempts = q.attempts + 1, updated_at = now()
+   where q.id in (select id from candidates)
+  returning q.*;
+$$;
+revoke execute on function public.fn_claim_prospecting_outbound(uuid, integer, text)
+  from public, anon, authenticated;
+grant execute on function public.fn_claim_prospecting_outbound(uuid, integer, text)
+  to service_role;
+
+create or replace function public.fn_cancel_prospecting_followup_on_inbound()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+  if new.direction = 'inbound' then
+    update public.prospecting_outbound_queue
+       set status = 'cancelled', error_code = 'replied',
+           error_message = null, updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.contact_id
+       and kind = 'followup'
+       and status in ('pending', 'processing');
+
+    update public.crm_leads
+       set custom_fields = jsonb_set(
+             jsonb_set(coalesce(custom_fields, '{}'::jsonb),
+                       '{last_reply_at}',
+                       to_jsonb(coalesce(new.sent_at, now())), true),
+             '{next_followup_at}', 'null'::jsonb, true
+           ),
+           last_activity_at = coalesce(new.sent_at, now()),
+           updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.contact_id
+       and source in ('google_places', 'manual_curated');
+
+    insert into public.crm_lead_activities
+      (organization_id, lead_id, contact_id, source_module, source_id, type, payload, metadata, performed_at)
+    select l.organization_id, l.id, l.contact_id, 'prospecting', new.id,
+           'prospecting_reply_received',
+           jsonb_build_object('conversation_id', new.conversation_id, 'message_id', new.id),
+           jsonb_build_object('source', l.source, 'outcome', 'followup_cancelled'),
+           coalesce(new.sent_at, now())
+      from public.crm_leads l
+     where l.organization_id = new.organization_id
+       and l.contact_id = new.contact_id
+       and l.source in ('google_places', 'manual_curated');
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.fn_apply_prospecting_opt_out()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+  if new.is_blocked and not old.is_blocked and exists (
+    select 1 from public.crm_leads l
+     where l.organization_id = new.organization_id
+       and l.contact_id = new.id
+       and l.source in ('google_places', 'manual_curated')
+  ) then
+    update public.contacts
+       set tags = array(select distinct x from unnest(coalesce(tags, '{}'::text[]) || array['nao-contatar']) x),
+           updated_at = now()
+     where id = new.id and organization_id = new.organization_id;
+
+    update public.crm_leads
+       set tags = array(select distinct x from unnest(coalesce(tags, '{}'::text[]) || array['nao-contatar']) x),
+           custom_fields = jsonb_set(
+             jsonb_set(coalesce(custom_fields, '{}'::jsonb),
+                       '{opt_out}', 'true'::jsonb, true),
+             '{next_followup_at}', 'null'::jsonb, true
+           ),
+           updated_at = now()
+     where organization_id = new.organization_id and contact_id = new.id;
+
+    update public.prospecting_outbound_queue
+       set status = 'cancelled', error_code = 'opt_out',
+           error_message = null, updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.id
+       and status in ('pending', 'processing');
+
+    update public.followup_enrollments
+       set status = 'cancelled', outcome = 'opted_out',
+           cancel_reason = 'contact_is_blocked',
+           next_eval_at = null, claimed_until = null,
+           completed_at = now(), updated_at = now()
+     where organization_id = new.organization_id
+       and contact_id = new.id
+       and status in ('active', 'waiting_reply', 'paused_handoff', 'paused_manual');
+
+    insert into public.crm_lead_activities
+      (organization_id, lead_id, contact_id, source_module, type, payload, metadata)
+    select l.organization_id, l.id, l.contact_id, 'prospecting', 'prospecting_opt_out',
+           jsonb_build_object('reason', 'explicit_do_not_contact'),
+           jsonb_build_object('source', l.source, 'outcome', 'automations_cancelled')
+      from public.crm_leads l
+     where l.organization_id = new.organization_id
+       and l.contact_id = new.id
+       and l.source in ('google_places', 'manual_curated');
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_cancel_prospecting_followup_on_inbound()
+  from public, anon, authenticated;
+revoke execute on function public.fn_apply_prospecting_opt_out()
+  from public, anon, authenticated;
+grant execute on function public.fn_cancel_prospecting_followup_on_inbound(),
+  public.fn_apply_prospecting_opt_out() to service_role;
+
+-- ---- 20260905173000_command_center_controls ----
+create table if not exists public.command_center_state (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  prospecting_paused boolean not null default false,
+  outbound_paused boolean not null default false,
+  emergency_stop boolean not null default false,
+  paused_by uuid references auth.users(id),
+  paused_reason text,
+  updated_at timestamptz not null default now()
+);
+comment on table public.command_center_state is
+  'Estado operacional da GB Command Center. 1 linha por org. Flags de pausa: se true, dispatcher no-op.';
+alter table public.command_center_state enable row level security;
+drop policy if exists command_center_state_select on public.command_center_state;
+create policy command_center_state_select on public.command_center_state
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+drop policy if exists command_center_state_update on public.command_center_state;
+create policy command_center_state_update on public.command_center_state
+  for update using (
+    public.fn_role_at_least(organization_id, 'manager')
+    or public.fn_is_platform_admin()
+  ) with check (
+    public.fn_role_at_least(organization_id, 'manager')
+    or public.fn_is_platform_admin()
+  );
+insert into public.command_center_state (organization_id)
+select id from public.organizations where slug = 'gabarron-mathias'
+on conflict (organization_id) do nothing;
+
 -- ---- VARREDURA anon: fechamento auto-curativo do baseline ----
 -- O dump concede EXECUTE em funções novas a anon por default. Como o baseline
 -- cresce por apêndice, este fechamento precisa permanecer depois de TODA DDL

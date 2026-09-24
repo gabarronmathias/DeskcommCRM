@@ -48,7 +48,7 @@ describe("a chave da OpenRouter chega ao seam", () => {
     // decifragem AES — está coberto no invariante com Postgres real. Aqui o
     // alvo é a existência do RAMO, que é o que faltava.
     const fonte = readFileSync("lib/agent-engine/edge/llm/credentials.ts", "utf8");
-    expect(fonte).toMatch(/provider === 'openrouter' && cfg\.openrouterApiKey/);
+    expect(fonte).toMatch(/provider === ["']openrouter["'] && cfg\.openrouterApiKey/);
   });
 });
 
