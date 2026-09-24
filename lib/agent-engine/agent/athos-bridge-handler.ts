@@ -75,6 +75,9 @@ export async function tryHandleAthosOrderBridge(
     return failClosed(deps, err);
   }
   if (!outcome.handled) {
+    if (transactionalSignal) {
+      return failClosed(deps, { code: 'athos_order_selection_unresolved' });
+    }
     return null;
   }
   return {
