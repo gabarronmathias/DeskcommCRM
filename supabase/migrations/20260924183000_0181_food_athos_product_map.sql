@@ -50,3 +50,9 @@ SELECT
       AND fp.slug = m.external_product_id
     LIMIT 1) AS internal_product_name
 FROM public.food_athos_product_map m;
+
+-- Views run with the invoker's privileges on PostgreSQL 15+, so callers
+-- cannot use this view to bypass the mapping table's RLS/grants.
+ALTER VIEW public.food_athos_product_resolved SET (security_invoker = true);
+REVOKE ALL ON public.food_athos_product_resolved FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.food_athos_product_resolved TO service_role;

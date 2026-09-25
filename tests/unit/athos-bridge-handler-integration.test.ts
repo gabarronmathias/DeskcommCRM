@@ -53,6 +53,7 @@ vi.mock('../../lib/supabase/admin', () => ({
             category_id: 'cat-bolos',
             name: 'Bolo de Chocolate',
             slug: 'bolo-de-chocolate',
+            sku: 'SKU-BOLO-1',
             description: null,
             emoji: null,
             price_cents: 12000,
@@ -450,6 +451,7 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(out.cartItems.length).toBe(1);
     expect(out.cartItems[0]?.productName).toBe('Bolo de Chocolate');
     expect(out.cartItems[0]?.externalProductId).toBe('b5b5f1df-1b01-4d2a-9359-00e8c1a41000');
+    expect(out.cartItems[0]?.sku).toBe('SKU-BOLO-1');
     expect(out.state).toBe('awaiting_confirmation');
     expect(adapter.calls).toBe(0);
   });
@@ -470,6 +472,29 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(out.cartItems).toHaveLength(1);
     expect(out.cartItems[0]?.quantity).toBe(1);
     expect(out.cartItems[0]?.externalProductId).toBe('b5b5f1df-1b01-4d2a-9359-00e8c1a41000');
+  });
+
+  it('resposta "2 pessoas" atualiza o pedido e não tenta achar o produto pessoas', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool };
+    await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    const out = await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    expect(out).toMatchObject({ handled: true, state: 'awaiting_confirmation', partySize: 2 });
+    expect(out.cartItems).toHaveLength(1);
+    expect(out.cartItems[0]?.quantity).toBe(1);
+    expect(out.responseText).toContain('1x Bolo de Chocolate');
+    expect(out.responseText).toContain('R$ 120.00');
+    expect(out.responseText).toContain('Confirma o pedido?');
+  });
+
+  it('repetir o item mantém a quantidade; acréscimo explícito soma', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool };
+    await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    const repeated = await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    expect(repeated.cartItems[0]?.quantity).toBe(1);
+    const added = await handleFoodserviceOrderTurn(deps, 'quero mais 1 Bolo de Chocolate');
+    expect(added.cartItems[0]?.quantity).toBe(2);
   });
 
   it('cart_selection: produto inexistente -> handled=false (nada casa, segue LLM)', async () => {

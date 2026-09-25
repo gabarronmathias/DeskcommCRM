@@ -36,6 +36,7 @@ describe('foodservice sales fast path', () => {
     ['para umas 10 pessoas', 10],
     ['seremos 4', 4],
     ['vai ser pra 5', 5],
+    ['2 pessoas', 2],
   ])('reconhece party_size: %s', (text, expected) => {
     expect(extractPartySize(text)).toBe(expected);
     const result = decide(text);

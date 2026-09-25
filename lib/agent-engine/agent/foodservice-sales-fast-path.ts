@@ -34,6 +34,7 @@ const DATE_RE = /\b(?:hoje|amanh[aã]|segunda|ter[cç]a|quarta|quinta|sexta|s[a�
 const PREFERENCE_RE = /\b(?:salgad|doc|chocolate|os\s+dois|combina[cç][aã]o)\w*/i;
 
 const PARTY_PATTERNS = [
+  /^(\d{1,3})\s+pessoas?$/i,
   /^(?:somos(?:\s+em)?|seremos|vai\s+dar)\s+(\d{1,3})(?:\s+pessoas?)?$/i,
   /^(?:[eé]\s+)?(?:para|pra)\s+(?:umas?|uns?)?\s*(\d{1,3})(?:\s+pessoas?)?$/i,
   /^vai\s+ser\s+(?:para|pra)\s+(\d{1,3})(?:\s+pessoas?)?$/i,

@@ -40,6 +40,7 @@ import {
 } from './confirmation';
 import { detectAndResolveCartSelection } from './cart-selection';
 import { detectExplicitConfirmation } from './confirmation-detector';
+import { extractPartySize } from '../../agent-engine/agent/foodservice-sales-fast-path';
 import {
   buildAthosOrderMetadata,
   buildPartySizeMetadata,
@@ -105,6 +106,28 @@ export async function handleFoodserviceOrderTurn(
     return handleConfirmation(deps, previousSnapshot, inboundText, catalog);
   }
 
+  // A resposta à pergunta "para quantas pessoas?" é dado do pedido, não
+  // seleção de produto. O parser de carrinho aceita "2 pessoas" como nome de
+  // item; por isso este ramo precisa vir ANTES de detectAndResolveCartSelection.
+  const partySize = extractPartySize(inboundText);
+  if (previousSnapshot.state === 'awaiting_confirmation' &&
+      previousSnapshot.cartItems.length > 0 && partySize !== null) {
+    const next = await persistAthosSnapshot(deps, {
+      ...previousSnapshot,
+      partySize,
+      updatedAt: new Date().toISOString(),
+    });
+    await persistPartySize(deps, partySize);
+    return {
+      handled: true,
+      responseText: orderConfirmationPrompt(next),
+      partySize,
+      cartItems: next.cartItems,
+      state: next.state,
+      errorCode: null,
+    };
+  }
+
   const cartSelection = detectAndResolveCartSelection(inboundText, catalog);
   if (cartSelection.unresolvedNames.length > 0) {
     return {
@@ -119,7 +142,7 @@ export async function handleFoodserviceOrderTurn(
     };
   }
   if (cartSelection.matched) {
-    return handleCartSelection(deps, previousSnapshot, cartSelection);
+    return handleCartSelection(deps, previousSnapshot, cartSelection, inboundText);
   }
 
   if (
@@ -260,12 +283,17 @@ async function handleCartSelection(
   deps: RuntimeWiringDeps,
   previousSnapshot: AthosOrderSnapshot,
   selection: { items: ReadonlyArray<AthosCartItem>; unresolvedNames: ReadonlyArray<string> },
+  inboundText: string,
 ): Promise<RuntimeWiringOutcome> {
   const startsNewOrder = previousSnapshot.state === 'completed' || previousSnapshot.state === 'crm_recorded';
   const baseSnapshot = startsNewOrder
     ? { ...emptyAthosOrderSnapshot(), partySize: previousSnapshot.partySize }
     : previousSnapshot;
-  const merged = mergeCart(baseSnapshot.cartItems, selection.items);
+  const merged = mergeCart(
+    baseSnapshot.cartItems,
+    selection.items,
+    /\b(?:mais|adiciona(?:r)?|acrescenta(?:r)?|outr[ao]s?)\b/i.test(inboundText),
+  );
   const partySize = baseSnapshot.partySize;
   let next: AthosOrderSnapshot = {
     ...baseSnapshot,
@@ -281,15 +309,12 @@ async function handleCartSelection(
   next = await persistAthosSnapshot(deps, next);
 
   const total = computeTotalCents(next.cartItems);
-  const summaryLines = next.cartItems.map((i) =>
-    `- ${i.quantity}x ${i.productName} (R$ ${((i.unitPriceCents * i.quantity) / 100).toFixed(2)})`,
-  );
   const unresolvedText = selection.unresolvedNames.length > 0
     ? `\n\nNao encontrei no cardapio: ${selection.unresolvedNames.join(', ')}.`
     : '';
   const responseText = partySize === null
     ? `Voce selecionou ${merged.length} item(ns). Total parcial: R$ ${(total / 100).toFixed(2)}.${unresolvedText}\n\nPara quantas pessoas sera?`
-    : `Voce selecionou ${merged.length} item(ns) para ${partySize} pessoas. Total: R$ ${(total / 100).toFixed(2)}.\n\n${summaryLines.join('\n')}${unresolvedText}\n\nConfirma o pedido? Responde "confirmo" ou "pode fechar" para enviar a Athos.`;
+    : `${orderConfirmationPrompt(next)}${unresolvedText}`;
 
   return {
     handled: true,
@@ -344,9 +369,18 @@ function computeTotalCents(items: ReadonlyArray<AthosCartItem>): number {
   }, 0);
 }
 
+function orderConfirmationPrompt(snapshot: AthosOrderSnapshot): string {
+  const total = computeTotalCents(snapshot.cartItems);
+  const lines = snapshot.cartItems.map((item) =>
+    `- ${item.quantity}x ${item.productName} (R$ ${((item.unitPriceCents * item.quantity) / 100).toFixed(2)})`,
+  );
+  return `Pedido para ${snapshot.partySize} pessoa(s). Total: R$ ${(total / 100).toFixed(2)}.\n\n${lines.join('\n')}\n\nConfirma o pedido? Responda "confirmo o pedido" para enviar a Athos.`;
+}
+
 function mergeCart(
   current: ReadonlyArray<AthosCartItem>,
   incoming: ReadonlyArray<AthosCartItem>,
+  additive: boolean,
 ): ReadonlyArray<AthosCartItem> {
   const map = new Map<string, AthosCartItem>();
   for (const item of current) {
@@ -359,7 +393,9 @@ function mergeCart(
     } else {
       map.set(item.externalProductId, {
         ...existing,
-        quantity: existing.quantity + item.quantity,
+        // Repetir o mesmo pedido corrige/ratifica a quantidade. Só uma
+        // intenção explícita de acréscimo soma ao carrinho anterior.
+        quantity: additive ? existing.quantity + item.quantity : item.quantity,
       });
     }
   }

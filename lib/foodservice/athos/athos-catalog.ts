@@ -96,9 +96,9 @@ export async function fetchAthosCatalog(
   catalog.products = catalog.products.map((product) => ({
     ...product,
     athosProductId: byExternalProductId.get(normalize(product.slug)) ?? null,
-    // The Athos sandbox contract does not require SKU; the v107 map stores
-    // the Athos UUID, not a separate SKU/code.
-    sku: null,
+    // O sandbox valida `sku` em cada item. A RPC já expõe food_products.sku;
+    // preservá-lo evita rejeição tardia após o cliente confirmar o pedido.
+    sku: product.sku ?? null,
   }));
   catalogCache.set(cacheKey, { value: catalog, expiresAt: Date.now() + CACHE_TTL_MS });
   return catalog;
@@ -198,7 +198,7 @@ function normalizeCatalog(tenantSlug: string, raw: RawCatalogShape): AthosCatalo
       id: p.id,
       athosProductId: null,
       // Athos UUID mapping is loaded from food_athos_product_map after RPC.
-      sku: null,
+      sku: p.sku ?? null,
       categoryId: p.category_id,
       name: p.name,
       slug: p.slug,
