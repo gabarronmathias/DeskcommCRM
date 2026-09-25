@@ -227,7 +227,7 @@ export function makePgOrderMirrorClient(pool: pg.Pool): OrderMirrorClient {
               product_name_snapshot, unit_price_cents, quantity,
               line_total_cents, selected_modifiers, created_at)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-                   ($8 + $10) * $9, $11::jsonb, now())`,
+                   ($8::bigint + $10::bigint) * $9::bigint, $11::jsonb, now())`,
           [
             id,
             input.organizationId,

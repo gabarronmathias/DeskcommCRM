@@ -52,6 +52,7 @@ import {
   readAthosCatalogForTenant,
 } from './runtime-repository';
 import {
+  isRecoverableAthosSnapshot,
   mirrorAthosOrderToCrm,
   type OrderMirrorResult,
 } from './order-mirror';
@@ -81,6 +82,35 @@ export async function handleFoodserviceOrderTurn(
 ): Promise<RuntimeWiringOutcome> {
   const previousSnapshot = await loadAthosSnapshotFromMetadata(deps);
   const confirmationMatch = detectExplicitConfirmation(inboundText);
+
+  // A Athos pode ter criado o pedido antes de uma falha no espelho CRM.
+  // Nesse caso nunca se chama o adapter de novo: repara-se apenas o espelho,
+  // usando o mesmo externalOrderId/idempotencyKey.
+  if (isRecoverableAthosSnapshot(previousSnapshot)) {
+    try {
+      const mirror = await runAthosRecovery(deps);
+      if (mirror !== null) {
+        return {
+          handled: true,
+          responseText: `Pedido criado na Athos. ID: ${previousSnapshot.externalOrderId}. Total: R$ ${(computeTotalCents(previousSnapshot.cartItems) / 100).toFixed(2)}.`,
+          partySize: previousSnapshot.partySize,
+          cartItems: previousSnapshot.cartItems,
+          state: 'completed',
+          errorCode: null,
+        };
+      }
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? 'athos_mirror_recovery_failed';
+      return {
+        handled: true,
+        responseText: 'O pedido foi recebido pela Athos, mas ainda estou conferindo o registro no CRM. Não faça outro pedido enquanto verificamos.',
+        partySize: previousSnapshot.partySize,
+        cartItems: previousSnapshot.cartItems,
+        state: previousSnapshot.state,
+        errorCode: code,
+      };
+    }
+  }
 
   // Saudações e conversa geral não precisam carregar o cardápio. Mantém o
   // GPT responsável pelo atendimento normal e reserva este bridge para turnos
@@ -336,13 +366,8 @@ export async function persistPartySizeFromFastPath(
 
 export async function runAthosRecovery(deps: RuntimeWiringDeps): Promise<OrderMirrorResult | null> {
   const snapshot = await loadAthosSnapshotFromMetadata(deps);
-  if (
-    snapshot.state !== 'athos_created' ||
-    snapshot.externalOrderId === null
-  ) {
-    return null;
-  }
-  return await buildRecoveryOutcome(
+  if (!isRecoverableAthosSnapshot(snapshot) || snapshot.externalOrderId === null) return null;
+  const outcome = await buildRecoveryOutcome(
     snapshot,
     {
       organizationId: deps.organizationId,
@@ -360,7 +385,14 @@ export async function runAthosRecovery(deps: RuntimeWiringDeps): Promise<OrderMi
       externalProvider: 'athos',
     },
     makePgOrderMirrorClient(deps.pool),
-  ).then((outcome) => (outcome.mirror ?? null));
+  );
+  if (outcome.mirror === null) return null;
+  const recorded = await persistAthosSnapshot(deps, transitionAthosOrder(snapshot, 'crm_recorded', {
+    crmOrderId: outcome.mirror.crmOrderId,
+    lastError: null,
+  }));
+  await persistAthosSnapshot(deps, transitionAthosOrder(recorded, 'completed'));
+  return outcome.mirror;
 }
 
 function computeTotalCents(items: ReadonlyArray<AthosCartItem>): number {

@@ -121,7 +121,7 @@ export function computeTotalCents(items: ReadonlyArray<AthosCartItem>): number {
  */
 export function isRecoverableAthosSnapshot(snapshot: AthosOrderSnapshot): boolean {
   return (
-    snapshot.state === 'athos_created' &&
+    (snapshot.state === 'athos_created' || snapshot.state === 'reconciliation_required') &&
     snapshot.externalOrderId !== null &&
     snapshot.crmOrderId === null
   );

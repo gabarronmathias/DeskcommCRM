@@ -91,6 +91,7 @@ class MockTable {
 interface MockPoolOptions {
   enabledTenantSlug?: string;
   contactSourceMetadata?: Record<string, unknown>;
+  failFoodItemOnce?: boolean;
 }
 
 function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
@@ -99,6 +100,7 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
   const orders = new MockTable();
   const foodOrderItems = new MockTable();
   const idempotencyKeys = new MockTable();
+  let failFoodItemOnce = options.failFoodItemOnce ?? false;
 
   if (options.contactSourceMetadata !== undefined) {
     contacts.rows.push({
@@ -232,6 +234,12 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
       }
       // food_order_items insert
       if (trimmed.startsWith('insert into food_order_items')) {
+        if (failFoodItemOnce) {
+          failFoodItemOnce = false;
+          const error = new Error('operator is not unique') as Error & { code: string };
+          error.code = '42725';
+          throw error;
+        }
         const [id, orgId, orderId, productId, externalProductId, sku, productName, unitPriceCents, quantity, modifiersDelta, modifiers] = params as [
           string,
           string,
@@ -508,6 +516,26 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     const withPartySize = await handleFoodserviceOrderTurn(deps, 'Ola');
     expect(withPartySize.responseText).toContain('1x Bolo de Chocolate');
     expect(withPartySize.responseText).toContain('Confirma o pedido');
+  });
+
+  it('recupera item do espelho CRM sem criar segundo pedido Athos', async () => {
+    const pool = makeMockPool({ failFoodItemOnce: true });
+    const deps = { ...baseDeps, pool };
+    const adapter = makeFakeAdapter('athos-once-001');
+    setAthosAdapter(adapter);
+    await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    const failed = await handleFoodserviceOrderTurn(deps, 'confirmo o pedido');
+    expect(failed).toMatchObject({ state: 'reconciliation_required', errorCode: '42725' });
+    expect(adapter.calls).toBe(1);
+
+    const recovered = await handleFoodserviceOrderTurn(deps, 'Ola');
+    expect(recovered).toMatchObject({ state: 'completed', errorCode: null });
+    expect(recovered.responseText).toContain('athos-once-001');
+    expect(adapter.calls).toBe(1);
+    expect(vi.mocked(pool.query).mock.calls.some(
+      ([sql]) => String(sql).includes('($8::bigint + $10::bigint) * $9::bigint'),
+    )).toBe(true);
   });
 
   it('cart_selection: produto inexistente -> handled=false (nada casa, segue LLM)', async () => {

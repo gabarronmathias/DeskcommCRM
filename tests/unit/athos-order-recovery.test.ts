@@ -194,6 +194,27 @@ describe('athos-order-recovery (briefing recovery)', () => {
     }, client);
     expect(outcome.recovered).toBe(false);
   });
+
+  it('reconciliation_required com externalOrderId recupera apenas o espelho', async () => {
+    const submitting = transitionAthosOrder(emptyAthosOrderSnapshot(), 'submitting_to_athos');
+    const snapshot = transitionAthosOrder(submitting, 'reconciliation_required', {
+      externalOrderId: 'athos-existing-001',
+    });
+    const { client } = makeMirrorClient();
+    const outcome = await buildRecoveryOutcome(snapshot, {
+      organizationId: 'org-1',
+      contactId: 'contact-1',
+      conversationId: 'conv-reconcile',
+      cartItems,
+      partySize: 2,
+      idempotencyKey: 'idem-reconcile-001',
+      athosCreated: { ...athosCreatedFixture, externalOrderId: 'athos-existing-001' },
+      externalProvider: 'athos',
+    }, client);
+    expect(outcome).toMatchObject({ recovered: true, finalState: 'crm_recorded' });
+    expect(client.insertOrderWithIdempotency).toHaveBeenCalledTimes(1);
+    expect(client.insertFoodOrderItems).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('athos-order-mirror (briefing recovery)', () => {
