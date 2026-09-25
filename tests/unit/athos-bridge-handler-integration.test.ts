@@ -534,7 +534,8 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(recovered.responseText).toContain('athos-once-001');
     expect(adapter.calls).toBe(1);
     expect(vi.mocked(pool.query).mock.calls.some(
-      ([sql]) => String(sql).includes('($8::bigint + $10::bigint) * $9::bigint'),
+      ([sql, params]) => String(sql).includes('$10, $11::jsonb') &&
+        Array.isArray(params) && params[9] === 12000,
     )).toBe(true);
   });
 

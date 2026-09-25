@@ -221,13 +221,14 @@ export function makePgOrderMirrorClient(pool: pg.Pool): OrderMirrorClient {
       for (const item of input.items) {
         const id = randomUUID();
         const modifiersDelta = item.modifiers.reduce((sum, modifier) => sum + modifier.priceDeltaCents, 0);
+        const lineTotalCents = (item.unitPriceCents + modifiersDelta) * item.quantity;
         await pool.query(
           `insert into food_order_items
              (id, organization_id, order_id, product_id, external_product_id, external_sku,
               product_name_snapshot, unit_price_cents, quantity,
               line_total_cents, selected_modifiers, created_at)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-                   ($8::bigint + $10::bigint) * $9::bigint, $11::jsonb, now())`,
+                   $10, $11::jsonb, now())`,
           [
             id,
             input.organizationId,
@@ -238,7 +239,7 @@ export function makePgOrderMirrorClient(pool: pg.Pool): OrderMirrorClient {
             item.productName,
             item.unitPriceCents,
             item.quantity,
-            modifiersDelta,
+            lineTotalCents,
             JSON.stringify(item.modifiers),
           ],
         );
