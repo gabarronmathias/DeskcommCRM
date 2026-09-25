@@ -68,8 +68,11 @@ export default async function AgentEditorPage({
   const agent = agentRow as unknown as AgentRow;
   const readOnly = ROLE_RANK[activeOrg.role] < ROLE_RANK.admin;
 
-  // Caminho legado: rag_bot continua usando o editor pré-EPIC-13.
-  if ((agent.kind ?? "rag_bot") !== "mcp_agent") {
+  // Caminho legado: rag_bot sem versão publicada continua usando o editor
+  // pré-EPIC-13. Agentes legados que já atendem por uma versão publicada
+  // precisam do editor versionado; editar apenas ai_agents.system_prompt/model
+  // não altera o que o runtime lê de ai_agent_versions.
+  if ((agent.kind ?? "rag_bot") !== "mcp_agent" && !agent.published_version_id) {
     return (
       <div className="flex h-full flex-col gap-6 p-6">
         <AgentEditorClient agentId={agent.id} initialData={agent} readOnly={readOnly} />
