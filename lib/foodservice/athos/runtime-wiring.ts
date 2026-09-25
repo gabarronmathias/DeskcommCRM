@@ -158,15 +158,30 @@ export async function handleFoodserviceOrderTurn(
       previousSnapshot.fulfillment === 'pickup');
   }
   if (pickup.kind === 'incomplete') {
-    if (/\bretir(?:ar|ada|o|amos|arei|a)\b/iu.test(inboundText) &&
-        previousSnapshot.state !== 'completed' && previousSnapshot.state !== 'crm_recorded') {
-      await persistAthosSnapshot(deps, {
-        ...previousSnapshot, fulfillment: 'pickup', updatedAt: new Date().toISOString(),
-      });
+    // Um pedido como "quero 1 torta para retirada" já contém o item.
+    // Preserve-o antes de pedir o horário; não obrigue o cliente a repeti-lo.
+    let base = previousSnapshot;
+    if (/\b(?:tortas?|bolos?|doces?|salgados?)\b/i.test(inboundText)) {
+      const catalogForItem = await readAthosCatalogForTenant(deps);
+      const item = detectAndResolveCartSelection(stripPickupClause(inboundText), catalogForItem);
+      if (item.unresolvedNames.length > 0) {
+        return { handled: true,
+          responseText: `Não encontrei no catálogo Athos: ${item.unresolvedNames.join(', ')}. Confira o item no cardápio.`,
+          partySize: base.partySize, cartItems: base.cartItems, state: base.state,
+          errorCode: 'athos_product_not_found' };
+      }
+      if (item.matched) {
+        await handleCartSelection(deps, base, item, inboundText, { kind: 'none' });
+        base = await loadAthosSnapshotFromMetadata(deps);
+      }
     }
+    if (base.state === 'completed' || base.state === 'crm_recorded') base = emptyAthosOrderSnapshot();
+    await persistAthosSnapshot(deps, {
+      ...base, fulfillment: 'pickup', updatedAt: new Date().toISOString(),
+    });
     return { handled: true, responseText: pickup.message,
-      partySize: previousSnapshot.partySize, cartItems: previousSnapshot.cartItems,
-      state: previousSnapshot.state, errorCode: 'athos_pickup_schedule_incomplete' };
+      partySize: base.partySize, cartItems: base.cartItems,
+      state: base.state, errorCode: 'athos_pickup_schedule_incomplete' };
   }
   // A data pode chegar antes da escolha do produto.
   if (pickup.kind === 'scheduled' &&
@@ -231,7 +246,8 @@ export async function handleFoodserviceOrderTurn(
     };
   }
 
-  const cartSelection = detectAndResolveCartSelection(inboundText, catalog);
+  const cartSelection = detectAndResolveCartSelection(
+    pickup.kind === 'scheduled' ? stripPickupClause(inboundText) : inboundText, catalog);
   if (cartSelection.unresolvedNames.length > 0) {
     return {
       handled: true,
@@ -497,7 +513,14 @@ function orderConfirmationPrompt(snapshot: AthosOrderSnapshot): string {
   );
   const pickup = snapshot.fulfillment === 'pickup' && snapshot.pickupAtLocal
     ? `\nRetirada: ${formatPickupSchedule(snapshot)}.` : '';
+  if (snapshot.fulfillment === 'pickup' && !snapshot.pickupAtLocal) {
+    return `Pedido para ${snapshot.partySize} pessoa(s). Total: R$ ${(total / 100).toFixed(2)}.\n\n${lines.join('\n')}\n\nPara qual dia e horário será a retirada?`;
+  }
   return `Pedido para ${snapshot.partySize} pessoa(s). Total: R$ ${(total / 100).toFixed(2)}.\n\n${lines.join('\n')}${pickup}\n\nConfirma o pedido? Responda "confirmo o pedido" para enviar a Athos.`;
+}
+
+function stripPickupClause(text: string): string {
+  return text.replace(/(?:\s+para\s+retirada\b|\s+retirada\b|\s+amanh[aã](?!\p{L})|\s+hoje\b|\s+\d{1,2}\/\d{1,2}(?:\/\d{4})?\b).*$/iu, '').trim();
 }
 
 function formatPickupSchedule(snapshot: AthosOrderSnapshot): string {

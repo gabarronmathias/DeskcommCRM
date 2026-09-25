@@ -567,6 +567,31 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(result.responseText).toContain('Retirada: 26/09/2026 às 10:00');
   });
 
+  it('"quero 1 bolo para retirada" guarda o item e pede somente o horário', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool, now: new Date('2026-09-25T13:00:00.000Z') };
+    const initial = await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate para retirada');
+    expect(initial.cartItems).toHaveLength(1);
+    expect(initial.responseText).toContain('informe o dia e o horário');
+    const scheduled = await handleFoodserviceOrderTurn(deps, 'amanhã às 10h');
+    expect(scheduled.cartItems).toHaveLength(1);
+    expect(scheduled.responseText).toContain('Para quantas pessoas');
+    const withPartySize = await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    expect(withPartySize.responseText).toContain('Retirada: 26/09/2026 às 10:00');
+    expect(withPartySize.responseText).toContain('Confirma o pedido?');
+  });
+
+  it('item e horário na mesma frase preservam preço e retirada', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool, now: new Date('2026-09-25T13:00:00.000Z') };
+    const initial = await handleFoodserviceOrderTurn(
+      deps, 'quero 1 Bolo de Chocolate para retirada amanhã às 10h');
+    expect(initial.cartItems).toHaveLength(1);
+    expect(initial.cartItems[0]?.quantity).toBe(1);
+    const withPartySize = await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    expect(withPartySize.responseText).toContain('Retirada: 26/09/2026 às 10:00');
+  });
+
   it('saudação durante carrinho incompleto não pede confirmação prematura', async () => {
     const pool = makeMockPool();
     const deps = { ...baseDeps, pool };
