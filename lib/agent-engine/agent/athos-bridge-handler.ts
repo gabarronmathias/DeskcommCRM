@@ -85,7 +85,7 @@ export async function tryHandleAthosOrderBridge(
 }
 
 const TRANSACTIONAL_ORDER_SIGNAL_RE =
-  /\b(?:pedido|encomenda|confirm(?:o|ar|ado|ada)|pode fechar|fechar pedido|tortas?|bolos?|doces?|salgados?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar)\b/i;
+  /\b(?:card[aá]pio|menu|pedido|encomenda|confirm(?:o|ar|ado|ada)|pode fechar|fechar pedido|tortas?|bolos?|doces?|salgados?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar)\b/i;
 
 function failClosed(deps: AthosBridgeHandlerDeps, error: unknown): AthosBridgeResult {
   const code = typeof error === 'object' && error !== null && 'code' in error

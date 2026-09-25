@@ -80,7 +80,8 @@ describe('athos-order-adapter (briefing recovery)', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: { accepted: true, order_id: 'order-1' } }), { status: 202 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await createAthosOrder(baseInput);
+    const result = await createAthosOrder({ ...baseInput,
+      fulfillment: 'pickup', pickupAtLocal: '2026-09-26T10:00:00', pickupTimezone: 'America/Sao_Paulo' });
 
     expect(result.externalOrderId).toBe('order-1');
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -90,8 +91,11 @@ describe('athos-order-adapter (briefing recovery)', () => {
     const body = String(eventCall?.[1]?.body);
     expect(headers['Authorization']).toBe('Bearer test-bearer');
     expect(headers['X-Athos-Signature']).toMatch(/^v1=[a-f0-9]{64}$/);
-    const event = JSON.parse(body) as { order: { items: Array<{ sku: string }> } };
+    const event = JSON.parse(body) as { order: { items: Array<{ sku: string }>; fulfillment: unknown } };
     expect(event.order.items[0]?.sku).toBe('SKU-1');
+    expect(event.order.fulfillment).toEqual({
+      type: 'pickup', scheduled_at_local: '2026-09-26T10:00:00', timezone: 'America/Sao_Paulo',
+    });
   });
 
   it('bloqueia item sem SKU antes de criar launch ou evento no sandbox', async () => {

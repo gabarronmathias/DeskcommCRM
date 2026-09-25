@@ -53,6 +53,9 @@ export interface AthosOrderSnapshot {
   state: AthosOrderState;
   confirmationToken: string;
   partySize: number | null;
+  fulfillment?: 'pickup' | 'delivery' | null;
+  pickupAtLocal?: string | null;
+  pickupTimezone?: string | null;
   cartItems: ReadonlyArray<AthosCartItem>;
   externalOrderId: string | null;
   crmOrderId: string | null;
@@ -77,6 +80,9 @@ export function emptyAthosOrderSnapshot(): AthosOrderSnapshot {
     state: 'awaiting_confirmation',
     confirmationToken: '',
     partySize: null,
+    fulfillment: null,
+    pickupAtLocal: null,
+    pickupTimezone: null,
     cartItems: [],
     externalOrderId: null,
     crmOrderId: null,

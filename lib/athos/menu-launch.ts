@@ -14,14 +14,14 @@ export async function attachAthosLaunchToMenuLink(input: {
   requestId: string;
 }): Promise<string> {
   if (!input.body.includes("cardapio.sistemaathos.com.br")) return input.body;
-  const integration = await input.pool.query<{ store_metadata: Record<string, unknown> }>(
-    `select store_metadata
+  const integration = await input.pool.query<{ metadata: Record<string, unknown> }>(
+    `select metadata
        from tenant_integrations
-      where organization_id = $1 and provider = 'athos' and status = 'healthy'
+      where organization_id = $1 and provider = 'athos'
       limit 1`,
     [input.organizationId],
   );
-  const metadata = integration.rows[0]?.store_metadata;
+  const metadata = integration.rows[0]?.metadata;
   if (metadata?.environment !== "sandbox" || typeof metadata.menu_url !== "string" || metadata.menu_url === "") {
     return input.body;
   }

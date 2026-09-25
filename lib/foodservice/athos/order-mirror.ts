@@ -34,6 +34,9 @@ export interface OrderMirrorInput {
   athosCreated: AthosOrderWriteResult;
   cartItems: ReadonlyArray<AthosCartItem>;
   partySize: number | null;
+  fulfillment?: 'pickup' | 'delivery' | null;
+  pickupAtLocal?: string | null;
+  pickupTimezone?: string | null;
   idempotencyKey: string;
   externalProvider: 'gm_crm_food' | 'athos';
 }
@@ -82,6 +85,9 @@ export async function mirrorAthosOrderToCrm(
     athos_created_at: input.athosCreated.athosCreatedAt,
     athos_status: input.athosCreated.externalStatus,
     party_size: input.partySize,
+    ...(input.fulfillment === 'pickup' && input.pickupAtLocal && input.pickupTimezone
+      ? { fulfillment: { type: 'pickup', scheduled_at_local: input.pickupAtLocal, timezone: input.pickupTimezone } }
+      : {}),
     ...input.athosCreated.externalPayload,
   };
   const inserted = await client.insertOrderWithIdempotency({

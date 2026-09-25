@@ -44,6 +44,42 @@ export async function resolveEnabledAthosTenantSlug(
   return slug === undefined || slug === '' ? null : slug;
 }
 
+export async function readAthosMenuUrl(
+  pool: pg.Pool,
+  organizationId: string,
+): Promise<string | null> {
+  const result = await pool.query<{ menu_url: string | null }>(
+    `select coalesce(to_jsonb(f)->>'menu_url', f.settings->>'menu_url', f.settings->>'athos_menu_url') as menu_url
+       from food_commerce_settings f
+      where f.organization_id = $1 and f.is_enabled = true
+      limit 1`,
+    [organizationId],
+  );
+  const candidate = result.rows[0]?.menu_url;
+  if (!candidate) return null;
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== 'https:' || url.hostname !== 'cardapio.sistemaathos.com.br') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+export async function readOrganizationTimezone(pool: pg.Pool, organizationId: string): Promise<string> {
+  const result = await pool.query<{ timezone: string | null }>(
+    `select timezone from organizations where id = $1 limit 1`,
+    [organizationId],
+  );
+  const timezone = result.rows[0]?.timezone || 'America/Sao_Paulo';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    return timezone;
+  } catch {
+    return 'America/Sao_Paulo';
+  }
+}
+
 export async function readContactSourceMetadata(
   pool: pg.Pool,
   organizationId: string,

@@ -2708,7 +2708,14 @@ export async function tryFoodserviceSalesFastPath(
       matched = true;
       kind = 'athos_bridge';
       const renderStarted = Date.now();
-      const response = athosBridge.responseText;
+      const response = await attachAthosLaunchToMenuLink({
+        pool,
+        organizationId: job.organization_id,
+        contactId: payload.contact_id,
+        conversationId: payload.conversation_id,
+        body: athosBridge.responseText,
+        requestId: job.id,
+      });
       renderMs = Date.now() - renderStarted;
       const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool);
       let physicalSendStarted = 0;

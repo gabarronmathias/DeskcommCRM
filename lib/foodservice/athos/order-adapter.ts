@@ -34,6 +34,9 @@ export interface AthosOrderWriteInput {
   contactId: string;
   conversationId: string;
   partySize: number | null;
+  fulfillment?: 'pickup' | 'delivery' | null;
+  pickupAtLocal?: string | null;
+  pickupTimezone?: string | null;
   cartItems: ReadonlyArray<AthosCartItem>;
   idempotencyKey: string;
   confirmationToken: string;
@@ -175,6 +178,9 @@ async function writeAthosSandboxOrder(
       created_at: now,
       updated_at: now,
       ...(input.partySize === null ? {} : { party_size: input.partySize }),
+      ...(input.fulfillment === 'pickup' && input.pickupAtLocal && input.pickupTimezone
+        ? { fulfillment: { type: 'pickup', scheduled_at_local: input.pickupAtLocal, timezone: input.pickupTimezone } }
+        : {}),
       items,
     },
   };

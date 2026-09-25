@@ -4,7 +4,7 @@ import { attachAthosLaunchToMenuLink } from "./menu-launch";
 describe("attachAthosLaunchToMenuLink", () => {
   it("adds a fresh launch id to the configured Athos URL and persists its CRM correlation", async () => {
     const query = vi.fn()
-      .mockResolvedValueOnce({ rows: [{ store_metadata: {
+      .mockResolvedValueOnce({ rows: [{ metadata: {
         environment: "sandbox",
         menu_url: "https://cardapio.sistemaathos.com.br/tortasdocalmon",
         store_ref: "athos-store",
@@ -32,7 +32,7 @@ describe("attachAthosLaunchToMenuLink", () => {
   });
 
   it("does not query or rewrite unrelated messages", async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ store_metadata: {
+    const query = vi.fn().mockResolvedValue({ rows: [{ metadata: {
       environment: "production",
       menu_url: "https://cardapio.sistemaathos.com.br/tortasdocalmon",
       store_ref: "athos-store",
@@ -49,8 +49,18 @@ describe("attachAthosLaunchToMenuLink", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  it("keeps the configured menu link when no optional Athos integration row exists", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const body = "https://cardapio.sistemaathos.com.br/tortasdocalmon";
+    await expect(attachAthosLaunchToMenuLink({
+      pool: { query } as never, organizationId: "org-1", contactId: "contact-1",
+      conversationId: "conversation-1", requestId: "job-1", body,
+    })).resolves.toBe(body);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
   it("leaves the configured URL unchanged outside the sandbox", async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ store_metadata: {
+    const query = vi.fn().mockResolvedValue({ rows: [{ metadata: {
       environment: "production",
       menu_url: "https://cardapio.sistemaathos.com.br/tortasdocalmon",
       store_ref: "athos-store",

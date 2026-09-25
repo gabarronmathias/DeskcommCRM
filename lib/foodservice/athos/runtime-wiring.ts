@@ -50,7 +50,10 @@ import {
   persistAthosSnapshot,
   persistPartySize,
   readAthosCatalogForTenant,
+  readAthosMenuUrl,
+  readOrganizationTimezone,
 } from './runtime-repository';
+import { parsePickupSchedule, type PickupScheduleResult } from './pickup-schedule';
 import {
   isRecoverableAthosSnapshot,
   mirrorAthosOrderToCrm,
@@ -65,6 +68,7 @@ export interface RuntimeWiringDeps {
   conversationId: string;
   tenantSlug: string;
   contactName?: string | null;
+  now?: Date;
 }
 
 export interface RuntimeWiringOutcome {
@@ -130,10 +134,79 @@ export async function handleFoodserviceOrderTurn(
     };
   }
 
+  // Cardápio vem de configuração verificável, nunca do modelo.
+  if (/\b(?:card[aá]pio|menu)\b/i.test(inboundText) &&
+      !/\b(?:\d{1,3}|um|uma|dois|duas)\s+(?:torta|bolo|doce|salgado)/i.test(inboundText)) {
+    const menuUrl = await readAthosMenuUrl(deps.pool, deps.organizationId);
+    return {
+      handled: true,
+      responseText: menuUrl === null
+        ? 'Não consegui consultar o cardápio agora. Tente novamente em alguns instantes.'
+        : `Aqui está o cardápio: ${menuUrl}`,
+      partySize: previousSnapshot.partySize,
+      cartItems: previousSnapshot.cartItems,
+      state: previousSnapshot.state,
+      errorCode: menuUrl === null ? 'athos_menu_not_configured' : null,
+    };
+  }
+
+  const pickupSignal = /\bretir(?:ar|ada|o|amos|arei|a)\b|\bamanh[aã](?!\p{L})/iu.test(inboundText);
+  let pickup: PickupScheduleResult = { kind: 'none' };
+  if (pickupSignal || previousSnapshot.fulfillment === 'pickup') {
+    const timezone = await readOrganizationTimezone(deps.pool, deps.organizationId);
+    pickup = parsePickupSchedule(inboundText, deps.now ?? new Date(), timezone,
+      previousSnapshot.fulfillment === 'pickup');
+  }
+  if (pickup.kind === 'incomplete') {
+    if (/\bretir(?:ar|ada|o|amos|arei|a)\b/iu.test(inboundText) &&
+        previousSnapshot.state !== 'completed' && previousSnapshot.state !== 'crm_recorded') {
+      await persistAthosSnapshot(deps, {
+        ...previousSnapshot, fulfillment: 'pickup', updatedAt: new Date().toISOString(),
+      });
+    }
+    return { handled: true, responseText: pickup.message,
+      partySize: previousSnapshot.partySize, cartItems: previousSnapshot.cartItems,
+      state: previousSnapshot.state, errorCode: 'athos_pickup_schedule_incomplete' };
+  }
+  // A data pode chegar antes da escolha do produto.
+  if (pickup.kind === 'scheduled' &&
+      (previousSnapshot.cartItems.length === 0 || previousSnapshot.state === 'completed' || previousSnapshot.state === 'crm_recorded') &&
+      !/\b(?:torta|bolo|doce|salgado)\b/i.test(inboundText)) {
+    const base = previousSnapshot.state === 'completed' || previousSnapshot.state === 'crm_recorded'
+      ? emptyAthosOrderSnapshot() : previousSnapshot;
+    const next = await persistAthosSnapshot(deps, {
+      ...base, fulfillment: 'pickup',
+      pickupAtLocal: pickup.value.scheduledAtLocal, pickupTimezone: pickup.value.timezone,
+      updatedAt: new Date().toISOString(),
+    });
+    return { handled: true,
+      responseText: `Anotei a retirada para ${formatPickupSchedule(next)}. Qual item você deseja?`,
+      partySize: next.partySize, cartItems: next.cartItems, state: next.state, errorCode: null };
+  }
+
   const catalog = await readAthosCatalogForTenant(deps);
 
   if (confirmationMatch && previousSnapshot.cartItems.length > 0) {
+    if (previousSnapshot.fulfillment === 'pickup' && !previousSnapshot.pickupAtLocal) {
+      return { handled: true, responseText: 'Informe o dia e o horário da retirada antes de confirmar o pedido.',
+        partySize: previousSnapshot.partySize, cartItems: previousSnapshot.cartItems,
+        state: previousSnapshot.state, errorCode: 'athos_pickup_schedule_incomplete' };
+    }
     return handleConfirmation(deps, previousSnapshot, inboundText, catalog);
+  }
+
+  if (pickup.kind === 'scheduled' && previousSnapshot.cartItems.length > 0 &&
+      previousSnapshot.state !== 'completed' && previousSnapshot.state !== 'crm_recorded' &&
+      !/\b(?:torta|bolo|doce|salgado)\b/i.test(inboundText)) {
+    const next = await persistAthosSnapshot(deps, {
+      ...previousSnapshot, fulfillment: 'pickup',
+      pickupAtLocal: pickup.value.scheduledAtLocal, pickupTimezone: pickup.value.timezone,
+      updatedAt: new Date().toISOString(),
+    });
+    return { handled: true,
+      responseText: next.partySize === null ? 'Anotei a retirada. Para quantas pessoas será?'
+        : orderConfirmationPrompt(next),
+      partySize: next.partySize, cartItems: next.cartItems, state: next.state, errorCode: null };
   }
 
   // A resposta à pergunta "para quantas pessoas?" é dado do pedido, não
@@ -172,7 +245,7 @@ export async function handleFoodserviceOrderTurn(
     };
   }
   if (cartSelection.matched) {
-    return handleCartSelection(deps, previousSnapshot, cartSelection, inboundText);
+    return handleCartSelection(deps, previousSnapshot, cartSelection, inboundText, pickup);
   }
 
   if (
@@ -246,6 +319,9 @@ async function handleConfirmation(
     contactId: deps.contactId,
     conversationId: deps.conversationId,
     partySize: next.partySize,
+    fulfillment: next.fulfillment,
+    pickupAtLocal: next.pickupAtLocal,
+    pickupTimezone: next.pickupTimezone,
     cartItems: next.cartItems,
     idempotencyKey,
     confirmationToken: confirmation.consumedToken,
@@ -268,6 +344,9 @@ async function handleConfirmation(
         athosCreated,
         cartItems: next.cartItems,
         partySize: next.partySize,
+        fulfillment: next.fulfillment,
+        pickupAtLocal: next.pickupAtLocal,
+        pickupTimezone: next.pickupTimezone,
         idempotencyKey,
         externalProvider: 'athos',
       },
@@ -315,6 +394,7 @@ async function handleCartSelection(
   previousSnapshot: AthosOrderSnapshot,
   selection: { items: ReadonlyArray<AthosCartItem>; unresolvedNames: ReadonlyArray<string> },
   inboundText: string,
+  pickup: PickupScheduleResult,
 ): Promise<RuntimeWiringOutcome> {
   const startsNewOrder = previousSnapshot.state === 'completed' || previousSnapshot.state === 'crm_recorded';
   const baseSnapshot = startsNewOrder
@@ -328,6 +408,11 @@ async function handleCartSelection(
   const partySize = baseSnapshot.partySize;
   let next: AthosOrderSnapshot = {
     ...baseSnapshot,
+    ...(pickup.kind === 'scheduled' ? {
+      fulfillment: 'pickup' as const,
+      pickupAtLocal: pickup.value.scheduledAtLocal,
+      pickupTimezone: pickup.value.timezone,
+    } : {}),
     cartItems: merged,
     state: 'awaiting_confirmation',
     confirmationToken: baseSnapshot.confirmationToken === ''
@@ -375,6 +460,9 @@ export async function runAthosRecovery(deps: RuntimeWiringDeps): Promise<OrderMi
       conversationId: deps.conversationId,
       cartItems: snapshot.cartItems,
       partySize: snapshot.partySize,
+      fulfillment: snapshot.fulfillment,
+      pickupAtLocal: snapshot.pickupAtLocal,
+      pickupTimezone: snapshot.pickupTimezone,
       idempotencyKey: snapshot.idempotencyKey ?? computeIdempotencyKeyFromConversation(deps),
       athosCreated: {
         externalOrderId: snapshot.externalOrderId,
@@ -407,7 +495,14 @@ function orderConfirmationPrompt(snapshot: AthosOrderSnapshot): string {
   const lines = snapshot.cartItems.map((item) =>
     `- ${item.quantity}x ${item.productName} (R$ ${((item.unitPriceCents * item.quantity) / 100).toFixed(2)})`,
   );
-  return `Pedido para ${snapshot.partySize} pessoa(s). Total: R$ ${(total / 100).toFixed(2)}.\n\n${lines.join('\n')}\n\nConfirma o pedido? Responda "confirmo o pedido" para enviar a Athos.`;
+  const pickup = snapshot.fulfillment === 'pickup' && snapshot.pickupAtLocal
+    ? `\nRetirada: ${formatPickupSchedule(snapshot)}.` : '';
+  return `Pedido para ${snapshot.partySize} pessoa(s). Total: R$ ${(total / 100).toFixed(2)}.\n\n${lines.join('\n')}${pickup}\n\nConfirma o pedido? Responda "confirmo o pedido" para enviar a Athos.`;
+}
+
+function formatPickupSchedule(snapshot: AthosOrderSnapshot): string {
+  const match = snapshot.pickupAtLocal?.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]} às ${match[4]}:${match[5]}` : 'horário a confirmar';
 }
 
 function mergeCart(

@@ -25,6 +25,9 @@ export interface RecoveryInput {
   conversationId: string;
   cartItems: ReadonlyArray<AthosCartItem>;
   partySize: number | null;
+  fulfillment?: 'pickup' | 'delivery' | null;
+  pickupAtLocal?: string | null;
+  pickupTimezone?: string | null;
   idempotencyKey: string;
   athosCreated: AthosOrderWriteResult;
   externalProvider: 'gm_crm_food' | 'athos';
@@ -63,6 +66,9 @@ async function runRecovery(
     athosCreated: recovery.athosCreated,
     cartItems: recovery.cartItems,
     partySize: recovery.partySize,
+    fulfillment: recovery.fulfillment,
+    pickupAtLocal: recovery.pickupAtLocal,
+    pickupTimezone: recovery.pickupTimezone,
     idempotencyKey: recovery.idempotencyKey,
     externalProvider: recovery.externalProvider,
   });

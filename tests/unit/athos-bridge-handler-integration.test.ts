@@ -92,6 +92,7 @@ interface MockPoolOptions {
   enabledTenantSlug?: string;
   contactSourceMetadata?: Record<string, unknown>;
   failFoodItemOnce?: boolean;
+  menuUrl?: string;
 }
 
 function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
@@ -125,6 +126,12 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
         return options.enabledTenantSlug === undefined
           ? { rows: [], rowCount: 0 }
           : { rows: [{ tenant_slug: options.enabledTenantSlug }], rowCount: 1 };
+      }
+      if (trimmed.startsWith('select timezone from organizations')) {
+        return { rows: [{ timezone: 'America/Sao_Paulo' }], rowCount: 1 };
+      }
+      if (trimmed.includes('from food_commerce_settings f')) {
+        return { rows: options.menuUrl ? [{ menu_url: options.menuUrl }] : [], rowCount: options.menuUrl ? 1 : 0 };
       }
       // contacts
       if (trimmed.startsWith('select source_metadata')) {
@@ -204,7 +211,7 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
         return { rows: found ? [{ id: found.id }] : [], rowCount: found ? 1 : 0 };
       }
       // orders lookup by external_id (replay)
-      if (trimmed.startsWith('select id') && trimmed.includes('from orders')) {
+      if (trimmed.startsWith('select id') && !trimmed.startsWith('select id, organization_id, payload') && trimmed.includes('from orders')) {
         const [orgId, provider, externalId] = params as [string, string, string];
         const found = orders.rows.find(
           (r) =>
@@ -240,7 +247,7 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
           error.code = '42725';
           throw error;
         }
-        const [id, orgId, orderId, productId, externalProductId, sku, productName, unitPriceCents, quantity, modifiersDelta, modifiers] = params as [
+        const [id, orgId, orderId, productId, externalProductId, sku, productName, unitPriceCents, quantity, lineTotalCents, modifiers] = params as [
           string,
           string,
           string,
@@ -248,7 +255,6 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
           string,
           string | null,
           string,
-          number,
           number,
           number,
           number,
@@ -264,7 +270,7 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
           product_name_snapshot: productName,
           unit_price_cents: unitPriceCents,
           quantity,
-          line_total_cents: (unitPriceCents + modifiersDelta) * quantity,
+          line_total_cents: lineTotalCents,
           selected_modifiers: modifiers,
         };
         foodOrderItems.rows.push(row);
@@ -503,6 +509,62 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(repeated.cartItems[0]?.quantity).toBe(1);
     const added = await handleFoodserviceOrderTurn(deps, 'quero mais 1 Bolo de Chocolate');
     expect(added.cartItems[0]?.quantity).toBe(2);
+  });
+
+  it('envia o cardápio configurado sem inventar link de outro tenant', async () => {
+    const menuUrl = 'https://cardapio.sistemaathos.com.br/tortasdocalmon';
+    const pool = makeMockPool({ menuUrl });
+    const out = await handleFoodserviceOrderTurn({ ...baseDeps, pool }, 'quero ver o cardápio');
+    expect(out).toMatchObject({ handled: true, errorCode: null });
+    expect(out.responseText).toContain(menuUrl);
+
+    const other = await handleFoodserviceOrderTurn({ ...baseDeps, pool, tenantSlug: 'chopperia' }, 'cardápio');
+    expect(other.responseText).toContain(menuUrl);
+    const withoutConfig = await handleFoodserviceOrderTurn(
+      { ...baseDeps, pool: makeMockPool(), tenantSlug: 'chopperia' }, 'cardápio');
+    expect(withoutConfig.errorCode).toBe('athos_menu_not_configured');
+    expect(withoutConfig.responseText).not.toContain('tortasdocalmon');
+  });
+
+  it('retirada amanhã às 10h passa do WhatsApp ao snapshot, adapter e espelho CRM', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool, now: new Date('2026-09-25T13:00:00.000Z') };
+    const adapter = makeFakeAdapter('athos-pickup-001');
+    setAthosAdapter(adapter);
+
+    await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    const pickup = await handleFoodserviceOrderTurn(deps, 'vou retirar amanhã às 10h');
+    expect(pickup.responseText).toContain('26/09/2026 às 10:00');
+    expect(pickup.responseText).toContain('Confirma o pedido?');
+
+    const confirmed = await handleFoodserviceOrderTurn(deps, 'confirmo o pedido');
+    expect(confirmed.state).toBe('completed');
+    expect(adapter.calls).toBe(1);
+    const input = vi.mocked(adapter.createAthosOrder).mock.calls[0]?.[0];
+    expect(input).toMatchObject({
+      fulfillment: 'pickup', pickupAtLocal: '2026-09-26T10:00:00', pickupTimezone: 'America/Sao_Paulo',
+    });
+    const order = await pool.query<{ payload: { athos_payload: Record<string, unknown> } }>(
+      `select id, organization_id, payload from orders where organization_id = $1
+         and payload->>'athos_idempotency_key' = $2 limit 1`,
+      [deps.organizationId, input?.idempotencyKey],
+    );
+    expect(order.rows[0]?.payload.athos_payload.fulfillment).toEqual({
+      type: 'pickup', scheduled_at_local: '2026-09-26T10:00:00', timezone: 'America/Sao_Paulo',
+    });
+    await handleFoodserviceOrderTurn(deps, 'confirmo o pedido');
+    expect(adapter.calls).toBe(1);
+  });
+
+  it('horário antes do item é mantido até a confirmação', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool, now: new Date('2026-09-25T13:00:00.000Z') };
+    const pickup = await handleFoodserviceOrderTurn(deps, 'vou retirar amanhã às 10h');
+    expect(pickup.responseText).toContain('Qual item você deseja?');
+    await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    const result = await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    expect(result.responseText).toContain('Retirada: 26/09/2026 às 10:00');
   });
 
   it('saudação durante carrinho incompleto não pede confirmação prematura', async () => {
