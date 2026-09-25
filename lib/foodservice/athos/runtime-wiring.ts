@@ -151,8 +151,9 @@ export async function handleFoodserviceOrderTurn(
     previousSnapshot.state !== 'crm_recorded'
   ) {
     const responseText = previousSnapshot.state === 'awaiting_confirmation'
-      ? 'Entendi os detalhes. O pedido ainda não foi enviado nem registrado. ' +
-        'Para eu tentar concluir pela integração, responda “confirmo o pedido”.'
+      ? previousSnapshot.partySize === null
+        ? 'Seu carrinho está salvo, mas ainda não enviei o pedido. Para quantas pessoas será?'
+        : orderConfirmationPrompt(previousSnapshot)
       : 'Não consegui confirmar o registro do pedido na integração. Portanto, ele ainda não está confirmado. ' +
         'O carrinho ficou salvo para conferência.';
     return {

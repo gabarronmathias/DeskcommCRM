@@ -497,6 +497,19 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(added.cartItems[0]?.quantity).toBe(2);
   });
 
+  it('saudação durante carrinho incompleto não pede confirmação prematura', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool };
+    await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    const out = await handleFoodserviceOrderTurn(deps, 'Ola');
+    expect(out.responseText).toContain('Para quantas pessoas');
+    expect(out.responseText).not.toContain('Confirma o pedido');
+    await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    const withPartySize = await handleFoodserviceOrderTurn(deps, 'Ola');
+    expect(withPartySize.responseText).toContain('1x Bolo de Chocolate');
+    expect(withPartySize.responseText).toContain('Confirma o pedido');
+  });
+
   it('cart_selection: produto inexistente -> handled=false (nada casa, segue LLM)', async () => {
     const pool = makeMockPool();
     const log = makeLog();
