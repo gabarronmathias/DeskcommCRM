@@ -644,7 +644,7 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(out.state).toBe('no_change');
   });
 
-  it('sem cart_items + texto de confirmacao -> handled=false', async () => {
+  it('sem cart_items + texto de confirmacao -> impede confirmação fictícia', async () => {
     const pool = makeMockPool();
     const out = await handleFoodserviceOrderTurn(
       {
@@ -656,7 +656,8 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
       },
       'confirmo',
     );
-    expect(out.handled).toBe(false);
+    expect(out.handled).toBe(true);
+    expect(out.responseText).toMatch(/Ainda não há itens registrados/);
   });
 
   it('confirmation: cart existe + adapter Athos indisponivel -> ATHOS_ORDER_WRITE_UNAVAILABLE preserva cart', async () => {
@@ -802,6 +803,36 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(suggestion.cartItems).toEqual([]);
     expect(suggestion.partySize).toBeNull();
     expect(suggestion.errorCode).toBeNull();
+  });
+
+  it('resposta adicione 2 após sugestão altera somente o pedido novo, com preço verificável', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool };
+    await handleFoodserviceOrderTurn(deps, 'quero fazer um novo pedido');
+
+    const emptyConfirmation = await handleFoodserviceOrderTurn(deps, 'confirmo o pedido');
+    expect(emptyConfirmation.responseText).toMatch(/Ainda não há itens registrados/);
+
+    const selected = await handleFoodserviceOrderTurn({
+      ...deps,
+      recentMessages: [{ direction: 'outbound', body: 'Quer que eu adicione 1 Bolo de Chocolate ou 2?' }],
+    }, 'adicione 2');
+    expect(selected.handled).toBe(true);
+    expect(selected.cartItems).toHaveLength(1);
+    expect(selected.cartItems[0]?.quantity).toBe(2);
+    expect(selected.cartItems[0]?.productName).toBe('Bolo de Chocolate');
+    expect(selected.responseText).toContain('R$ 240.00');
+
+    const repeated = await handleFoodserviceOrderTurn({
+      ...deps,
+      recentMessages: [{ direction: 'outbound', body: 'Quer que eu adicione 1 Bolo de Chocolate ou 2?' }],
+    }, 'adicione 2');
+    expect(repeated.cartItems[0]?.quantity).toBe(2);
+
+    const price = await handleFoodserviceOrderTurn(deps, 'quanto isso vai me custar?');
+    expect(price.responseText).toContain('2x Bolo de Chocolate');
+    expect(price.responseText).toContain('R$ 240.00');
+    expect(price.responseText).toContain('ainda não foi confirmado');
   });
 
   it('recovery: snapshot athos_created -> espelha UMA vez; 2a recovery noop', async () => {

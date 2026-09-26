@@ -10,8 +10,32 @@ export function claimsOrderWasConfirmed(text: string): boolean {
   }
   return /\b(?:seu|o) pedido (?:ja )?(?:(?:esta|foi|ficou) )?(?:confirmado|registrado|concluido|fechado)\b/.test(normalized)
     || /\bpedido (?:confirmado|registrado|concluido|fechado)\b/.test(normalized)
-    || /\b(?:confirmei|registrei|fechei|finalizei)\s*(?::|(?:o|seu) pedido\b)/.test(normalized);
+    || /\b(?:confirmei|registrei|fechei|finalizei)\s*(?::|(?:o|seu|os|seus) pedidos?\b)/.test(normalized);
 }
+
+/** A generated reply may not claim a cart write that only the order bridge can perform. */
+export function claimsCartWasChanged(text: string): boolean {
+  const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/\bnao\b[^.!?\n]{0,100}\b(?:adicionei|inclui|coloquei|acrescentei|atualizei)\b/.test(normalized)) {
+    return false;
+  }
+  return /\b(?:adicionei|inclui|coloquei|acrescentei|atualizei)\b[^.!?\n]{0,140}\b(?:pedido|carrinho|torta|bolo|item|produto)\b/.test(normalized);
+}
+
+export async function shouldBlockUnverifiedAthosCartMutation(pool: pg.Pool, organizationId: string): Promise<boolean> {
+  const result = await pool.query<{ enabled: boolean }>(
+    `select exists (
+       select 1 from food_commerce_settings
+        where organization_id = $1 and is_enabled = true
+     ) as enabled`,
+    [organizationId],
+  );
+  return result.rows[0]?.enabled === true;
+}
+
+export const UNVERIFIED_ATHOS_CART_REPLY =
+  'Não consegui registrar essa alteração no pedido atual. Para evitar um erro, informe o produto e a quantidade; ' +
+  'só confirmarei depois de verificar o registro.';
 
 /**
  * The LLM cannot acknowledge an Athos order merely because the conversation

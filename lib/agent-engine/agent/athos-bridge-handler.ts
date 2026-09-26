@@ -31,6 +31,7 @@ export interface AthosBridgeHandlerDeps {
   contactId: string;
   conversationId: string;
   text: string;
+  recentMessages?: ReadonlyArray<{ direction: 'inbound' | 'outbound'; body: string }>;
   log: Logger;
 }
 
@@ -67,6 +68,7 @@ export async function tryHandleAthosOrderBridge(
         contactId: deps.contactId,
         conversationId: deps.conversationId,
         tenantSlug,
+        recentMessages: deps.recentMessages,
       },
       deps.text,
     );
@@ -85,7 +87,7 @@ export async function tryHandleAthosOrderBridge(
 }
 
 const TRANSACTIONAL_ORDER_SIGNAL_RE =
-  /\b(?:card[aá]pio|menu|pedido|encomenda|confirm(?:o|ar|ado|ada)|pode fechar|fechar pedido|tortas?|bolos?|doces?|salgados?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar)\b/i;
+  /\b(?:card[aá]pio|menu|pedido|encomenda|confirm(?:o|ar|ado|ada)|pode fechar|fechar pedido|tortas?|bolos?|doces?|salgados?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar|adicione|inclua|sugest[aã]o|recomenda[cç][aã]o|pre[cç]o|valor|custa)\b/i;
 
 function failClosed(deps: AthosBridgeHandlerDeps, error: unknown): AthosBridgeResult {
   const code = typeof error === 'object' && error !== null && 'code' in error

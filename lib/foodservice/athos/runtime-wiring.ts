@@ -70,6 +70,7 @@ export interface RuntimeWiringDeps {
   tenantSlug: string;
   contactName?: string | null;
   now?: Date;
+  recentMessages?: ReadonlyArray<{ direction: 'inbound' | 'outbound'; body: string }>;
 }
 
 export interface RuntimeWiringOutcome {
@@ -137,6 +138,63 @@ export async function handleFoodserviceOrderTurn(
       partySize: null,
       cartItems: [],
       state: nextSnapshot.state,
+      errorCode: null,
+    };
+  }
+
+  const addQuantityMatch = inboundText.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+    .match(/^(?:sim[, ]+)?(?:adicione|adiciona|inclua|coloque|quero)\s+(\d{1,3}|um|uma|dois|duas)\s*[.!]?$/);
+  if (addQuantityMatch !== null) {
+    const catalog = await readAthosCatalogForTenant(deps);
+    const previousReply = deps.recentMessages?.[0]?.direction === 'outbound'
+      ? deps.recentMessages[0].body : '';
+    const mentioned = catalog.products.filter((product) => product.athosProductId !== null &&
+      previousReply.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+        .includes(product.name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()));
+    if (mentioned.length !== 1) {
+      return {
+        handled: true,
+        responseText: 'Para não adicionar o produto errado, qual item do cardápio você quer e quantas unidades?',
+        partySize: previousSnapshot.partySize,
+        cartItems: previousSnapshot.cartItems,
+        state: previousSnapshot.state,
+        errorCode: null,
+      };
+    }
+    const selection = detectAndResolveCartSelection(
+      `${addQuantityMatch[1]} ${mentioned[0]!.name}`, catalog);
+    if (!selection.matched || selection.unresolvedNames.length > 0) {
+      return { handled: true,
+        responseText: 'Não consegui identificar com segurança o item. Informe o nome do produto e a quantidade.',
+        partySize: previousSnapshot.partySize, cartItems: previousSnapshot.cartItems,
+        state: previousSnapshot.state, errorCode: null };
+    }
+    // "Adicione 2" is the answer to a proposed quantity, not two extra units.
+    return handleCartSelection(deps, previousSnapshot, selection, `${addQuantityMatch[1]} ${mentioned[0]!.name}`, { kind: 'none' });
+  }
+
+  if (/\b(?:quanto|pre[cç]o|valor|total|custa|custar)\b/i.test(inboundText)) {
+    const total = computeTotalCents(previousSnapshot.cartItems);
+    return {
+      handled: true,
+      responseText: previousSnapshot.cartItems.length === 0
+        ? 'Não há itens registrados no pedido atual; não posso calcular um total ainda. Qual produto e quantidade você deseja?'
+        : `O pedido atual tem ${previousSnapshot.cartItems.map((item) => `${item.quantity}x ${item.productName}`).join(', ')}. Total: R$ ${(total / 100).toFixed(2)}. ${previousSnapshot.state === 'completed' ? 'Esse pedido já foi registrado.' : 'Ele ainda não foi confirmado.'}`,
+      partySize: previousSnapshot.partySize,
+      cartItems: previousSnapshot.cartItems,
+      state: previousSnapshot.state,
+      errorCode: null,
+    };
+  }
+
+  if (confirmationMatch && previousSnapshot.cartItems.length === 0 &&
+      previousSnapshot.state !== 'completed' && previousSnapshot.state !== 'crm_recorded') {
+    return {
+      handled: true,
+      responseText: 'Ainda não há itens registrados neste pedido. Informe o produto e a quantidade antes de confirmar.',
+      partySize: previousSnapshot.partySize,
+      cartItems: [],
+      state: previousSnapshot.state,
       errorCode: null,
     };
   }
@@ -226,6 +284,26 @@ export async function handleFoodserviceOrderTurn(
 
   const catalog = await readAthosCatalogForTenant(deps);
 
+  if (/\b(?:s[oó]\s+tem|tem\s+(?:outras|outros)|quais\s+(?:outras|outros))\b/i.test(inboundText) &&
+      /\btortas?\b/i.test(inboundText)) {
+    const tortas = catalog.products.filter((product) => product.athosProductId !== null &&
+      /\btorta\b/i.test(product.name)).slice(0, 4);
+    return { handled: true,
+      responseText: tortas.length > 0
+        ? `No cardápio de teste encontrei: ${tortas.map((product) => product.name).join(', ')}. Qual delas você gostaria de conhecer melhor?`
+        : 'Não encontrei tortas verificadas no catálogo de teste agora. Quer que eu envie o link do cardápio?',
+      partySize: previousSnapshot.partySize, cartItems: previousSnapshot.cartItems,
+      state: previousSnapshot.state, errorCode: null };
+  }
+
+  if (/\b(?:suficiente|rende|serve|dar(?:ia)?\s+para)\b/i.test(inboundText) &&
+      /\bpessoas?\b/i.test(inboundText) && /\btortas?\b/i.test(inboundText)) {
+    return { handled: true,
+      responseText: 'Não tenho o rendimento por torta confirmado no catálogo de teste, então não consigo garantir a quantidade para esse grupo. Você prefere 1 ou 2 unidades para eu mostrar o total exato?',
+      partySize: previousSnapshot.partySize, cartItems: previousSnapshot.cartItems,
+      state: previousSnapshot.state, errorCode: null };
+  }
+
   if (confirmationMatch && previousSnapshot.cartItems.length > 0) {
     if (previousSnapshot.fulfillment === 'pickup' && !previousSnapshot.pickupAtLocal) {
       return { handled: true, responseText: 'Informe o dia e o horário da retirada antes de confirmar o pedido.',
@@ -291,12 +369,24 @@ export async function handleFoodserviceOrderTurn(
 
   const normalizedRequest = inboundText.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
   if (/\b(?:sugestao|sugestoes|recomendacao|recomendacoes|indicacao|indicacoes|nao sei o que (?:pedir|escolher))\b/.test(normalizedRequest)) {
-    const options = catalog.products.filter((product) => product.athosProductId !== null).slice(0, 2);
-    const responseText = options.length === 0
+    const available = catalog.products.filter((product) => product.athosProductId !== null);
+    const isBeverage = (product: typeof available[number]) => {
+      const category = catalog.categories.find((entry) => entry.id === product.categoryId)?.name ?? '';
+      return /bebida|refrigerante|suco|[aá]gua/i.test(category) ||
+        /coca-cola|guaran[aá]|refrigerante|suco|[aá]gua/i.test(product.name);
+    };
+    const primary = available.find((product) => !isBeverage(product)) ?? available[0];
+    const alternative = primary === undefined ? undefined : available.find((product) =>
+      product.id !== primary.id && product.categoryId === primary.categoryId && !isBeverage(product));
+    const complement = primary === undefined ? undefined : available.find((product) =>
+      product.id !== primary.id && isBeverage(product));
+    const responseText = primary === undefined
       ? 'Ainda não tenho itens verificados no catálogo de teste para recomendar com segurança. Quer que eu envie o cardápio?'
-      : options.length === 1
-        ? `Uma opção do cardápio de teste é ${options[0]!.name}. Ela combina com o que você procura?`
-        : `Para te ajudar a escolher, duas opções do cardápio de teste são ${options[0]!.name} e ${options[1]!.name}. Qual delas combina mais com o que você imaginou?`;
+      : alternative !== undefined
+        ? `Uma sugestão do cardápio de teste é ${primary.name}; se quiser outra opção da mesma categoria, há ${alternative.name}. Qual combina mais com o que você procura?`
+        : complement !== undefined
+          ? `Uma sugestão do cardápio de teste é ${primary.name}. Para acompanhar, também há ${complement.name}. O produto principal combina com o que você procura?`
+          : `Uma sugestão do cardápio de teste é ${primary.name}. Ela combina com o que você procura?`;
     return {
       handled: true,
       responseText,
@@ -339,7 +429,7 @@ export async function handleFoodserviceOrderTurn(
 }
 
 const ORDER_OR_MENU_SIGNAL_RE =
-  /\b(?:card[aá]pio|menu|pedido|pedir|encomenda|comprar|quero|preciso|tortas?|bolos?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar|amanh[aã]|hoje)\b/i;
+  /\b(?:card[aá]pio|menu|pedido|pedir|encomenda|comprar|quero|preciso|tortas?|bolos?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar|amanh[aã]|hoje|sugest[aã]o|sugest[oõ]es|recomenda[cç][aã]o|recomenda[cç][oõ]es)\b/i;
 
 const EXPLICIT_NEW_ORDER_SIGNAL_RE =
   /\b(?:novo|nova|outro|outra)\s+(?:pedido|encomenda)\b|\b(?:pedido|encomenda)\s+(?:novo|nova|separado|independente)\b/i;
@@ -465,7 +555,7 @@ async function handleCartSelection(
   const merged = mergeCart(
     baseSnapshot.cartItems,
     selection.items,
-    /\b(?:mais|adiciona(?:r)?|acrescenta(?:r)?|outr[ao]s?)\b/i.test(inboundText),
+    /\b(?:mais|adicion(?:a|e|ar)|inclu(?:a|ir)|acrescenta(?:r)?|outr[ao]s?)\b/i.test(inboundText),
   );
   const partySize = baseSnapshot.partySize;
   let next: AthosOrderSnapshot = {

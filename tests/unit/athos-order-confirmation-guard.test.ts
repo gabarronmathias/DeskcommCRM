@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
 import {
+  claimsCartWasChanged,
   claimsOrderWasConfirmed,
+  shouldBlockUnverifiedAthosCartMutation,
   shouldBlockUnverifiedAthosConfirmation,
   UNVERIFIED_ATHOS_ORDER_REPLY,
 } from '../../lib/foodservice/athos/order-confirmation-guard';
@@ -12,6 +14,7 @@ describe('Athos order confirmation guard', () => {
     'Perfeito, Thailer — seu pedido está confirmado: 2 tortas.',
     'Perfeito — confirmei: 2 tortas para retirada.',
     'Pedido registrado! Obrigada.',
+    'Perfeito, confirmei seus pedidos: 2 tortas no total.',
   ])('detecta uma confirmação afirmativa: %s', (text) => {
     expect(claimsOrderWasConfirmed(text)).toBe(true);
   });
@@ -23,6 +26,27 @@ describe('Athos order confirmation guard', () => {
     'O cardápio está disponível.',
   ])('não bloqueia uma frase sem confirmação: %s', (text) => {
     expect(claimsOrderWasConfirmed(text)).toBe(false);
+  });
+
+  it.each([
+    'Pronto — adicionei 2x Torta de Morango ao pedido separado.',
+    'Incluí o produto no carrinho.',
+  ])('detecta alegação de alteração do carrinho: %s', (text) => {
+    expect(claimsCartWasChanged(text)).toBe(true);
+  });
+
+  it.each([
+    'Não adicionei nada ao pedido.',
+    'Quer que eu adicione 2 unidades ao pedido?',
+  ])('não confunde pergunta ou negativa com alteração: %s', (text) => {
+    expect(claimsCartWasChanged(text)).toBe(false);
+  });
+
+  it('bloqueia alegação do modelo sobre carrinho para loja Athos habilitada', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ enabled: true }] });
+    const pool = { query } as unknown as pg.Pool;
+    expect(await shouldBlockUnverifiedAthosCartMutation(pool, 'org')).toBe(true);
+    expect(query.mock.calls[0]?.[1]).toEqual(['org']);
   });
 
   it('bloqueia a promessa quando a loja está habilitada mas não há pedido verificado', async () => {
