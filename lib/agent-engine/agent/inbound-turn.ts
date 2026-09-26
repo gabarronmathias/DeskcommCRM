@@ -104,6 +104,7 @@ import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { sendInBubbles } from './split-message';
+import { removeRepeatedCustomerName } from './reply-style';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
@@ -1486,6 +1487,14 @@ export async function runAgentTurn(
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body }) => {
         let outboundBody = body;
+        if (agentConfig !== null && /nome do cliente no máximo uma vez/i.test(agentConfig.systemPrompt)) {
+          outboundBody = removeRepeatedCustomerName(
+            outboundBody,
+            effectiveContext.contact.name,
+            agentConfig.agentName,
+            effectiveContext.messages.some((message) => message.direction === 'outbound'),
+          );
+        }
         if (claimsOrderWasConfirmed(body)) {
           try {
             if (await shouldBlockUnverifiedAthosConfirmation(pool, tenantId, leadId, input.conversationId)) {

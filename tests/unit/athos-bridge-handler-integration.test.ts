@@ -787,6 +787,23 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(nextCart.responseText).not.toContain('athos-first-001');
   });
 
+  it('pedido de sugestao nao vira produto inexistente nem reaproveita pedido anterior', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool };
+    await handleFoodserviceOrderTurn(deps, 'quero fazer um novo pedido');
+
+    const suggestion = await handleFoodserviceOrderTurn(
+      deps,
+      'Ainda nao sei o que pedir, me faca uma sugestao',
+    );
+    expect(suggestion.handled).toBe(true);
+    expect(suggestion.responseText).toContain('Bolo de Chocolate');
+    expect(suggestion.responseText).not.toContain('Não consegui encontrar');
+    expect(suggestion.cartItems).toEqual([]);
+    expect(suggestion.partySize).toBeNull();
+    expect(suggestion.errorCode).toBeNull();
+  });
+
   it('recovery: snapshot athos_created -> espelha UMA vez; 2a recovery noop', async () => {
     const pool = makeMockPool();
     const adapter = makeFakeAdapter('athos-crash-001');
