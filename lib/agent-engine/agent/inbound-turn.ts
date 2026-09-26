@@ -131,8 +131,11 @@ import { tryHandleAthosOrderBridge } from './athos-bridge-handler';
 import { persistPartySize } from '../../foodservice/athos/runtime-repository';
 import { attachAthosLaunchToMenuLink } from '../../athos/menu-launch';
 import {
+  claimsCartWasChanged,
   claimsOrderWasConfirmed,
+  shouldBlockUnverifiedAthosCartMutation,
   shouldBlockUnverifiedAthosConfirmation,
+  UNVERIFIED_ATHOS_CART_REPLY,
   UNVERIFIED_ATHOS_ORDER_REPLY,
 } from '../../foodservice/athos/order-confirmation-guard';
 
@@ -1510,6 +1513,20 @@ export async function runAgentTurn(
             });
           }
         }
+        if (outboundBody !== UNVERIFIED_ATHOS_ORDER_REPLY && claimsCartWasChanged(body)) {
+          try {
+            if (await shouldBlockUnverifiedAthosCartMutation(pool, tenantId)) {
+              outboundBody = UNVERIFIED_ATHOS_CART_REPLY;
+              runLog.warn('athos_cart_mutation_claim_blocked', { reason: 'llm_cannot_write_cart' });
+            }
+          } catch (error) {
+            outboundBody = UNVERIFIED_ATHOS_CART_REPLY;
+            runLog.warn('athos_cart_mutation_claim_blocked', {
+              reason: 'verification_failed',
+              error_code: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
+            });
+          }
+        }
         try {
           outboundBody = await attachAthosLaunchToMenuLink({
             pool,
@@ -2708,6 +2725,7 @@ export async function tryFoodserviceSalesFastPath(
       contactId: payload.contact_id,
       conversationId: payload.conversation_id,
       text: current.body,
+      recentMessages: history,
       log: deps.log,
     });
     if (athosBridge !== null) {
