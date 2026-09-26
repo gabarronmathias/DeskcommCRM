@@ -52,6 +52,7 @@ import {
   readAthosCatalogForTenant,
   readAthosMenuUrl,
   readOrganizationTimezone,
+  startNewAthosOrderSnapshot,
 } from './runtime-repository';
 import { parsePickupSchedule, type PickupScheduleResult } from './pickup-schedule';
 import {
@@ -114,6 +115,30 @@ export async function handleFoodserviceOrderTurn(
         errorCode: code,
       };
     }
+  }
+
+  if (EXPLICIT_NEW_ORDER_SIGNAL_RE.test(inboundText)) {
+    if (previousSnapshot.state === 'submitting_to_athos' ||
+        previousSnapshot.state === 'reconciliation_required') {
+      return {
+        handled: true,
+        responseText: 'Preciso conferir o registro do pedido anterior antes de abrir outro, para não duplicar nem perder seu pedido.',
+        partySize: previousSnapshot.partySize,
+        cartItems: previousSnapshot.cartItems,
+        state: previousSnapshot.state,
+        errorCode: null,
+      };
+    }
+    const nextSnapshot = emptyAthosOrderSnapshot();
+    await startNewAthosOrderSnapshot(deps, previousSnapshot, nextSnapshot);
+    return {
+      handled: true,
+      responseText: 'Claro — vamos abrir um pedido separado, sem alterar o anterior. Para qual ocasião você está escolhendo?',
+      partySize: null,
+      cartItems: [],
+      state: nextSnapshot.state,
+      errorCode: null,
+    };
   }
 
   // Saudações e conversa geral não precisam carregar o cardápio. Mantém o
@@ -298,6 +323,9 @@ export async function handleFoodserviceOrderTurn(
 const ORDER_OR_MENU_SIGNAL_RE =
   /\b(?:card[aá]pio|menu|pedido|pedir|encomenda|comprar|quero|preciso|tortas?|bolos?|retirada|retirar|delivery|entrega|entregar|pix|pagamento|pagar|amanh[aã]|hoje)\b/i;
 
+const EXPLICIT_NEW_ORDER_SIGNAL_RE =
+  /\b(?:novo|nova|outro|outra)\s+(?:pedido|encomenda)\b|\b(?:pedido|encomenda)\s+(?:novo|nova|separado|independente)\b/i;
+
 async function handleConfirmation(
   deps: RuntimeWiringDeps,
   previousSnapshot: AthosOrderSnapshot,
@@ -414,7 +442,7 @@ async function handleCartSelection(
 ): Promise<RuntimeWiringOutcome> {
   const startsNewOrder = previousSnapshot.state === 'completed' || previousSnapshot.state === 'crm_recorded';
   const baseSnapshot = startsNewOrder
-    ? { ...emptyAthosOrderSnapshot(), partySize: previousSnapshot.partySize }
+    ? emptyAthosOrderSnapshot()
     : previousSnapshot;
   const merged = mergeCart(
     baseSnapshot.cartItems,

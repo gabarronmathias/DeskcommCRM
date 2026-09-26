@@ -344,7 +344,7 @@ function makeMockPool(options: MockPoolOptions = {}): pg.Pool {
 
 // ---- helpers ----
 
-function makeFakeAdapter(returnId: string | null): AthosOrderAdapter & { calls: number } {
+function makeFakeAdapter(returnId: string | string[] | null): AthosOrderAdapter & { calls: number } {
   const adapter = {
     provider: 'athos' as const,
     isConfigured: () => true,
@@ -357,7 +357,7 @@ function makeFakeAdapter(returnId: string | null): AthosOrderAdapter & { calls: 
         throw err;
       }
       return {
-        externalOrderId: returnId,
+        externalOrderId: Array.isArray(returnId) ? returnId[adapter.calls - 1]! : returnId,
         externalStatus: 'created',
         externalPayload: { echo: input.idempotencyKey },
         athosCreatedAt: new Date().toISOString(),
@@ -736,6 +736,55 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
       }
     }
     expect(adapter.calls).toBe(1);
+  });
+
+  it('dois pedidos na mesma conversa nao reutilizam carrinho, quantidade nem chave Athos', async () => {
+    const pool = makeMockPool();
+    const adapter = makeFakeAdapter(['athos-first-001', 'athos-second-002']);
+    setAthosAdapter(adapter);
+    const deps = { ...baseDeps, pool };
+
+    const firstCart = await handleFoodserviceOrderTurn(deps, 'quero 2 Bolo de Chocolate');
+    expect(firstCart.cartItems[0]?.quantity).toBe(2);
+    await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    const firstOrder = await handleFoodserviceOrderTurn(deps, 'confirmo o pedido');
+    expect(firstOrder.state).toBe('completed');
+    expect(firstOrder.responseText).toContain('athos-first-001');
+
+    const newOrder = await handleFoodserviceOrderTurn(deps, 'quero agora fazer um novo pedido');
+    expect(newOrder.handled).toBe(true);
+    expect(newOrder.cartItems).toEqual([]);
+    expect(newOrder.partySize).toBeNull();
+    expect(newOrder.responseText).toMatch(/pedido separado/);
+
+    const secondCart = await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    expect(secondCart.cartItems[0]?.quantity).toBe(1);
+    expect(secondCart.partySize).toBeNull();
+    const secondOrder = await handleFoodserviceOrderTurn(deps, 'confirmo o pedido');
+    expect(secondOrder.state).toBe('completed');
+    expect(secondOrder.responseText).toContain('athos-second-002');
+    expect(adapter.calls).toBe(2);
+    const writes = vi.mocked(adapter.createAthosOrder).mock.calls;
+    expect(writes[0]?.[0].idempotencyKey).not.toBe(writes[1]?.[0].idempotencyKey);
+    expect(vi.mocked(pool.query).mock.calls.filter(([sql]) =>
+      String(sql).trim().toLowerCase().startsWith('insert into orders'),
+    )).toHaveLength(2);
+  });
+
+  it('escolha apos pedido concluido inicia carrinho sem dados do pedido anterior', async () => {
+    const pool = makeMockPool();
+    const adapter = makeFakeAdapter('athos-first-001');
+    setAthosAdapter(adapter);
+    const deps = { ...baseDeps, pool };
+    await handleFoodserviceOrderTurn(deps, 'quero 2 Bolo de Chocolate');
+    await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    await handleFoodserviceOrderTurn(deps, 'confirmo o pedido');
+
+    const nextCart = await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    expect(nextCart.state).toBe('awaiting_confirmation');
+    expect(nextCart.cartItems[0]?.quantity).toBe(1);
+    expect(nextCart.partySize).toBeNull();
+    expect(nextCart.responseText).not.toContain('athos-first-001');
   });
 
   it('recovery: snapshot athos_created -> espelha UMA vez; 2a recovery noop', async () => {

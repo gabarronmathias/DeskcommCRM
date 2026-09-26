@@ -334,6 +334,27 @@ export async function persistAthosSnapshot(
   return snapshot;
 }
 
+/** Abre outro pedido sem apagar o histórico de um carrinho ainda não concluído. */
+export async function startNewAthosOrderSnapshot(
+  deps: { pool: pg.Pool; organizationId: string; conversationId: string },
+  previous: AthosOrderSnapshot,
+  nextSnapshot: AthosOrderSnapshot,
+): Promise<void> {
+  const current = await readConversationMetadata(deps.pool, deps.organizationId, deps.conversationId);
+  const existingHistory = Array.isArray(current?.['athos_order_history'])
+    ? current['athos_order_history'] as Array<Record<string, unknown>>
+    : [];
+  const history = previous.cartItems.length > 0 &&
+    previous.state !== 'completed' && previous.state !== 'crm_recorded'
+    ? [...existingHistory, { ...previous, archivedAt: new Date().toISOString() }].slice(-10)
+    : existingHistory;
+  await writeConversationMetadata(deps.pool, deps.organizationId, deps.conversationId, {
+    ...(current ?? {}),
+    athos_order_history: history,
+    [ATHOS_METADATA_KEY]: nextSnapshot,
+  });
+}
+
 export async function persistPartySize(
   deps: {
     pool: pg.Pool;
