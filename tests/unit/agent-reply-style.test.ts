@@ -13,7 +13,7 @@ describe('removeRepeatedCustomerName', () => {
   });
 
   it('remove reapresentacao repetida da Sarah', () => {
-    expect(removeRepeatedCustomerName('Oi Thailer — aqui é a Sarah, da Tortas do Calmon. Posso ajudar?', 'Thailer', 'Sarah', true))
+    expect(removeRepeatedCustomerName('Oi Thailer — aqui é a Sarah, da loja. Posso ajudar?', 'Thailer', 'Sarah', true))
       .toBe('Posso ajudar?');
   });
 
