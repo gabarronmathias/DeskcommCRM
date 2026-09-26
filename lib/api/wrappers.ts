@@ -42,7 +42,7 @@ export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 // -----------------------------------------------------------------------------
 
 type OkOptions = {
-  status?: 200 | 201 | 204;
+  status?: 200 | 201 | 202 | 204;
   meta?: ApiSuccess<unknown>["meta"];
   requestId?: string;
   headers?: HeadersInit;
