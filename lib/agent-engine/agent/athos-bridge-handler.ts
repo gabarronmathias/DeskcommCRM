@@ -32,6 +32,7 @@ export interface AthosBridgeHandlerDeps {
   conversationId: string;
   text: string;
   recentMessages?: ReadonlyArray<{ direction: 'inbound' | 'outbound'; body: string }>;
+  traceId?: string;
   log: Logger;
 }
 
@@ -44,6 +45,12 @@ export interface AthosBridgeResult {
 export async function tryHandleAthosOrderBridge(
   deps: AthosBridgeHandlerDeps,
 ): Promise<AthosBridgeResult | null> {
+  const trace = (stage: string, fields: Record<string, unknown> = {}): void => {
+    if (deps.traceId !== undefined) {
+      deps.log.info('sarah_turn_stage', { trace_id: deps.traceId, stage, ...fields });
+    }
+  };
+  trace('bridge_received');
   const transactionalSignal = TRANSACTIONAL_ORDER_SIGNAL_RE.test(deps.text);
   let tenantSlug: string | null;
   try {
@@ -52,6 +59,7 @@ export async function tryHandleAthosOrderBridge(
     if (!transactionalSignal) throw err;
     return failClosed(deps, err);
   }
+  trace('tenant_resolved', { enabled: tenantSlug !== null });
   if (tenantSlug === null) {
     deps.log.info('athos-bridge: food commerce desabilitado — segue para full pipeline');
     if (transactionalSignal) {
@@ -76,6 +84,12 @@ export async function tryHandleAthosOrderBridge(
     if (!transactionalSignal) throw err;
     return failClosed(deps, err);
   }
+  trace('bridge_decided', {
+    handled: outcome.handled,
+    state: outcome.state,
+    cart_count: outcome.cartItems.reduce((count, item) => count + item.quantity, 0),
+    error_code: outcome.errorCode,
+  });
   if (!outcome.handled) {
     return null;
   }
@@ -96,6 +110,13 @@ function failClosed(deps: AthosBridgeHandlerDeps, error: unknown): AthosBridgeRe
   deps.log.warn('athos-bridge: pedido bloqueado sem confirmação verificável', {
     error_code: code,
   });
+  if (deps.traceId !== undefined) {
+    deps.log.warn('sarah_turn_stage', {
+      trace_id: deps.traceId,
+      stage: 'bridge_failed_closed',
+      error_code: code,
+    });
+  }
   const responseText = /\b(?:card[aá]pio|menu)\b/i.test(deps.text)
     ? 'Não consegui consultar o cardápio agora. Nenhum pedido foi registrado; tente novamente em alguns instantes.'
     : 'Não consegui verificar o registro do pedido agora. Ele ainda não está confirmado por aqui. Para evitar duplicidade, aguarde a conferência da equipe.';

@@ -2726,6 +2726,7 @@ export async function tryFoodserviceSalesFastPath(
       conversationId: payload.conversation_id,
       text: current.body,
       recentMessages: history,
+      traceId: job.id,
       log: deps.log,
     });
     if (athosBridge !== null) {
@@ -2775,6 +2776,11 @@ export async function tryFoodserviceSalesFastPath(
           duplicateSuppressed = outcome.kind === 'already_sent';
           return outcome;
         },
+      });
+      deps.log.info('sarah_turn_stage', {
+        trace_id: job.id,
+        stage: 'bridge_send_result',
+        status: chain.status,
       });
       if (chain.status === 'vetoed') {
         reason = `guard_veto_${chain.code}`;
