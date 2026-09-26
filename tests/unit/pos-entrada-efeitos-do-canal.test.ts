@@ -65,9 +65,8 @@ function cadeia(rotulo: string): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
-const admin = {
-  from(tabela: string) {
-    return {
+function adminFrom(tabela: string) {
+  return {
       update(payload: Record<string, unknown>) {
         ultimoUpdate = payload;
         updates.push({ tabela, payload });
@@ -87,7 +86,7 @@ const admin = {
                 return Promise.resolve({ data: null, error: null }).then(resolve);
               };
             }
-            return () => admin.from(tabela);
+            return () => adminFrom(tabela);
           },
         }),
       insert: (payload: Record<string, unknown>) => {
@@ -95,7 +94,10 @@ const admin = {
         return cadeia(`insert:${tabela}`);
       },
     };
-  },
+}
+
+const admin = {
+  from: adminFrom,
   async rpc(nome: string, args: Record<string, unknown>) {
     ultimaRpc = args;
     sequencia.push(`rpc:${args.p_event_type ?? nome}`);

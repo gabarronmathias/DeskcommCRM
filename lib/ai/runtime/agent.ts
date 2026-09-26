@@ -53,6 +53,8 @@ import {
 
 export interface RunAgentInput {
   runId: string;
+  /** Cancels a slow provider request in dry-run and production runtime calls. */
+  signal?: AbortSignal;
   /** Optional override for test mode invocations from /ai/agents/:id/versions/:vid/test. */
   override?: {
     sampleMessage?: string;
@@ -240,14 +242,18 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     resourceId: run.id,
     metadata: { agent_id: run.agent_id, agent_version_id: run.agent_version_id, is_dry_run: run.is_dry_run },
   });
-  await admin.rpc("emit_event" as never, {
+  void admin.rpc("emit_event" as never, {
     p_event_type: "ai_agent.run_started",
     p_entity_kind: "ai_agent_run",
     p_entity_id: run.id,
     p_payload: { run_id: run.id, agent_id: run.agent_id, is_dry_run: run.is_dry_run },
     p_metadata: { source: "agent-runtime" },
     p_organization_id: run.organization_id,
-  } as never);
+  } as never).then(({ error }) => {
+    if (error) console.warn("[agent-runtime] run_started event failed", error.message);
+  }, (error: unknown) => {
+    console.warn("[agent-runtime] run_started event failed", error);
+  });
 
   let ephemeralTokenId: string | null = null;
 
@@ -493,6 +499,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       system: version.system_prompt,
       messages,
       tools,
+      abortSignal: input.signal,
       stopWhen: [stepCountIs(version.max_steps), budgetGuard],
     });
 
@@ -638,7 +645,12 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return await failRun(run, "runtime_error", message, startedAt);
+    return await failRun(
+      run,
+      input.signal?.aborted ? "timeout" : "runtime_error",
+      input.signal?.aborted ? "O modelo não respondeu dentro do limite de 45 segundos." : message,
+      startedAt,
+    );
   } finally {
     if (ephemeralTokenId) {
       await revokeEphemeralToken(ephemeralTokenId).catch(() => {
