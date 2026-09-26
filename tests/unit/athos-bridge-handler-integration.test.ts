@@ -805,6 +805,69 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(suggestion.errorCode).toBeNull();
   });
 
+  it('registra etapas do bridge com trace_id sem texto da conversa', async () => {
+    const pool = makeMockPool({ enabledTenantSlug: 'tortasdocalmon' });
+    const log = makeLog();
+    await tryHandleAthosOrderBridge({
+      pool,
+      organizationId: baseDeps.organizationId,
+      contactId: baseDeps.contactId,
+      conversationId: baseDeps.conversationId,
+      text: 'quero 1 Bolo de Chocolate',
+      traceId: 'job-corr-123',
+      log,
+    });
+    const stages = log.info.mock.calls
+      .filter(([event]) => event === 'sarah_turn_stage')
+      .map(([, fields]) => fields);
+    expect(stages).toMatchObject([
+      { trace_id: 'job-corr-123', stage: 'bridge_received' },
+      { trace_id: 'job-corr-123', stage: 'tenant_resolved', enabled: true },
+      { trace_id: 'job-corr-123', stage: 'bridge_decided', handled: true, cart_count: 1 },
+    ]);
+    expect(JSON.stringify(stages)).not.toContain('Bolo de Chocolate');
+  });
+
+  it('novo pedido com produto no mesmo turno preserva o item ate a confirmacao', async () => {
+    const pool = makeMockPool();
+    const adapter = makeFakeAdapter(['athos-first-001', 'athos-second-002']);
+    setAthosAdapter(adapter);
+    const deps = { ...baseDeps, pool, now: new Date('2026-09-26T13:58:00.000Z') };
+
+    await handleFoodserviceOrderTurn(deps, 'quero 1 Bolo de Chocolate');
+    await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    expect((await handleFoodserviceOrderTurn(deps, 'confirmo o pedido')).state).toBe('completed');
+
+    const opened = await handleFoodserviceOrderTurn(
+      deps, 'Quero fazer um novo pedido. Quero 2 Bolo de Chocolate',
+    );
+    expect(opened.handled).toBe(true);
+    expect(opened.cartItems).toMatchObject([{ productName: 'Bolo de Chocolate', quantity: 2 }]);
+    expect(opened.partySize).toBeNull();
+    expect(opened.responseText).not.toMatch(/Qual item você deseja/i);
+
+    const pickup = await handleFoodserviceOrderTurn(deps, 'Retirada amanhã às 11h');
+    expect(pickup.cartItems).toMatchObject([{ productName: 'Bolo de Chocolate', quantity: 2 }]);
+    expect(pickup.responseText).not.toMatch(/Qual item você deseja/i);
+
+    const confirmed = await handleFoodserviceOrderTurn(deps, 'Confirmo');
+    expect(confirmed.state).toBe('completed');
+    expect(confirmed.responseText).toContain('athos-second-002');
+    expect(adapter.calls).toBe(2);
+  });
+
+  it('novo pedido com produto e retirada no mesmo turno conserva ambos', async () => {
+    const pool = makeMockPool();
+    const deps = { ...baseDeps, pool, now: new Date('2026-09-26T13:58:00.000Z') };
+    const out = await handleFoodserviceOrderTurn(
+      deps, 'Quero fazer um novo pedido. Quero 2 Bolo de Chocolate para retirada amanhã às 11h',
+    );
+    expect(out.cartItems).toMatchObject([{ productName: 'Bolo de Chocolate', quantity: 2 }]);
+    const followup = await handleFoodserviceOrderTurn(deps, '2 pessoas');
+    expect(followup.responseText).toContain('27/09/2026 às 11:00');
+    expect(followup.responseText).toContain('R$ 240.00');
+  });
+
   it('resposta adicione 2 após sugestão altera somente o pedido novo, com preço verificável', async () => {
     const pool = makeMockPool();
     const deps = { ...baseDeps, pool };
@@ -938,4 +1001,76 @@ describe('athos-bridge-handler-integration (briefing recovery)', () => {
     expect(out.responseText).not.toMatch(/cartao|cvv|documento|cpf|rg/i);
     expect(out.responseText).not.toMatch(/[0-9]{16}/);
   });
+});
+
+// Contratos permanentes do bridge: cada caso especifica estado inicial,
+// intenção, fronteira consultada, mutação esperada e comportamento proibido.
+// O mock não prova o envio Meta nem a escrita na Athos comercial.
+const FOOD_SERVICE_GOLDEN_CASES = [
+  { id: 'MENU_001', initialState: [], message: 'quero ver o cardápio', intent: 'SHOW_MENU', tool: 'menu', quantity: 0, reply: /cardápio.*https:/i },
+  { id: 'MENU_002', initialState: [], message: 'cardápio', intent: 'SHOW_MENU', tool: 'menu', quantity: 0, reply: /cardápio.*https:/i },
+  { id: 'MENU_003', initialState: [], message: 'me mande o menu', intent: 'SHOW_MENU', tool: 'menu', quantity: 0, reply: /cardápio.*https:/i },
+  { id: 'CART_001', initialState: [], message: 'quero 1 Bolo de Chocolate', intent: 'SELECT_ITEM', tool: 'catalog', quantity: 1, reply: /R\$ 120\.00/ },
+  { id: 'CART_002', initialState: [], message: 'quero 2 Bolo de Chocolate', intent: 'SELECT_ITEM', tool: 'catalog', quantity: 2, reply: /R\$ 240\.00/ },
+  { id: 'CART_003', initialState: [], message: '3 Bolo de Chocolate', intent: 'SELECT_ITEM', tool: 'catalog', quantity: 3, reply: /R\$ 360\.00/ },
+  { id: 'CART_004', initialState: [], message: 'quero 4 Bolo de Chocolate', intent: 'SELECT_ITEM', tool: 'catalog', quantity: 4, reply: /R\$ 480\.00/ },
+  { id: 'CART_005', initialState: [], message: 'quero 1 Produto Desconhecido', intent: 'UNKNOWN_ITEM', tool: 'catalog', quantity: 0, reply: /não consegui encontrar|não encontrei/i },
+  { id: 'CART_006', initialState: ['quero 2 Bolo de Chocolate'], message: 'quero 1 Bolo de Chocolate', intent: 'REPLACE_QUANTITY', tool: 'catalog', quantity: 1, reply: /R\$ 120\.00/ },
+  { id: 'CART_007', initialState: ['quero 1 Bolo de Chocolate'], message: 'quero mais 2 Bolo de Chocolate', intent: 'ADD_QUANTITY', tool: 'catalog', quantity: 3, reply: /R\$ 360\.00/ },
+  { id: 'NEW_001', initialState: [], message: 'quero fazer um novo pedido', intent: 'NEW_ORDER', tool: 'none', quantity: 0, reply: /pedido separado/i },
+  { id: 'NEW_002', initialState: [], message: 'quero fazer outro pedido', intent: 'NEW_ORDER', tool: 'none', quantity: 0, reply: /pedido separado/i },
+  { id: 'NEW_003', initialState: [], message: 'Quero fazer um novo pedido. Quero 1 Bolo de Chocolate', intent: 'NEW_ORDER_WITH_ITEM', tool: 'catalog', quantity: 1, reply: /pedido separado.*R\$ 120\.00/is },
+  { id: 'NEW_004', initialState: [], message: 'Quero fazer um novo pedido. Quero 2 Bolo de Chocolate', intent: 'NEW_ORDER_WITH_ITEM', tool: 'catalog', quantity: 2, reply: /pedido separado.*R\$ 240\.00/is },
+  { id: 'NEW_005', initialState: [], message: 'Quero fazer outro pedido. 3 Bolo de Chocolate', intent: 'NEW_ORDER_WITH_ITEM', tool: 'catalog', quantity: 3, reply: /pedido separado.*R\$ 360\.00/is },
+  { id: 'NEW_006', initialState: ['quero 2 Bolo de Chocolate'], message: 'Quero fazer um novo pedido. Quero 1 Bolo de Chocolate', intent: 'NEW_ORDER_WITH_ITEM', tool: 'catalog', quantity: 1, reply: /pedido separado.*R\$ 120\.00/is },
+  { id: 'INFO_001', initialState: [], message: 'quanto custa?', intent: 'PRICE_EMPTY', tool: 'none', quantity: 0, reply: /não há itens registrados/i },
+  { id: 'INFO_002', initialState: ['quero 1 Bolo de Chocolate'], message: 'quanto custa?', intent: 'PRICE_CART', tool: 'none', quantity: 1, reply: /R\$ 120\.00/ },
+  { id: 'INFO_003', initialState: ['quero 2 Bolo de Chocolate'], message: 'qual o total?', intent: 'PRICE_CART', tool: 'none', quantity: 2, reply: /R\$ 240\.00/ },
+  { id: 'INFO_004', initialState: [], message: 'me faça uma sugestão', intent: 'SUGGEST', tool: 'catalog', quantity: 0, reply: /Bolo de Chocolate/ },
+  { id: 'INFO_005', initialState: [], message: 'não sei o que pedir', intent: 'SUGGEST', tool: 'catalog', quantity: 0, reply: /Bolo de Chocolate/ },
+  { id: 'INFO_006', initialState: [], message: 'tem outras tortas?', intent: 'BROWSE', tool: 'catalog', quantity: 0, reply: /não encontrei tortas/i },
+  { id: 'CONFIRM_001', initialState: [], message: 'confirmo o pedido', intent: 'REJECT_EMPTY_CONFIRM', tool: 'none', quantity: 0, reply: /não há itens registrados/i },
+  { id: 'CONFIRM_002', initialState: [], message: 'confirmo', intent: 'REJECT_EMPTY_CONFIRM', tool: 'none', quantity: 0, reply: /não há itens registrados/i },
+  { id: 'PARTY_001', initialState: ['quero 1 Bolo de Chocolate'], message: '2 pessoas', intent: 'SET_PARTY_SIZE', tool: 'none', quantity: 1, reply: /Pedido para 2 pessoa/ },
+  { id: 'PARTY_002', initialState: ['quero 2 Bolo de Chocolate'], message: '3 pessoas', intent: 'SET_PARTY_SIZE', tool: 'none', quantity: 2, reply: /Pedido para 3 pessoa/ },
+  { id: 'PICKUP_001', initialState: [], message: 'retirada amanhã às 11h', intent: 'SET_PICKUP_EMPTY', tool: 'none', quantity: 0, reply: /qual item você deseja/i },
+  { id: 'PICKUP_002', initialState: ['quero 1 Bolo de Chocolate'], message: 'retirada amanhã às 10h', intent: 'SET_PICKUP', tool: 'none', quantity: 1, reply: /anotei a retirada/i },
+  { id: 'PICKUP_003', initialState: ['quero 1 Bolo de Chocolate', '2 pessoas'], message: 'retirada amanhã às 11h', intent: 'SET_PICKUP', tool: 'none', quantity: 1, reply: /confirma o pedido/i },
+  { id: 'PICKUP_004', initialState: [], message: 'quero 1 Bolo de Chocolate para retirada', intent: 'ASK_PICKUP_TIME', tool: 'catalog', quantity: 1, reply: /horário|hora/i },
+] as const;
+
+describe('Sarah foodservice golden — 30 cenários de bridge', () => {
+  beforeEach(() => {
+    clearAthosAdapter();
+    clearAthosCatalogCache();
+    process.env['ATHOS_STORE_REF'] = 'store-1';
+  });
+
+  it.each(FOOD_SERVICE_GOLDEN_CASES)(
+    '$id $intent',
+    async ({ initialState, message, tool, quantity, reply }) => {
+      const pool = makeMockPool({ menuUrl: 'https://cardapio.sistemaathos.com.br/tortasdocalmon' });
+      const deps = { ...baseDeps, pool, now: new Date('2026-09-26T13:00:00.000Z') };
+      for (const setupMessage of initialState) {
+        const setup = await handleFoodserviceOrderTurn(deps, setupMessage);
+        expect(setup.errorCode).toBeNull();
+        expect(setup.state).toBe('awaiting_confirmation');
+      }
+      vi.mocked(pool.query).mockClear();
+      const out = await handleFoodserviceOrderTurn(deps, message);
+      expect(out.handled).toBe(true);
+      expect(out.cartItems.reduce((sum, item) => sum + item.quantity, 0)).toBe(quantity);
+      expect(out.responseText).toMatch(reply);
+      expect(out.responseText).not.toMatch(/pedido criado na Athos|ID: athos-/i);
+      if (tool === 'catalog' && initialState.length === 0) {
+        expect(vi.mocked(pool.query).mock.calls.some(([sql]) =>
+          String(sql).includes('food_athos_product_map'))).toBe(true);
+      } else if (tool === 'catalog' && quantity > 0) {
+        expect(out.cartItems.every((item) => item.externalProductId.length > 0)).toBe(true);
+      } else if (tool === 'menu') {
+        expect(vi.mocked(pool.query).mock.calls.some(([sql]) =>
+          String(sql).includes('food_commerce_settings f'))).toBe(true);
+      }
+    },
+  );
 });

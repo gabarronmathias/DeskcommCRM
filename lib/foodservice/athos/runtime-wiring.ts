@@ -118,7 +118,8 @@ export async function handleFoodserviceOrderTurn(
     }
   }
 
-  if (EXPLICIT_NEW_ORDER_SIGNAL_RE.test(inboundText)) {
+  const newOrderSignal = EXPLICIT_NEW_ORDER_SIGNAL_RE.exec(inboundText);
+  if (newOrderSignal !== null) {
     if (previousSnapshot.state === 'submitting_to_athos' ||
         previousSnapshot.state === 'reconciliation_required') {
       return {
@@ -132,6 +133,16 @@ export async function handleFoodserviceOrderTurn(
     }
     const nextSnapshot = emptyAthosOrderSnapshot();
     await startNewAthosOrderSnapshot(deps, previousSnapshot, nextSnapshot);
+    const newOrderDetails = inboundText.slice(newOrderSignal.index + newOrderSignal[0].length)
+      .replace(/^[\s.,;:!?-]+/, '');
+    if (newOrderDetails.length > 0) {
+      // Reaproveita o pipeline normal (produto, retirada, catálogo e validação),
+      // agora sobre o snapshot novo. Um parser paralelo perderia combinações.
+      const continued = await handleFoodserviceOrderTurn(deps, newOrderDetails);
+      if (continued.handled) {
+        return { ...continued, responseText: `Abri um pedido separado. ${continued.responseText}` };
+      }
+    }
     return {
       handled: true,
       responseText: 'Claro — vamos abrir um pedido separado, sem alterar o anterior. Para qual ocasião você está escolhendo?',
