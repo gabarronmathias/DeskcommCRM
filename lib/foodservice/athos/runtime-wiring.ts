@@ -289,6 +289,24 @@ export async function handleFoodserviceOrderTurn(
     return handleCartSelection(deps, previousSnapshot, cartSelection, inboundText, pickup);
   }
 
+  const normalizedRequest = inboundText.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  if (/\b(?:sugestao|sugestoes|recomendacao|recomendacoes|indicacao|indicacoes|nao sei o que (?:pedir|escolher))\b/.test(normalizedRequest)) {
+    const options = catalog.products.filter((product) => product.athosProductId !== null).slice(0, 2);
+    const responseText = options.length === 0
+      ? 'Ainda não tenho itens verificados no catálogo de teste para recomendar com segurança. Quer que eu envie o cardápio?'
+      : options.length === 1
+        ? `Uma opção do cardápio de teste é ${options[0]!.name}. Ela combina com o que você procura?`
+        : `Para te ajudar a escolher, duas opções do cardápio de teste são ${options[0]!.name} e ${options[1]!.name}. Qual delas combina mais com o que você imaginou?`;
+    return {
+      handled: true,
+      responseText,
+      partySize: previousSnapshot.partySize,
+      cartItems: previousSnapshot.cartItems,
+      state: previousSnapshot.state,
+      errorCode: null,
+    };
+  }
+
   if (
     previousSnapshot.cartItems.length > 0 &&
     previousSnapshot.state !== 'completed' &&

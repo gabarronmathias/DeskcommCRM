@@ -43,6 +43,10 @@ export function detectAndResolveCartSelection(
     const name = nameRaw.trim();
     if (!Number.isFinite(quantity) || quantity < 1 || quantity > 99) continue;
     if (name.length < 3) continue;
+    // "uma sugestão" não é um item de carrinho. A conversa consultiva deve
+    // continuar sem transformar o pedido de ajuda em produto inexistente.
+    const genericName = name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+    if (/^(?:sugestao|sugestoes|recomendacao|recomendacoes|indicacao|indicacoes|opcao|opcoes|ideia|ideias)(?:\s+de\s+.+)?$/.test(genericName)) continue;
     if (seen.has(name.toLocaleLowerCase('pt-BR'))) continue;
     seen.add(name.toLocaleLowerCase('pt-BR'));
     const product = resolveAthosCatalogProductByName(catalog, name);
