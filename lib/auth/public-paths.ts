@@ -17,11 +17,12 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/500$/,
   /^\/503$/,
   /^\/api\/v1\/health$/,
-  // Integração Athos server-to-server: ambas validam Bearer `dsk_...` e o
-  // scope `orders:read` dentro da própria rota. Sem estas exceções exatas, o
-  // proxy exige cookie humano antes de a autenticação Bearer poder rodar.
+  // Integrações server-to-server validam Bearer na própria rota.
+  // Eventos Athos validam também HMAC e timestamp contra replay.
   /^\/api\/v1\/customers\/purchase-recency$/,
   /^\/api\/v1\/customers\/[^/]+\/order-history$/,
+  /^\/api\/v1\/partners\/athos\/events$/,
+  /^\/api\/v1\/partners\/athos\/launches\/[^/]+$/,
   /^\/api\/v1\/food\//,
   /^\/food\/[a-z0-9][a-z0-9-]{1,62}\/?$/,
   /^\/api\/v1\/webhooks\//,
