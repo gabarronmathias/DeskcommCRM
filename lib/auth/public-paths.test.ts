@@ -19,6 +19,15 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/v1/customers/5511999999999/order-history/extra")).toBe(false);
   });
 
+  it("libera somente as rotas Athos que validam autenticação própria", () => {
+    expect(isPublicPath("/api/v1/partners/athos/events")).toBe(true);
+    expect(isPublicPath("/api/v1/partners/athos/launches/launch-123")).toBe(true);
+
+    expect(isPublicPath("/api/v1/partners/athos/test-launch")).toBe(false);
+    expect(isPublicPath("/api/v1/partners/athos/events/extra")).toBe(false);
+    expect(isPublicPath("/api/v1/partners/athos/launches/launch-123/extra")).toBe(false);
+  });
+
   it("libera o heartbeat do agente do host (bearer, sem cookie)", () => {
     expect(isPublicPath("/api/v1/system/agent")).toBe(true);
   });
