@@ -23,7 +23,8 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/v1/partners/athos/events")).toBe(true);
     expect(isPublicPath("/api/v1/partners/athos/launches/launch-123")).toBe(true);
 
-    expect(isPublicPath("/api/v1/partners/athos/test-launch")).toBe(false);
+    expect(isPublicPath("/api/v1/partners/athos/test-launch")).toBe(true);
+    expect(isPublicPath("/api/v1/partners/athos/test-launch/extra")).toBe(false);
     expect(isPublicPath("/api/v1/partners/athos/events/extra")).toBe(false);
     expect(isPublicPath("/api/v1/partners/athos/launches/launch-123/extra")).toBe(false);
   });

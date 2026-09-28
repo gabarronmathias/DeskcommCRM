@@ -23,6 +23,7 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/customers\/[^/]+\/order-history$/,
   /^\/api\/v1\/partners\/athos\/events$/,
   /^\/api\/v1\/partners\/athos\/launches\/[^/]+$/,
+  /^\/api\/v1\/partners\/athos\/test-launch$/,
   /^\/api\/v1\/food\//,
   /^\/food\/[a-z0-9][a-z0-9-]{1,62}\/?$/,
   /^\/api\/v1\/webhooks\//,
