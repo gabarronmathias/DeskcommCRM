@@ -16732,6 +16732,30 @@ SELECT
 FROM public.food_athos_product_map m;
 
 -- ---- VARREDURA anon: fechamento auto-curativo do baseline ----
+-- ---- 20260928150000_0182_athos_order_projection_schema_repair ----
+-- Reassert minimum Athos projection schema for self-hosted installs that may
+-- have received the Athos migrations manually or out of sequence.
+alter table public.orders
+  add column if not exists athos_event_id text;
+
+alter table public.food_order_items
+  add column if not exists external_product_id text,
+  add column if not exists external_sku text;
+
+alter table public.orders
+  drop constraint if exists orders_external_provider_check;
+
+alter table public.orders
+  add constraint orders_external_provider_check
+  check (external_provider = any (array[
+    'nuvemshop'::text,
+    'vtex'::text,
+    'shopify'::text,
+    'deskcomm_food'::text,
+    'gm_crm_food'::text,
+    'athos'::text
+  ]));
+
 -- O dump concede EXECUTE em funções novas a anon por default. Como o baseline
 -- cresce por apêndice, este fechamento precisa permanecer depois de TODA DDL
 -- que crie função. O teste varredura-anon-e-o-ultimo-bloco vigia essa ordem.
