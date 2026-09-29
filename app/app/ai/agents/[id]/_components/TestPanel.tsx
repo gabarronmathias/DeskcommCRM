@@ -42,6 +42,8 @@ interface TestResponse {
     tokens_out?: number;
     cost_cents?: number;
     latency_ms?: number;
+    error_code?: string;
+    error_message?: string;
     would_send_to?: { session?: string | null; chat_id?: string | null };
     stub?: boolean;
     /** Ver lib/ai/agents/avaliar-resposta-de-teste.ts. */
@@ -165,6 +167,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
+        { timeoutMs: 55_000 },
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
@@ -261,6 +264,11 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 
         {result ? (
           <>
+            {result.status === "failed" ? (
+              <p className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+                {result.error_message ?? `O teste falhou (${result.error_code ?? "erro desconhecido"}).`}
+              </p>
+            ) : null}
             {result.stub ? (
               <p className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
                 Stub: o runtime real é entregue na S-13.08. O trace abaixo é simulado.

@@ -28,6 +28,10 @@ import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-test
 
 export const dynamic = "force-dynamic";
 
+// Dry-runs precisam terminar com erro legível, não deixar uma execução `running`
+// para sempre quando o provedor não responde.
+const TEST_TIMEOUT_MS = 45_000;
+
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Ctx = { params: Promise<{ id: string; vid: string }> };
@@ -228,6 +232,7 @@ async function callInternalRuntime(args: {
   const { runAgent } = await import("@/lib/ai/runtime/agent");
   const result = await runAgent({
     runId: args.runId,
+    signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
     override: {
       sampleMessage: args.sampleMessage,
       sampleContact: args.sampleContact,

@@ -38,8 +38,8 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (error) return fail("internal_error", error.message, 500, { requestId });
   const leadIds = Array.from(new Set((rows ?? []).map((r) => r.lead_id).filter(Boolean)));
   const contactIds = Array.from(new Set((rows ?? []).map((r) => r.contact_id).filter(Boolean)));
-  let leadById = new Map();
-  let contactById = new Map();
+  const leadById = new Map();
+  const contactById = new Map();
   if (leadIds.length) {
     const { data: leads } = await admin.from("crm_leads").select("id, title, contact_id").in("id", leadIds);
     for (const l of leads ?? []) leadById.set(l.id, l);
