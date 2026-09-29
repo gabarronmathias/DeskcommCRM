@@ -5,6 +5,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentsList } from "./_components/AgentsList";
+import { projectPublishedAgentModels } from "@/lib/ai/agents/list-model";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,18 @@ export default async function AgentsListPage() {
     .eq("organization_id", activeOrg.orgId)
     .order("created_at", { ascending: false });
 
-  const agents = (data ?? []) as unknown as AgentRow[];
+  const rawAgents = (data ?? []) as unknown as AgentRow[];
+  const publishedVersionIds = rawAgents
+    .map((agent) => agent.published_version_id)
+    .filter((id): id is string => Boolean(id));
+  const { data: publishedVersions } = publishedVersionIds.length
+    ? await supabase
+        .from("ai_agent_versions")
+        .select("id, provider, model")
+        .eq("organization_id", activeOrg.orgId)
+        .in("id", publishedVersionIds)
+    : { data: [], error: null };
+  const agents = projectPublishedAgentModels(rawAgents, publishedVersions ?? []);
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
   return (

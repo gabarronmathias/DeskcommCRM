@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
 import { agentMcpCreateSchema } from "@/lib/ai/agents/validation";
+import { projectPublishedAgentModels } from "@/lib/ai/agents/list-model";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,24 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) return fail("internal_error", "Erro ao listar agents.", 500, { requestId });
-  return ok(data ?? [], { requestId });
+  const agents = data ?? [];
+  const publishedVersionIds = agents
+    .map((agent) => agent.published_version_id)
+    .filter((id): id is string => Boolean(id));
+  const { data: versions, error: versionsError } = publishedVersionIds.length
+    ? await supabase
+        .from("ai_agent_versions")
+        .select("id, provider, model")
+        .eq("organization_id", activeOrg.orgId)
+        .in("id", publishedVersionIds)
+    : { data: [], error: null };
+  if (versionsError) {
+    return fail("internal_error", "Erro ao carregar modelos publicados dos agents.", 500, {
+      requestId,
+    });
+  }
+
+  return ok(projectPublishedAgentModels(agents, versions ?? []), { requestId });
 }
 
 // ---------------------------------------------------------------------------
