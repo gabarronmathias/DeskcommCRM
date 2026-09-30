@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EntradaDeMensagem } from "@/lib/channels/pos-entrada";
 
@@ -79,17 +80,20 @@ const admin = {
       order: () => cadeia(`order:${tabela}`),
       limit: () => cadeia(`limit:${tabela}`),
       maybeSingle: () =>
-        new Proxy({}, {
-          get(_t, prop) {
-            if (prop === "then") {
-              return (resolve: (v: unknown) => void) => {
-                sequencia.push(`maybeSingle:${tabela}`);
-                return Promise.resolve({ data: null, error: null }).then(resolve);
-              };
-            }
-            return () => admin.from(tabela);
+        new Proxy(
+          {},
+          {
+            get(_t, prop) {
+              if (prop === "then") {
+                return (resolve: (v: unknown) => void) => {
+                  sequencia.push(`maybeSingle:${tabela}`);
+                  return Promise.resolve({ data: null, error: null }).then(resolve);
+                };
+              }
+              return () => admin.from(tabela);
+            },
           },
-        }),
+        ),
       insert: (payload: Record<string, unknown>) => {
         updates.push({ tabela, payload });
         return cadeia(`insert:${tabela}`);
@@ -101,7 +105,7 @@ const admin = {
     sequencia.push(`rpc:${args.p_event_type ?? nome}`);
     return { error: rpcErro };
   },
-} as never;
+} as unknown as SupabaseClient;
 
 const ENTRADA: EntradaDeMensagem = {
   organizationId: "org-1",
@@ -178,7 +182,10 @@ describe("opt-out", () => {
     if (!optOutUpdate) {
       throw new Error("No contacts update found. updates=" + JSON.stringify(updates));
     }
-    expect(optOutUpdate.payload).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
+    expect(optOutUpdate.payload).toMatchObject({
+      is_blocked: true,
+      blocked_reason: "stop_keyword",
+    });
   });
 
   it("NÃO bloqueia quem só escreveu uma palavra parecida", async () => {
