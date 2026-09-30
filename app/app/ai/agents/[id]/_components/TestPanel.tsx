@@ -69,14 +69,14 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
       {g.passou ? (
         <p
           data-testid="teste-vazamento-limpo"
-          className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs"
+          className="border-border/60 bg-muted/40 rounded-md border p-2 text-xs"
         >
           A resposta não usa palavras internas do sistema.
         </p>
       ) : (
         <div
           data-testid="teste-vazamento-achado"
-          className="rounded-md border border-destructive/50 bg-destructive/5 p-2 text-xs"
+          className="border-destructive/50 bg-destructive/5 rounded-md border p-2 text-xs"
         >
           <p className="font-medium text-destructive">
             Esta resposta usa palavras que o cliente não deveria ver.
@@ -114,8 +114,8 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
           ))}
         </ul>
         <p className="mt-2">
-          Estas só acontecem numa conversa real, com um cliente de verdade do outro lado. Para ver
-          a lista inteira do que é conferido — e o que cada verificação protege — abra a aba{" "}
+          Estas só acontecem numa conversa real, com um cliente de verdade do outro lado. Para ver a
+          lista inteira do que é conferido — e o que cada verificação protege — abra a aba{" "}
           <span className="font-medium text-foreground">Confere antes de enviar</span>.
         </p>
       </details>
@@ -135,9 +135,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 
   if (!target) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Configure e salve uma versão antes de testar.
-      </p>
+      <p className="text-sm text-muted-foreground">Configure e salve uma versão antes de testar.</p>
     );
   }
 
@@ -165,6 +163,9 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
+        // A timeout does not cancel the server-side LLM call. Retrying this POST
+        // could create another paid run, so wait for one execution and never replay it.
+        { timeoutMs: 60_000, retry: false },
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
@@ -250,19 +251,15 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
         </p>
 
         {!result && !pending ? (
-          <p className="text-sm text-muted-foreground">
-            Nenhum teste executado ainda.
-          </p>
+          <p className="text-sm text-muted-foreground">Nenhum teste executado ainda.</p>
         ) : null}
 
-        {pending ? (
-          <p className="text-sm text-muted-foreground">Executando dry-run…</p>
-        ) : null}
+        {pending ? <p className="text-sm text-muted-foreground">Executando dry-run…</p> : null}
 
         {result ? (
           <>
             {result.stub ? (
-              <p className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
+              <p className="border-border/60 bg-muted/40 rounded-md border p-2 text-xs text-muted-foreground">
                 Stub: o runtime real é entregue na S-13.08. O trace abaixo é simulado.
               </p>
             ) : null}
@@ -295,7 +292,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded border border-border/60 px-2 py-1">
+    <div className="border-border/60 rounded border px-2 py-1">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="font-mono">{children}</p>
     </div>

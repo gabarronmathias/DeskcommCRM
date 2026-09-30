@@ -31,14 +31,16 @@ export default async function AgentsListPage() {
   const publishedVersionIds = rawAgents
     .map((agent) => agent.published_version_id)
     .filter((id): id is string => Boolean(id));
-  const { data: publishedVersions } = publishedVersionIds.length
-    ? await supabase
-        .from("ai_agent_versions")
-        .select("id, provider, model")
-        .eq("organization_id", activeOrg.orgId)
-        .in("id", publishedVersionIds)
-    : { data: [], error: null };
-  const agents = projectPublishedAgentModels(rawAgents, publishedVersions ?? []);
+  let publishedVersions: Array<{ id: string; provider: string; model: string }> = [];
+  if (publishedVersionIds.length) {
+    const { data } = await supabase
+      .from("ai_agent_versions")
+      .select("id, provider, model")
+      .eq("organization_id", activeOrg.orgId)
+      .in("id", publishedVersionIds);
+    publishedVersions = (data ?? []) as typeof publishedVersions;
+  }
+  const agents = projectPublishedAgentModels(rawAgents, publishedVersions);
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
   return (

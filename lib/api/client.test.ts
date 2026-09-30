@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 
-function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   const text = typeof body === "string" ? body : JSON.stringify(body);
   return new Response(text, {
     status,
@@ -94,5 +98,13 @@ describe("apiClient", () => {
     await apiClient.post("/x", { a: 1 }, { idempotencyKey: "custom-key-123" });
     const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>;
     expect(headers["Idempotency-Key"]).toBe("custom-key-123");
+  });
+
+  it("t8: retry=false does not replay a POST after a network failure", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("network timeout"));
+    await expect(
+      apiClient.post("/paid-test", {}, { retry: false, timeoutMs: 60_000 }),
+    ).rejects.toThrow("network timeout");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
