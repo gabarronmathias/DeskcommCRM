@@ -42,6 +42,7 @@
     ".next",
     "dist",
     "scripts/**",
+    "supabase/functions/**",
     "**/*.test.ts",
     "**/*.test.tsx",
     "tests/**"
