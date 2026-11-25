@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { buildOnboardingChecklist } from "@/lib/admin-onboarding/checklist";
+import { companyProfileSchema, operationSchema, operatorSettingsSchema } from "@/lib/admin-onboarding/schema";
+import { isSarahMemoryPublished } from "@/lib/admin-onboarding/sarah-memory";
 import { OnboardingWizard } from "./_client";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +40,11 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
   const operation = obj(foodservice.operation ?? setup.operation);
   const sarah = obj(foodservice.sarah ?? setup.sarah);
   const operator = obj(foodservice.operator ?? setup.operator);
+  const publishedVersionId = memoryRes.data?.version_id;
+  const memoryVersionRes = publishedVersionId
+    ? await admin.from("org_memory_versions").select("id,content")
+      .eq("organization_id", id).eq("id", publishedVersionId).maybeSingle()
+    : { data: null, error: null };
   const categories = (categoriesRes.data ?? []) as Array<{ id: string; name: string; is_active: boolean; sort_order: number }>;
   const groups = (groupsRes.data ?? []) as Array<{ id: string; product_id: string; name: string; min_select: number; max_select: number; is_required: boolean; is_active: boolean }>;
   const modifiers = (modifiersRes.data ?? []) as Array<{ id: string; group_id: string; name: string; price_delta_cents: number; is_available: boolean }>;
@@ -53,24 +61,23 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
   }));
   const publishedAgents = agentsRes.data ?? [];
   const activeProducts = products.filter((product) => product.is_available).length;
-  const memoryReady = Boolean(memoryRes.data?.version_id && sarah.name);
+  const memoryReady = !memoryVersionRes.error && isSarahMemoryPublished(
+    sarah, publishedVersionId, setup.memory_version_id, memoryVersionRes.data?.content,
+  );
   const metaReady = (channelRes.data ?? []).length > 0;
-  const companyReady = Boolean(company.responsible_name && company.sarah_name);
-  const operationReady = Object.keys(operation).length > 0;
+  const companyReady = companyProfileSchema.safeParse(company).success;
+  const operationReady = operationSchema.safeParse(operation).success;
   const catalogReady = activeProducts > 0;
-  const checklist = [
-    { key: "company", label: "Empresa configurada", pass: companyReady },
-    { key: "operation", label: "Operação configurada", pass: operationReady },
-    { key: "sarah", label: "Sarah configurada e publicada", pass: memoryReady && publishedAgents.length > 0 },
-    { key: "catalog", label: "Catálogo disponível", pass: catalogReady },
-    { key: "operator", label: "Operador associado e convite aceito", pass: Boolean(operator.email && (memberRes.count ?? 0) > 0) },
-    { key: "whatsapp", label: "WhatsApp Meta conectado", pass: metaReady },
-    // The cart is activated by the final action; checking is_enabled here would
-    // make activation impossible because the checklist would depend on itself.
-    { key: "cart", label: "Carrinho disponível", pass: catalogReady },
-    { key: "oms", label: "Pedidos e OMS disponíveis", pass: true },
-    { key: "handoff", label: "Handoff disponível", pass: true },
-  ];
+  const checklist = buildOnboardingChecklist({
+    company: companyReady,
+    operation: operationReady,
+    sarah: memoryReady && publishedAgents.length > 0,
+    catalog: catalogReady,
+    operator: operatorSettingsSchema.safeParse(operator).success && (memberRes.count ?? 0) > 0,
+    whatsapp: metaReady,
+    oms: true,
+    handoff: true,
+  });
   const canActivate = checklist.every((item) => item.pass);
   const rawCompleted = setup.completed_steps;
   const completedSteps = Array.isArray(rawCompleted) ? rawCompleted.filter((value): value is string => typeof value === "string") : [];
