@@ -1172,7 +1172,13 @@ export async function runAgentTurn(
       if (outcome.kind === 'blocked' || outcome.kind === 'queued') {
         await applySendOutcome(
           pool,
-          outcome,
+          outcome.kind === 'queued'
+            ? {
+                kind: 'queued',
+                idempotencyKey: outcome.idempotencyKey,
+                crmMessageId: outcome.messageId,
+              }
+            : outcome,
           { jobId: job.id, workerId: ctx.workerId, tenantId, leadId },
           { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
         );
