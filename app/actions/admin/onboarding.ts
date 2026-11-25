@@ -5,6 +5,8 @@ import { audit } from "@/lib/audit";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { publicarMemoriaDaOrg } from "@/lib/ai/memoria-da-org";
+import { buildOnboardingChecklist, missingOnboardingRequirements } from "@/lib/admin-onboarding/checklist";
+import { buildSarahMemoryContent, isSarahMemoryPublished } from "@/lib/admin-onboarding/sarah-memory";
 import {
   companyProfileSchema,
   operationSchema,
@@ -90,21 +92,6 @@ export async function saveOperationSettings(organizationId: string, input: unkno
   return { ok: true as const };
 }
 
-function sarahMemoryContent(data: ReturnType<typeof sarahSettingsSchema.parse>) {
-  const fields = [
-    ["Mensagem inicial", data.greeting],
-    ["Regras importantes", data.rules],
-    ["Orientações comerciais", data.commercial_guidance],
-    ["Produtos prioritários", data.priority_products],
-    ["Orientação de venda adicional", data.upsell_guidance],
-    ["Quando chamar uma pessoa", data.handoff_guidance],
-  ] as const;
-  return `Nome de atendimento: ${data.name}\n\n${fields
-    .filter(([, value]) => value.trim())
-    .map(([label, value]) => `${label}:\n${value.trim()}`)
-    .join("\n\n")}`;
-}
-
 export async function saveSarahDraftSettings(organizationId: string, input: unknown) {
   const { user } = await requirePlatformAdmin();
   const parsed = sarahSettingsSchema.safeParse(input);
@@ -121,7 +108,7 @@ export async function publishSarahMemory(organizationId: string, input: unknown)
   const parsed = sarahSettingsSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Confira as orientações da Sarah." };
   const { admin } = await orgState(organizationId);
-  const memory = await publicarMemoriaDaOrg(admin, organizationId, user.id, sarahMemoryContent(parsed.data));
+  const memory = await publicarMemoriaDaOrg(admin, organizationId, user.id, buildSarahMemoryContent(parsed.data));
   if (!memory.ok) return { ok: false as const, error: "A Sarah não conseguiu salvar essas orientações na memória da empresa." };
   await saveSetup(organizationId, {
     step: "sarah", sarah: parsed.data, memory_version_id: memory.versionId,
@@ -229,18 +216,31 @@ export async function activateFoodservice(organizationId: string) {
   if (!orgResult.data) return { ok: false as const, error: "Empresa não encontrada." };
   const settings = record(orgResult.data.settings);
   const food = record(settings.foodservice);
-  const operation = record(food.operation);
-  const sarah = record(food.sarah);
-  const operator = record(food.operator);
-  const missing = [
-    !orgResult.data.onboarding_state || !record(record(orgResult.data.onboarding_state).foodservice_setup).company ? "dados da empresa" : null,
-    Object.keys(operation).length === 0 ? "operação" : null,
-    (productsResult.count ?? 0) < 1 ? "ao menos um produto disponível" : null,
-    (agentsResult.count ?? 0) < 1 ? "agente publicado" : null,
-    !memoryResult.data?.version_id || !sarah.name ? "orientações da Sarah" : null,
-    (!operator.email || (teamResult.count ?? 0) < 1) ? "operador associado e convite aceito" : null,
-    (metaResult.data?.length ?? 0) < 1 ? "WhatsApp Meta conectado" : null,
-  ].filter((value): value is string => value !== null);
+  const setup = record(record(orgResult.data.onboarding_state).foodservice_setup);
+  const company = food.company ?? setup.company;
+  const operation = food.operation ?? setup.operation;
+  const sarah = food.sarah ?? setup.sarah;
+  const operator = food.operator ?? setup.operator;
+  const publishedVersionId = memoryResult.data?.version_id;
+  const memoryVersion = publishedVersionId
+    ? await admin.from("org_memory_versions").select("id,content")
+      .eq("organization_id", organizationId).eq("id", publishedVersionId).maybeSingle()
+    : { data: null, error: null };
+  const checklist = buildOnboardingChecklist({
+    company: companyProfileSchema.safeParse(company).success,
+    operation: operationSchema.safeParse(operation).success,
+    sarah: (agentsResult.count ?? 0) > 0
+      && !memoryVersion.error
+      && isSarahMemoryPublished(sarah, publishedVersionId, setup.memory_version_id, memoryVersion.data?.content),
+    catalog: (productsResult.count ?? 0) > 0,
+    operator: operatorSettingsSchema.safeParse(operator).success && (teamResult.count ?? 0) > 0,
+    whatsapp: (metaResult.data?.length ?? 0) > 0,
+    // OMS e handoff são recursos internos já presentes no app; não representam
+    // uma conexão externa nem substituem a verificação real da Meta acima.
+    oms: true,
+    handoff: true,
+  });
+  const missing = missingOnboardingRequirements(checklist);
   if (missing.length) return { ok: false as const, error: `Faltam: ${missing.join(", ")}.` };
 
   const { error: settingsError } = await admin.from("food_commerce_settings").upsert({
