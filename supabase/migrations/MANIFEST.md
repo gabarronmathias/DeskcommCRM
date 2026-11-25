@@ -216,6 +216,7 @@ aplica.
 ## Reproducibility
 
 | `20260821120000` | `foodservice_prospecting_queue` | Fila Postgres tenant-scoped para a cadência D0 + D+2, claim atômico, idempotência por chave, cancelamento imediato em inbound e STOP, RLS/revokes, e deduplicação forte por Google Place ID. |
+| `20261125120000` | `0181_restore_selfhost_tenant_listing_rls` | Corrige drift do PostgreSQL self-hosted: restaura FK `conversations.organization_id → organizations.id`, políticas RLS de organizations/conversations/channel_sessions do baseline e remove grants anon/authenticated das tabelas Athos que contêm configuração sensível. Sem remoção ou alteração de registros; aplicado diretamente à VPS após validar ausência de órfãos. |
 
 Migrations were applied directly via the Supabase MCP `apply_migration` tool during the autonomous bootstrap session. The SQL of each migration is also embedded in the corresponding spec under `docs/specs/0X-spec-*.md` and the database keeps them in `supabase_migrations.schema_migrations`.
 
