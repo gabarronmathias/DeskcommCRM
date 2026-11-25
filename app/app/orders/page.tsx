@@ -50,6 +50,8 @@ type Order = {
   currency: string;
   payment_method: string | null;
   payload: {
+    source?: string;
+    created_by?: string;
     fulfillment?: "entrega" | "retirada";
     address_notes?: string;
   };
@@ -418,8 +420,7 @@ export default function OrdersPage() {
                   const action = nextAction(order);
                   const customer = rotuloDoContato(order.contacts);
 
-                  const fulfillment =
-                    order.payload?.fulfillment ?? "retirada";
+                  const fulfillment = order.payload?.fulfillment;
 
                   return (
                     <article
@@ -439,6 +440,13 @@ export default function OrdersPage() {
                           <div className="mt-1 font-semibold">
                             {customer}
                           </div>
+                          {order.payload?.source ? (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {order.payload.source === "whatsapp"
+                                ? `WhatsApp${order.payload.created_by === "sarah" ? " · Sarah" : ""}`
+                                : order.payload.source}
+                            </div>
+                          ) : null}
                         </div>
 
                         <span className="rounded-full bg-muted px-2 py-1 text-[11px] font-semibold">
@@ -447,11 +455,15 @@ export default function OrdersPage() {
                       </div>
 
                       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="rounded-md border px-2 py-1">
-                          {fulfillment === "entrega"
-                            ? "Entrega"
-                            : "Retirada"}
-                        </span>
+                        {fulfillment ? (
+                          <span className="rounded-md border px-2 py-1">
+                            {fulfillment === "entrega" ? "Entrega" : "Retirada"}
+                          </span>
+                        ) : (
+                          <span className="rounded-md border px-2 py-1 text-muted-foreground">
+                            Entrega/retirada a combinar
+                          </span>
+                        )}
 
                         {order.payment_method ? (
                           <span className="rounded-md border px-2 py-1 capitalize">

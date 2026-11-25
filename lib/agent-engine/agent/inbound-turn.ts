@@ -120,6 +120,7 @@ import {
   type JailbreakLevel,
 } from '../guardrails/jailbreak/classifier';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
+import { tryHandleAthosOrderBridge } from './athos-bridge-handler';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -1126,6 +1127,58 @@ export async function runAgentTurn(
     const canceled = await cancelPendingCronsForLead(pool, tenantId, leadId);
     if (canceled > 0) {
       runLog.info('opt-out detectado no turno — follow-ups agendados cancelados', { canceled });
+    }
+  }
+
+  // Pedido de foodservice: resolver carrinho e confirmação antes do LLM, e só
+  // confirmar ao cliente após persistência no CRM. A gravação interna usa o
+  // mesmo modelo deskcomm_food que a tela de pedidos e o endpoint de status.
+  if (job.kind === 'inbound_turn' && inboundSignal.trim() !== '') {
+    const bridge = await tryHandleAthosOrderBridge({
+      pool,
+      organizationId: tenantId,
+      contactId: leadId,
+      conversationId: input.conversationId,
+      text: inboundSignal,
+      log: runLog,
+    });
+    if (bridge !== null) {
+      const bridgeChannel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, turnCrmCfg)))(pool);
+      const chain = await runBeforeSend({
+        pool,
+        log: runLog,
+        tenantId,
+        leadId,
+        jobId: job.id,
+        channelSessionId: input.channelSessionId,
+        body: bridge.responseText,
+        optedOutThisTurn,
+        crmDailyLimit: null,
+        now: clock(),
+        sleep: deps.sleep,
+        lgpd,
+        send: (finalBody) => bridgeChannel.send({
+          tenantId,
+          leadId,
+          jobId: job.id,
+          seq: 1,
+          conversationId: input.conversationId,
+          body: finalBody,
+        }),
+      });
+      if (chain.status === 'vetoed') return;
+      const outcome = chain.outcome;
+      if (outcome.kind === 'sent' || outcome.kind === 'already_sent') return;
+      if (outcome.kind === 'blocked' || outcome.kind === 'queued') {
+        await applySendOutcome(
+          pool,
+          outcome,
+          { jobId: job.id, workerId: ctx.workerId, tenantId, leadId },
+          { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
+        );
+        throw new JobSettledError('foodservice bridge encerrou o job na disposição do canal');
+      }
+      throw new Error(`foodservice bridge: envio ${outcome.kind}`);
     }
   }
 
