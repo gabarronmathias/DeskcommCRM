@@ -1733,7 +1733,7 @@ CREATE TABLE IF NOT EXISTS "public"."orders" (
     "is_anonymized" boolean DEFAULT false NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "orders_external_provider_check" CHECK (("external_provider" = ANY (ARRAY['nuvemshop'::"text", 'vtex'::"text", 'shopify'::"text"]))),
+    CONSTRAINT "orders_external_provider_check" CHECK (("external_provider" = ANY (ARRAY['nuvemshop'::"text", 'vtex'::"text", 'shopify'::"text", 'deskcomm_food'::"text", 'gm_crm_food'::"text", 'athos'::"text"]))),
     CONSTRAINT "orders_fulfillment_status_check" CHECK (("fulfillment_status" = ANY (ARRAY['unpacked'::"text", 'packed'::"text", 'shipped'::"text", 'delivered'::"text"]))),
     CONSTRAINT "orders_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'paid'::"text", 'cancelled'::"text", 'fulfilled'::"text", 'shipped'::"text", 'delivered'::"text", 'refunded'::"text"]))),
     CONSTRAINT "orders_total_cents_check" CHECK (("total_cents" >= 0))
@@ -12466,7 +12466,9 @@ alter table public.orders
     'nuvemshop'::text,
     'vtex'::text,
     'shopify'::text,
-    'deskcomm_food'::text
+    'deskcomm_food'::text,
+    'gm_crm_food'::text,
+    'athos'::text
   ]));
 
 create unique index if not exists orders_id_org_uq
@@ -15847,19 +15849,99 @@ alter table public.food_order_items
   add column if not exists external_product_id text,
   add column if not exists external_sku text;
 
-alter table public.orders
-  drop constraint if exists orders_external_provider_check;
+-- The final provider vocabulary lives in the single constraint block above.
+-- Re-adding it here would fail when update.sh reapplies this baseline to rows
+-- already using the Athos provider.
 
-alter table public.orders
-  add constraint orders_external_provider_check
-  check (external_provider = any (array[
-    'nuvemshop'::text,
-    'vtex'::text,
-    'shopify'::text,
-    'deskcomm_food'::text,
-    'gm_crm_food'::text,
-    'athos'::text
-  ]));
+-- ---- 20261125120000_0181_restore_selfhost_tenant_listing_rls ----
+-- Keep the self-host baseline aligned with the repair migration. These guards
+-- are idempotent so update.sh can reapply the baseline without changing rows.
+-- The conversation FK already exists earlier in this baseline with ON DELETE
+-- CASCADE. The explicit data guard and conditional FK repair remain in 0181
+-- for deployed self-host databases whose schema predates this snapshot.
+
+alter table public.organizations enable row level security;
+drop policy if exists orgs_select on public.organizations;
+create policy orgs_select on public.organizations
+  for select to authenticated
+  using (id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+drop policy if exists orgs_write_platform_admin on public.organizations;
+create policy orgs_write_platform_admin on public.organizations
+  for all to authenticated
+  using (public.fn_is_platform_admin())
+  with check (public.fn_is_platform_admin());
+
+alter table public.conversations enable row level security;
+drop policy if exists conversations_tenant_isolation_all on public.conversations;
+drop policy if exists conversations_agent_write on public.conversations;
+drop policy if exists conversations_select on public.conversations;
+create policy conversations_select on public.conversations
+  for select to authenticated
+  using (public.fn_can_view_conversation(organization_id, assigned_to_user_id));
+drop policy if exists conversations_agent_insert on public.conversations;
+create policy conversations_agent_insert on public.conversations
+  for insert to authenticated
+  with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+  );
+drop policy if exists conversations_agent_update on public.conversations;
+create policy conversations_agent_update on public.conversations
+  for update to authenticated
+  using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+  );
+drop policy if exists conversations_agent_delete on public.conversations;
+create policy conversations_agent_delete on public.conversations
+  for delete to authenticated
+  using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+alter table public.channel_sessions enable row level security;
+drop policy if exists channel_sessions_tenant_isolation_all on public.channel_sessions;
+drop policy if exists channel_sessions_tenant_select on public.channel_sessions;
+create policy channel_sessions_tenant_select on public.channel_sessions
+  for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+drop policy if exists channel_sessions_tenant_write on public.channel_sessions;
+create policy channel_sessions_tenant_write on public.channel_sessions
+  for all to authenticated
+  using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin()
+  )
+  with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin()
+  );
+
+do $$
+begin
+  if to_regclass('public.athos_store_config') is not null then
+    execute 'alter table public.athos_store_config enable row level security';
+    execute 'revoke all on table public.athos_store_config from public, anon, authenticated';
+  end if;
+  if to_regclass('public.athos_store_products') is not null then
+    execute 'alter table public.athos_store_products enable row level security';
+    execute 'revoke all on table public.athos_store_products from public, anon, authenticated';
+  end if;
+end;
+$$;
+
+notify pgrst, 'reload schema';
 
 -- O dump concede EXECUTE em funções novas a anon por default. Como o baseline
 -- cresce por apêndice, este fechamento precisa permanecer depois de TODA DDL
