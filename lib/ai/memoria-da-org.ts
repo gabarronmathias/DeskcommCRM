@@ -14,7 +14,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ResultadoDaPublicacao =
-  | { ok: true; versionId: string; versionNumber: number }
+  | { ok: true; versionId: string; versionNumber: number; unchanged?: boolean }
   | { ok: false; erro: "versao" | "ponteiro"; mensagem: string };
 
 export async function publicarMemoriaDaOrg(
@@ -23,6 +23,35 @@ export async function publicarMemoriaDaOrg(
   userId: string,
   content: string,
 ): Promise<ResultadoDaPublicacao> {
+  const { data: pointer, error: pointerReadError } = await admin
+    .from("org_memory_pointers")
+    .select("version_id")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (pointerReadError) {
+    return { ok: false, erro: "ponteiro", mensagem: pointerReadError.message };
+  }
+
+  if (pointer?.version_id) {
+    const { data: current, error: currentReadError } = await admin
+      .from("org_memory_versions")
+      .select("id, version_number, content")
+      .eq("organization_id", orgId)
+      .eq("id", pointer.version_id)
+      .maybeSingle();
+    if (currentReadError) {
+      return { ok: false, erro: "versao", mensagem: currentReadError.message };
+    }
+    if (current?.content === content) {
+      return {
+        ok: true,
+        versionId: current.id as string,
+        versionNumber: current.version_number as number,
+        unchanged: true,
+      };
+    }
+  }
+
   const { data: maxRow } = await admin
     .from("org_memory_versions")
     .select("version_number")
