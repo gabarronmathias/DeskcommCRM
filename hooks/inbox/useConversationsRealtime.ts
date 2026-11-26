@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { tenantScopedQueryKey } from "@/lib/query/tenant-scope";
 import type { Conversation } from "@/lib/types/messaging";
 
 export interface ContactSummary {
@@ -73,7 +74,7 @@ export function useConversationsRealtime(
   orgId: string | null,
 ) {
   const qc = useQueryClient();
-  const queryKey = ["conversations", filters] as const;
+  const queryKey = tenantScopedQueryKey(["conversations", filters] as const, orgId);
 
   const query = useInfiniteQuery({
     queryKey,

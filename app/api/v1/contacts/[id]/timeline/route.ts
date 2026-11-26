@@ -22,6 +22,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { createClient } from "@/lib/supabase/server";
+import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import type { TimelineItem } from "@/lib/types/contacts";
 import {
   TIMELINE_COLS,
@@ -41,13 +42,13 @@ export async function GET(
   const { id: contactId } = await ctx.params;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  const authUser = await loadAuthUser();
+  if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
+  const activeOrg = await resolveActiveOrg(authUser);
+  if (!activeOrg)
+    return fail("organization_required", "Organização ativa não encontrada.", 403, { requestId });
 
   const url = new URL(req.url);
   const types = url.searchParams.getAll("type").filter(Boolean);
@@ -66,8 +67,9 @@ export async function GET(
   // Verify contact accessible (RLS will filter); 404 if not.
   const { data: contactRow, error: cErr } = await supabase
     .from("contacts")
-    .select("id")
+    .select("id, organization_id")
     .eq("id", contactId)
+    .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (cErr) return fail("internal_error", cErr.message, 500, { requestId });
   if (!contactRow) return fail("not_found", "Contato não encontrado.", 404, { requestId });
@@ -76,6 +78,7 @@ export async function GET(
   const { data: leadRows, error: lErr } = await supabase
     .from("crm_leads")
     .select("id")
+    .eq("organization_id", activeOrg.orgId)
     .eq("contact_id", contactId);
   if (lErr) return fail("internal_error", lErr.message, 500, { requestId });
 
@@ -89,6 +92,7 @@ export async function GET(
     let q = supabase
       .from("crm_lead_activities")
       .select(TIMELINE_COLS)
+      .eq("organization_id", activeOrg.orgId)
       .order("performed_at", { ascending: false })
       .order("id", { ascending: false })
       .limit(FETCH);
@@ -105,7 +109,9 @@ export async function GET(
 
   const directQ = buildQuery("contact_id", contactId);
   const leadQ =
-    leadIds.length > 0 ? buildQuery("lead_id", leadIds) : Promise.resolve({ data: [], error: null });
+    leadIds.length > 0
+      ? buildQuery("lead_id", leadIds)
+      : Promise.resolve({ data: [], error: null });
 
   const [directRes, leadRes] = await Promise.all([directQ, leadQ]);
 
@@ -144,9 +150,7 @@ export async function GET(
   const page = await comNomeDoAtor(supabase, pageRows);
   const last = page[page.length - 1];
   const nextCursor =
-    hasMore && last
-      ? encodeCursor({ performed_at: last.performed_at, id: last.id })
-      : null;
+    hasMore && last ? encodeCursor({ performed_at: last.performed_at, id: last.id }) : null;
 
   return ok(page, {
     requestId,

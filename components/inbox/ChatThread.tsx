@@ -20,8 +20,7 @@ interface Props {
 
 /** Onda 5.2: union de item do thread — mensagem real ou nota interna (nunca vai ao cliente). */
 export type ThreadItem =
-  | { kind: "message"; ts: string; data: Message }
-  | { kind: "note"; ts: string; data: Note };
+  { kind: "message"; ts: string; data: Message } | { kind: "note"; ts: string; data: Note };
 
 /** Intercala mensagens e notas por timestamp asc (puro, sem I/O — testado em thread-merge.test.ts). */
 export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem[] {
@@ -42,26 +41,20 @@ function dayLabel(d: Date): string {
 }
 
 export function ChatThread({ conversationId }: Props) {
-  const q = useMessagesRealtime(conversationId);
+  const activeOrg = useActiveOrg();
+  const q = useMessagesRealtime(conversationId, activeOrg?.orgId ?? null);
   const notes = useConversationNotes(conversationId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const paginasVistas = useRef(0);
-  const activeOrg = useActiveOrg();
   const currentUser = useUser();
   const deleteNote = useDeleteNote(conversationId ?? "");
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
 
-  const messages: Message[] = useMemo(
-    () => q.data?.pages.flatMap((p) => p.data) ?? [],
-    [q.data],
-  );
+  const messages: Message[] = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
 
-  const items: ThreadItem[] = useMemo(
-    () => mergeThreadItems(messages, notes),
-    [messages, notes],
-  );
+  const items: ThreadItem[] = useMemo(() => mergeThreadItems(messages, notes), [messages, notes]);
 
   const paginas = q.data?.pages.length ?? 0;
 
@@ -166,7 +159,7 @@ export function ChatThread({ conversationId }: Props) {
         {groups.map((g) => (
           <div key={g.key} className="space-y-1">
             <div className="sticky top-0 z-10 flex justify-center py-1">
-              <span className="rounded-full bg-background/80 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground backdrop-blur">
+              <span className="bg-background/80 rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground backdrop-blur">
                 {dayLabel(g.date)}
               </span>
             </div>

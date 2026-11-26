@@ -31,6 +31,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { createClient } from "@/lib/supabase/server";
+import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
@@ -51,8 +52,7 @@ const ACTIVITY_COLS = "id, type, source_module, performed_at, payload, reason, a
  * número numa métrica que ele não abre. `proximo_passo` vem junto porque a
  * ausência dele é o próprio invariante 4, e é o que precisa saltar na tela.
  */
-const DEMANDA_COLS =
-  "id, aberta_em, origem, estado, proximo_passo, proximo_passo_em, prazo_em";
+const DEMANDA_COLS = "id, aberta_em, origem, estado, proximo_passo, proximo_passo_em, prazo_em";
 
 export async function GET(
   _req: NextRequest,
@@ -62,30 +62,42 @@ export async function GET(
   const { id: contactId } = await ctx.params;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  const authUser = await loadAuthUser();
+  if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
+  const activeOrg = await resolveActiveOrg(authUser);
+  if (!activeOrg)
+    return fail("organization_required", "Organização ativa não encontrada.", 403, { requestId });
+
+  const { data: contact, error: contactError } = await supabase
+    .from("contacts")
+    .select("id")
+    .eq("id", contactId)
+    .eq("organization_id", activeOrg.orgId)
+    .maybeSingle();
+  if (contactError) return fail("internal_error", contactError.message, 500, { requestId });
+  if (!contact) return fail("not_found", "Contato não encontrado.", 404, { requestId });
 
   const [leads, orders, activities, demandas] = await Promise.all([
     supabase
       .from("crm_leads")
       .select(LEAD_COLS)
+      .eq("organization_id", activeOrg.orgId)
       .eq("contact_id", contactId)
       .order("updated_at", { ascending: false })
       .limit(3),
     supabase
       .from("orders")
       .select(ORDER_COLS)
+      .eq("organization_id", activeOrg.orgId)
       .eq("contact_id", contactId)
       .order("created_at", { ascending: false })
       .limit(3),
     supabase
       .from("crm_lead_activities")
       .select(ACTIVITY_COLS)
+      .eq("organization_id", activeOrg.orgId)
       .eq("contact_id", contactId)
       .order("performed_at", { ascending: false })
       .limit(5),
@@ -96,6 +108,7 @@ export async function GET(
     supabase
       .from("demandas")
       .select(DEMANDA_COLS)
+      .eq("organization_id", activeOrg.orgId)
       .eq("contact_id", contactId)
       .is("fechada_em", null)
       .order("aberta_em", { ascending: true })

@@ -136,8 +136,9 @@ function conversaCompleta(forma: Forma = {}): Row {
     is_group: false,
     group_chat_id: null,
     provider_conversation_id: forma.providerConversationId ?? null,
-    contacts: { phone_number: "+595991733685", wa_identity: null, wa_lid: "999888", is_blocked: false },
+    contacts: { organization_id: ORG, phone_number: "+595991733685", wa_identity: null, wa_lid: "999888", is_blocked: false },
     channel_sessions: {
+      organization_id: ORG,
       provider,
       waha_session_name: provider === "waha" ? "default" : null,
       meta_phone_number_id: provider === "meta_cloud" ? "1103328999528818" : null,
@@ -158,14 +159,16 @@ function makeSupabase(linhaCompleta: Row) {
   const client = {
     from(tabela: string) {
       if (tabela === "conversations") {
+        let selectColumns = "";
+        const query = {
+          eq: () => query,
+          maybeSingle: async () => ({ data: projetar(linhaCompleta, selectColumns), error: null }),
+        };
         return {
           select: (cols: string) => {
+            selectColumns = cols;
             estado.selects.push(cols);
-            return {
-              eq: () => ({
-                maybeSingle: async () => ({ data: projetar(linhaCompleta, cols), error: null }),
-              }),
-            };
+            return query;
           },
           update: () => ({ eq: async () => ({ error: null }) }),
         };

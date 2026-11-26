@@ -2,6 +2,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import type { RetentionContext } from "@/lib/inbox/retention-copy";
+import { useActiveOrg } from "@/hooks/auth/AuthProvider";
+import { tenantScopedQueryKey } from "@/lib/query/tenant-scope";
 
 export interface RetentionTrace {
   id: string;
@@ -21,9 +23,13 @@ export interface RetentionData {
  * suficiente pra "operação visível" sem custo de canal dedicado.
  */
 export function useRetention(conversationId: string | null) {
+  const organizationId = useActiveOrg()?.orgId ?? null;
   return useQuery({
-    queryKey: ["conversation-retention", conversationId],
-    enabled: !!conversationId,
+    queryKey: tenantScopedQueryKey(
+      ["conversation-retention", conversationId] as const,
+      organizationId,
+    ),
+    enabled: !!conversationId && !!organizationId,
     refetchInterval: 30_000,
     queryFn: () =>
       apiClient

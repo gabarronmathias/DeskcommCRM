@@ -42,8 +42,8 @@ function conversationRow(botSilencedUntil: string | null): Row {
     is_group: false,
     group_chat_id: null,
     bot_silenced_until: botSilencedUntil,
-    contacts: { phone_number: '+5531999998888', wa_identity: null, is_blocked: false },
-    channel_sessions: { provider: 'waha', waha_session_name: 'test-session', status: 'WORKING' },
+    contacts: { organization_id: ORG, phone_number: '+5531999998888', wa_identity: null, is_blocked: false },
+    channel_sessions: { organization_id: ORG, provider: 'waha', waha_session_name: 'test-session', status: 'WORKING' },
   };
 }
 
@@ -53,10 +53,12 @@ function makeSupabase(botSilencedUntil: string | null) {
   const client = {
     from(table: string) {
       if (table === 'conversations') {
+        const query = {
+          eq: () => query,
+          maybeSingle: async () => ({ data: conversationRow(botSilencedUntil), error: null }),
+        };
         return {
-          select: () => ({
-            eq: () => ({ maybeSingle: async () => ({ data: conversationRow(botSilencedUntil), error: null }) }),
-          }),
+          select: () => query,
           update: (patch: Row) => {
             patches.push(patch);
             return { eq: async () => ({ error: null }) };

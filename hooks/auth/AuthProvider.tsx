@@ -3,6 +3,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,7 @@ import {
 import { createClient } from "@/lib/supabase/browser";
 import type { AuthUser, ActiveOrg, Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface AuthCtx {
   user: AuthUser;
@@ -33,6 +35,20 @@ export function AuthProvider({
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const supabaseRef = useRef(createClient());
+  const queryClient = useQueryClient();
+  const previousOrgId = useRef(activeOrg?.orgId ?? null);
+
+  // Remover imediatamente dados em cache quando a sessão troca de organização
+  // (inclui entrar/sair de impersonation). Hooks tenant-scoped continuam sendo
+  // a proteção primária; isto evita que outras telas exibam cache legado durante
+  // o intervalo entre a troca de tenant e o refetch.
+  useLayoutEffect(() => {
+    const nextOrgId = activeOrg?.orgId ?? null;
+    if (previousOrgId.current !== nextOrgId) {
+      queryClient.clear();
+      previousOrgId.current = nextOrgId;
+    }
+  }, [activeOrg?.orgId, queryClient]);
 
   // Refresh session every 40 minutes (JWT default 1h, with margin).
   useEffect(() => {

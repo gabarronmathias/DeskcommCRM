@@ -98,9 +98,13 @@ async function removerEcoDoProprioEnvio(
       // produzir: apagar a própria mensagem que acabou de ser entregue. Quem
       // mexer no filtro de cima não vai ser avisado por teste nenhum.
       .neq("id", minhaLinhaId);
-    if (error) console.error("[messages.send] não consegui remover o eco do próprio envio", error.message);
+    if (error)
+      console.error("[messages.send] não consegui remover o eco do próprio envio", error.message);
   } catch (err) {
-    console.error("[messages.send] a remoção do eco lançou", err instanceof Error ? err.message : err);
+    console.error(
+      "[messages.send] a remoção do eco lançou",
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 
@@ -263,10 +267,22 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, contacts:contact_id(organization_id, phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(organization_id, ${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   const { data: conv, error: convErr } = await queryTolerantToMissingArchived(
-    () => supabase.from("conversations").select(convSelect(true)).eq("id", input.conversation_id).maybeSingle(),
-    () => supabase.from("conversations").select(convSelect(false)).eq("id", input.conversation_id).maybeSingle(),
+    () =>
+      supabase
+        .from("conversations")
+        .select(convSelect(true))
+        .eq("id", input.conversation_id)
+        .eq("organization_id", ctx.organization_id)
+        .maybeSingle(),
+    () =>
+      supabase
+        .from("conversations")
+        .select(convSelect(false))
+        .eq("id", input.conversation_id)
+        .eq("organization_id", ctx.organization_id)
+        .maybeSingle(),
   );
 
   if (convErr) {
@@ -279,22 +295,37 @@ export async function sendMessageHandler(
   type Joined = {
     id: string;
     organization_id: string;
-    contact_id: string;
-    channel_session_id: string;
+    contact_id: string | null;
+    channel_session_id: string | null;
     is_group: boolean;
     group_chat_id: string | null;
     bot_silenced_until: string | null;
     /** Thread do provider, quando ele endereça por thread própria (migration 0132). */
     provider_conversation_id: string | null;
     contacts: {
+      organization_id: string;
       phone_number: string | null;
       wa_identity: string | null;
       wa_lid: string | null;
       is_blocked: boolean;
     } | null;
-    channel_sessions: (ChannelSessionRef & { status: string; archived_at?: string | null }) | null;
+    channel_sessions:
+      | (ChannelSessionRef & { organization_id: string; status: string; archived_at?: string | null })
+      | null;
   };
   const c = conv as unknown as Joined;
+
+  // Defesa em profundidade para chamadas com service-role ou qualquer cliente
+  // que não aplique RLS. Um UUID recebido do cliente nunca define o tenant.
+  if (c.organization_id !== ctx.organization_id) {
+    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Conversa não encontrada.");
+  }
+  if (
+    (c.contact_id && c.contacts?.organization_id !== ctx.organization_id) ||
+    (c.channel_session_id && c.channel_sessions?.organization_id !== ctx.organization_id)
+  ) {
+    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Conversa não encontrada.");
+  }
 
   if (c.contacts?.is_blocked) {
     throw new ApiError(
@@ -306,7 +337,10 @@ export async function sendMessageHandler(
     );
   }
 
-  if (input.media_storage_path && !isMediaPathOwnedBy(input.media_storage_path, c.organization_id, c.id)) {
+  if (
+    input.media_storage_path &&
+    !isMediaPathOwnedBy(input.media_storage_path, c.organization_id, c.id)
+  ) {
     throw new ApiError(
       422,
       "invalid_media_path",
@@ -517,7 +551,9 @@ export async function sendMessageHandler(
         c.id,
         message.id,
         externalId,
-        externalId ? (adapter.echoExternalIds?.({ externalId, recipient: chatId }) ?? [externalId]) : [],
+        externalId
+          ? (adapter.echoExternalIds?.({ externalId, recipient: chatId }) ?? [externalId])
+          : [],
       );
       const { data: updated } = await supabase
         .from("messages")

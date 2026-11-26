@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { empresaExigeMfa, exigeCadastroDeMfa } from "@/lib/auth/politica-mfa";
+import { IMPERSONATE_COOKIE_NAME, verifyImpersonateCookie } from "@/lib/impersonate/cookie";
 import type { AuthUser, Role, UserOrgMembership, ActiveOrg } from "./types";
 
 const ACTIVE_ORG_COOKIE = "active_org";
@@ -121,8 +122,53 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
  * Returns null if user has zero memberships.
  */
 export async function resolveActiveOrg(authUser: AuthUser): Promise<ActiveOrg | null> {
-  if (authUser.organizations.length === 0) return null;
   const store = await cookies();
+
+  // O banner de impersonation e as consultas do app precisam usar a MESMA org.
+  // Antes, o layout lia `deskcomm-impersonate` só para desenhar o banner, enquanto
+  // este helper ignorava o token e escolhia a primeira membership do admin. Isso
+  // fazia a tela dizer Chopperia e as APIs consultarem, por exemplo, o sandbox.
+  const impersonationToken = store.get(IMPERSONATE_COOKIE_NAME)?.value;
+  if (authUser.is_platform_admin && impersonationToken) {
+    const verified = verifyImpersonateCookie(impersonationToken);
+    if (
+      verified.valid &&
+      verified.payload?.platformAdminId === authUser.id &&
+      verified.payload.tenantId
+    ) {
+      const admin = createAdminClient();
+      const { data: organization, error } = await admin
+        .from("organizations")
+        .select("id, display_name, status")
+        .eq("id", verified.payload.tenantId)
+        .maybeSingle();
+
+      // Falha fechada: nunca cair para a membership antiga quando o alvo do
+      // token não pode ser validado no banco.
+      if (error) {
+        logger.error("[auth] não foi possível validar o tenant de impersonation", {
+          user_id: authUser.id,
+          code: error.code,
+          message: error.message,
+        });
+        throw new Error(`impersonation_tenant_unavailable: ${error.message}`);
+      }
+      if (!organization || organization.status === "redacted") return null;
+
+      const membership = authUser.organizations.find(
+        (item) => item.organization_id === organization.id,
+      );
+      return {
+        orgId: organization.id,
+        name: organization.display_name,
+        // Um platform admin sem membership recebe contexto somente de leitura.
+        // Os gates próprios de platform admin continuam sendo explícitos nas rotas.
+        role: membership?.role ?? "viewer",
+      };
+    }
+  }
+
+  if (authUser.organizations.length === 0) return null;
   const cookieOrg = store.get(ACTIVE_ORG_COOKIE)?.value;
   if (cookieOrg) {
     const found = authUser.organizations.find((o) => o.organization_id === cookieOrg);
