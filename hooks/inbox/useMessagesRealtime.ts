@@ -5,19 +5,20 @@ import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Message } from "@/lib/types/messaging";
+import { tenantScopedQueryKey } from "@/lib/query/tenant-scope";
 
 interface MessagesResponse {
   data: Message[];
   meta?: { cursor?: string | null; has_more?: boolean };
 }
 
-export function useMessagesRealtime(conversationId: string | null) {
+export function useMessagesRealtime(conversationId: string | null, organizationId: string | null) {
   const qc = useQueryClient();
-  const queryKey = ["messages", conversationId] as const;
+  const queryKey = tenantScopedQueryKey(["messages", conversationId] as const, organizationId);
 
   const query = useInfiniteQuery({
     queryKey,
-    enabled: !!conversationId,
+    enabled: !!conversationId && !!organizationId,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       if (!conversationId) {
@@ -59,17 +60,17 @@ export function useMessagesRealtime(conversationId: string | null) {
   }, [qc, conversationId]);
 
   useRealtimeChannel({
-    name: conversationId ? `messages-${conversationId}` : "messages-disabled",
-    postgresChanges: conversationId
+    name: conversationId && organizationId ? `messages-${organizationId}-${conversationId}` : "messages-disabled",
+    postgresChanges: conversationId && organizationId
       ? {
           event: "*",
           schema: "public",
           table: "messages",
-          filter: `conversation_id=eq.${conversationId}`,
+          filter: `organization_id=eq.${organizationId}`,
         }
       : undefined,
     onChange,
-    enabled: !!conversationId,
+    enabled: !!conversationId && !!organizationId,
   });
 
   return query;
