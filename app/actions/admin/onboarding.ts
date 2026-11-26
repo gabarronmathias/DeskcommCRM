@@ -5,6 +5,7 @@ import { audit } from "@/lib/audit";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { publicarMemoriaDaOrg } from "@/lib/ai/memoria-da-org";
+import { listSelectableChannels } from "@/lib/channels/selectable";
 import { buildOnboardingChecklist, missingOnboardingRequirements } from "@/lib/admin-onboarding/checklist";
 import { buildSarahMemoryContent, isSarahMemoryPublished } from "@/lib/admin-onboarding/sarah-memory";
 import {
@@ -204,14 +205,16 @@ export async function goToOnboardingStep(organizationId: string, rawStep: unknow
 export async function activateFoodservice(organizationId: string) {
   const { user } = await requirePlatformAdmin();
   const admin = createAdminClient();
-  const [orgResult, productsResult, agentsResult, memoryResult, teamResult, metaResult] = await Promise.all([
+  const [orgResult, productsResult, agentsResult, memoryResult, teamResult, metaChannels] = await Promise.all([
     admin.from("organizations").select("id,display_name,settings,onboarding_state,onboarded_at").eq("id", organizationId).maybeSingle(),
     admin.from("food_products").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("is_available", true),
     admin.from("ai_agents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).not("published_version_id", "is", null),
     admin.from("org_memory_pointers").select("version_id").eq("organization_id", organizationId).maybeSingle(),
     admin.from("user_organizations").select("user_id", { count: "exact", head: true })
       .eq("organization_id", organizationId).eq("role", "agent").not("accepted_at", "is", null).is("revoked_at", null),
-    admin.from("channel_sessions").select("id").eq("organization_id", organizationId).eq("provider", "meta_cloud").eq("status", "WORKING").limit(1),
+    listSelectableChannels(admin, organizationId)
+      .then((channels) => channels.filter((channel) => channel.provider === "meta_cloud" && channel.status === "WORKING"))
+      .catch(() => []),
   ]);
   if (!orgResult.data) return { ok: false as const, error: "Empresa não encontrada." };
   const settings = record(orgResult.data.settings);
@@ -234,7 +237,7 @@ export async function activateFoodservice(organizationId: string) {
       && isSarahMemoryPublished(sarah, publishedVersionId, setup.memory_version_id, memoryVersion.data?.content),
     catalog: (productsResult.count ?? 0) > 0,
     operator: operatorSettingsSchema.safeParse(operator).success && (teamResult.count ?? 0) > 0,
-    whatsapp: (metaResult.data?.length ?? 0) > 0,
+    whatsapp: metaChannels.length > 0,
     // OMS e handoff são recursos internos já presentes no app; não representam
     // uma conexão externa nem substituem a verificação real da Meta acima.
     oms: true,
