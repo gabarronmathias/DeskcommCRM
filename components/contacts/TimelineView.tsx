@@ -14,6 +14,7 @@ import { activityLabel, actorName, actorShape } from "@/lib/leads/activity-vocab
 
 interface Props {
   contactId: string;
+  organizationId: string | null;
   types?: string[];
 }
 
@@ -47,8 +48,8 @@ function summarizePayload(p: Record<string, unknown>): string {
   return "";
 }
 
-export function TimelineView({ contactId, types }: Props) {
-  const q = useTimeline(contactId, types);
+export function TimelineView({ contactId, organizationId, types }: Props) {
+  const q = useTimeline(contactId, types, organizationId);
 
   const grouped = useMemo(() => {
     const items: TimelineItem[] = q.data?.pages.flatMap((p) => p.data) ?? [];
