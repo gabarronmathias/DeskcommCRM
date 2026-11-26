@@ -3,6 +3,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Contact } from "@/lib/types/contacts";
+import { tenantScopedQueryKey } from "@/lib/query/tenant-scope";
 
 interface ListResponse {
   data: Contact[];
@@ -15,9 +16,10 @@ export interface ContactListFilters {
   source?: string;
 }
 
-export function useContactList(filters: ContactListFilters) {
+export function useContactList(filters: ContactListFilters, organizationId: string | null) {
   return useInfiniteQuery({
-    queryKey: ["contacts", filters],
+    queryKey: tenantScopedQueryKey(["contacts", filters] as const, organizationId),
+    enabled: !!organizationId,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const qs = new URLSearchParams();
@@ -33,7 +35,6 @@ export function useContactList(filters: ContactListFilters) {
         throw err;
       }
     },
-    getNextPageParam: (lastPage) =>
-      lastPage.meta?.has_more ? lastPage.meta.cursor : undefined,
+    getNextPageParam: (lastPage) => (lastPage.meta?.has_more ? lastPage.meta.cursor : undefined),
   });
 }

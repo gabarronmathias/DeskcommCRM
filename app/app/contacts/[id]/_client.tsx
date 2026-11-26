@@ -22,8 +22,8 @@ interface Props {
 }
 
 export function ContactDetailClient({ contactId }: Props) {
-  const q = useContact(contactId);
   const { user, activeOrg } = useAuth();
+  const q = useContact(contactId, activeOrg?.orgId ?? null);
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
 
@@ -39,17 +39,14 @@ export function ContactDetailClient({ contactId }: Props) {
   if (q.isError || !q.data) {
     return (
       <div className="p-6">
-        <Card className="p-6 text-center text-sm text-error-fg">
-          Erro ao carregar contato.
-        </Card>
+        <Card className="p-6 text-center text-sm text-error-fg">Erro ao carregar contato.</Card>
       </div>
     );
   }
 
   const contact = q.data.data;
   const isAdmin =
-    user.is_platform_admin ||
-    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
+    user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
 
   // Uma decisão, um lugar (lib/contacts/rotulo-do-contato.ts). Esta tela era
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
@@ -61,7 +58,7 @@ export function ContactDetailClient({ contactId }: Props) {
       {contact.is_anonymized && (
         <div
           role="alert"
-          className="sticky top-0 z-20 flex items-center gap-3 rounded-md border border-error-fg/30 bg-error-bg p-3 text-sm text-error-fg"
+          className="border-error-fg/30 sticky top-0 z-20 flex items-center gap-3 rounded-md border bg-error-bg p-3 text-sm text-error-fg"
         >
           <ShieldCheck size={18} weight="duotone" aria-hidden />
           <span>
@@ -83,7 +80,9 @@ export function ContactDetailClient({ contactId }: Props) {
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {contact.tags.map((t) => (
-              <Badge key={t} variant="neutral">{t}</Badge>
+              <Badge key={t} variant="neutral">
+                {t}
+              </Badge>
             ))}
             {contact.is_blocked && <Badge variant="warning">Bloqueado</Badge>}
             {contact.is_anonymized && <Badge variant="destructive">Anonimizado</Badge>}
@@ -161,7 +160,9 @@ export function ContactDetailClient({ contactId }: Props) {
                   {contact.tags.length === 0
                     ? "—"
                     : contact.tags.map((t) => (
-                        <Badge key={t} variant="neutral">{t}</Badge>
+                        <Badge key={t} variant="neutral">
+                          {t}
+                        </Badge>
                       ))}
                 </dd>
               </div>
@@ -170,17 +171,17 @@ export function ContactDetailClient({ contactId }: Props) {
         </TabsContent>
 
         <TabsContent value="timeline" className="mt-4">
-          <TimelineView contactId={contactId} />
+          <TimelineView contactId={contactId} organizationId={activeOrg?.orgId ?? null} />
         </TabsContent>
 
         {isAdmin && (
           <TabsContent value="lgpd" className="mt-4">
-            <Card className="p-4 space-y-4">
+            <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">Direito ao esquecimento (LGPD)</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  A anonimização é irreversível. Use somente após confirmação formal
-                  do titular ou ordem judicial.
+                  A anonimização é irreversível. Use somente após confirmação formal do titular ou
+                  ordem judicial.
                 </p>
               </div>
               {contact.is_anonymized ? (
@@ -200,16 +201,8 @@ export function ContactDetailClient({ contactId }: Props) {
         )}
       </Tabs>
 
-      <EditContactDialog
-        contact={contact}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-      />
-      <AnonymizeDialog
-        contactId={contactId}
-        open={anonOpen}
-        onOpenChange={setAnonOpen}
-      />
+      <EditContactDialog contact={contact} open={editOpen} onOpenChange={setEditOpen} />
+      <AnonymizeDialog contactId={contactId} open={anonOpen} onOpenChange={setAnonOpen} />
     </div>
   );
 }

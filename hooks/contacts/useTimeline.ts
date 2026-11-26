@@ -3,16 +3,21 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { TimelineItemView } from "@/lib/types/contacts";
+import { tenantScopedQueryKey } from "@/lib/query/tenant-scope";
 
 interface TimelineResponse {
   data: TimelineItemView[];
   meta?: { cursor?: string; has_more?: boolean };
 }
 
-export function useTimeline(contactId: string, types?: string[]) {
+export function useTimeline(
+  contactId: string,
+  types: string[] | undefined,
+  organizationId: string | null,
+) {
   return useInfiniteQuery({
-    queryKey: ["timeline", contactId, types ?? null],
-    enabled: !!contactId,
+    queryKey: tenantScopedQueryKey(["timeline", contactId, types ?? null] as const, organizationId),
+    enabled: !!contactId && !!organizationId,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const qs = new URLSearchParams();
@@ -30,7 +35,6 @@ export function useTimeline(contactId: string, types?: string[]) {
         throw err;
       }
     },
-    getNextPageParam: (lastPage) =>
-      lastPage.meta?.has_more ? lastPage.meta.cursor : undefined,
+    getNextPageParam: (lastPage) => (lastPage.meta?.has_more ? lastPage.meta.cursor : undefined),
   });
 }
