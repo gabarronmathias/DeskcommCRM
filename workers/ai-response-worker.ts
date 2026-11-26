@@ -539,13 +539,18 @@ async function retrieveContext(input: RetrieveInput): Promise<RagHit[]> {
     similarity: number;
     metadata: Record<string, unknown> | null;
   };
-  return ((data ?? []) as RpcRow[]).map((r) => ({
+  return ((data ?? []) as RpcRow[])
+    .filter((r) => {
+      const sourceType = r.metadata?.source_type;
+      return !(typeof sourceType === "string" && sourceType.startsWith("nuvemshop"));
+    })
+    .map((r) => ({
     chunk_id: r.chunk_id,
     knowledge_source_id: r.knowledge_source_id,
     content: r.content,
     similarity: r.similarity,
     metadata: r.metadata ?? {},
-  }));
+    }));
 }
 
 // ---------------------------------------------------------------------------
