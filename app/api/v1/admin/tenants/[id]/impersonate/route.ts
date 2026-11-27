@@ -66,7 +66,7 @@ export async function POST(
   const admin = createAdminClient();
   const { data: org, error: orgError } = await admin
     .from("organizations")
-    .select("id, slug, display_name, status")
+    .select("id, slug, display_name, status, onboarded_at")
     .eq("id", tenantId)
     .maybeSingle();
 
@@ -88,6 +88,7 @@ export async function POST(
     tenantId: org.id,
     platformAdminId: adminCtx.user.id,
     exp,
+    ...(org.onboarded_at ? {} : { mode: "read_only_preview" as const }),
   });
 
   const cookieStore = await cookies();
@@ -113,6 +114,7 @@ export async function POST(
       tenant_id: org.id,
       tenant_slug: org.slug,
       platform_admin_id: adminCtx.user.id,
+      mode: org.onboarded_at ? "tenant" : "read_only_preview",
       exp,
     },
   });

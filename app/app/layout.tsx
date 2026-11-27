@@ -19,6 +19,7 @@ import {
   ImpersonateBanner,
   type ImpersonatingInfo,
 } from "@/components/app/ImpersonateBanner";
+import { isAdminPreviewForTenant, READ_ONLY_PREVIEW_MODE } from "@/lib/impersonate/preview";
 import { ConexaoCaidaBanner } from "@/components/app/ConexaoCaidaBanner";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
@@ -28,6 +29,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect("/login");
 
   let activeOrg = await resolveActiveOrg(user);
+  const store = await cookies();
+  const impCookie = store.get(IMPERSONATE_COOKIE_NAME)?.value;
+  const verifiedImpersonation = impCookie ? verifyImpersonateCookie(impCookie) : null;
+  let impersonating: ImpersonatingInfo | null = null;
+  let readOnlyPreview = false;
 
   /**
    * A cor desta organização, serializada, ou `null` quando ela não tem uma.
@@ -45,11 +51,37 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const admin = createAdminClient();
     const { data: orgRow } = await admin
       .from("organizations")
-      .select("onboarded_at, status, settings")
+      .select("display_name, onboarded_at, status, settings")
       .eq("id", activeOrg.orgId)
       .maybeSingle();
-    if (orgRow && !orgRow.onboarded_at) redirect("/onboarding");
+    readOnlyPreview = isAdminPreviewForTenant({
+      isPlatformAdmin: user.is_platform_admin,
+      authUserId: user.id,
+      activeOrgId: activeOrg.orgId,
+      onboardedAt: orgRow?.onboarded_at,
+      payload: verifiedImpersonation?.valid ? verifiedImpersonation.payload : undefined,
+    });
+    if (orgRow && !orgRow.onboarded_at && !readOnlyPreview) redirect("/onboarding");
     if (orgRow?.status === "suspended") redirect("/account-suspended");
+
+    const impersonationPayload = verifiedImpersonation?.valid
+      ? verifiedImpersonation.payload
+      : undefined;
+    if (
+      user.is_platform_admin &&
+      impersonationPayload?.platformAdminId === user.id &&
+      impersonationPayload.tenantId === activeOrg.orgId &&
+      orgRow
+    ) {
+      impersonating = {
+        tenantId: activeOrg.orgId,
+        tenantName: orgRow.display_name ?? activeOrg.name,
+        expiresAt: new Date(impersonationPayload.exp * 1000).toISOString(),
+        ...(impersonationPayload.mode === READ_ONLY_PREVIEW_MODE
+          ? { mode: READ_ONLY_PREVIEW_MODE }
+          : {}),
+      };
+    }
     // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
     // Fonte confiável (admin client, org do cookie validado) — nunca do body.
     const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)
@@ -107,32 +139,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     : [];
 
   // Read sidebar collapsed state SSR to avoid flash.
-  const store = await cookies();
   const collapsed = store.get("sidebar_collapsed")?.value === "1";
-
-  // Impersonate (S-11.07): verify cookie server-side and resolve tenant name.
-  // Middleware already validates HMAC + expiry on /app/*; we re-verify here as
-  // defence-in-depth and to extract the payload safely.
-  let impersonating: ImpersonatingInfo | null = null;
-  const impCookie = store.get(IMPERSONATE_COOKIE_NAME)?.value;
-  if (impCookie) {
-    const result = verifyImpersonateCookie(impCookie);
-    if (result.valid && result.payload) {
-      const admin = createAdminClient();
-      const { data: org } = await admin
-        .from("organizations")
-        .select("display_name")
-        .eq("id", result.payload.tenantId)
-        .maybeSingle();
-      if (org) {
-        impersonating = {
-          tenantId: result.payload.tenantId,
-          tenantName: org.display_name,
-          expiresAt: new Date(result.payload.exp * 1000).toISOString(),
-        };
-      }
-    }
-  }
 
   const enrolled = await isMfaEnrolled();
   // A decisão deixou de ser uma constante de papel: ela lê a política de quem

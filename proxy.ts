@@ -7,6 +7,7 @@ import {
   verifyImpersonateCookieEdge,
   IMPERSONATE_COOKIE_NAME_EDGE,
 } from "@/lib/impersonate/cookie-edge";
+import { IMPERSONATE_END_PATH, shouldBlockReadOnlyPreviewMutation } from "@/lib/impersonate/preview";
 
 const COOKIE_NAME = "sb-deskcomm-auth";
 
@@ -88,25 +89,43 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // EPIC-11 S-11.07: validate impersonate cookie on /app/* paths. Middleware
+  // EPIC-11 S-11.07: validate impersonate cookie server-side at the edge.
   // runs in Edge — no DB access, only HMAC + expiry. On any failure we delete
-  // the cookie (defence-in-depth) and let the request continue (the layout
-  // re-checks server-side; downstream code that depends on the cookie will
-  // simply see no impersonation in effect).
-  if (pathname.startsWith("/app")) {
-    const impCookie = request.cookies.get(IMPERSONATE_COOKIE_NAME_EDGE)?.value;
-    if (impCookie) {
-      const result = await verifyImpersonateCookieEdge(
-        impCookie,
-        env.IMPERSONATE_COOKIE_SECRET ?? "",
+  // the cookie (defence-in-depth). A signed preview cookie also blocks every
+  // mutating request, including Server Actions, until the admin exits preview.
+  const impCookie = request.cookies.get(IMPERSONATE_COOKIE_NAME_EDGE)?.value;
+  let previewMode: "read_only_preview" | undefined;
+  if (impCookie) {
+    const result = await verifyImpersonateCookieEdge(
+      impCookie,
+      env.IMPERSONATE_COOKIE_SECRET ?? "",
+    );
+    if (!result.valid) {
+      console.warn(
+        `[middleware] impersonate cookie invalid (${result.reason ?? "unknown"}) — clearing`,
       );
-      if (!result.valid) {
-        console.warn(
-          `[middleware] impersonate cookie invalid (${result.reason ?? "unknown"}) — clearing`,
-        );
-        response.cookies.delete(IMPERSONATE_COOKIE_NAME_EDGE);
-      }
+      response.cookies.delete(IMPERSONATE_COOKIE_NAME_EDGE);
+    } else if (result.payload?.platformAdminId === user.id) {
+      previewMode = result.payload.mode;
     }
+  }
+
+  if (
+    shouldBlockReadOnlyPreviewMutation({
+      method: request.method,
+      pathname,
+      mode: previewMode,
+    }) && pathname !== IMPERSONATE_END_PATH
+  ) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "read_only_preview",
+          message: "Este tenant está em preview administrativo e não aceita alterações.",
+        },
+      },
+      { status: 403, headers: { "x-request-id": requestId } },
+    );
   }
 
   // /admin/* additionally requires platform_admin (early gate — authoritative

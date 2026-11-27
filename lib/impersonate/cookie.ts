@@ -30,6 +30,8 @@ export interface ImpersonatePayload {
   platformAdminId: string;
   /** Unix epoch seconds. Cookie is invalid past this. */
   exp: number;
+  /** When present, the impersonation is a non-mutating preview of an incomplete tenant. */
+  mode?: "read_only_preview";
 }
 
 export interface VerifyResult {
@@ -129,7 +131,9 @@ export function verifyImpersonateCookie(token: string): VerifyResult {
       parsed === null ||
       typeof (parsed as ImpersonatePayload).tenantId !== "string" ||
       typeof (parsed as ImpersonatePayload).platformAdminId !== "string" ||
-      typeof (parsed as ImpersonatePayload).exp !== "number"
+      typeof (parsed as ImpersonatePayload).exp !== "number" ||
+      ((parsed as ImpersonatePayload).mode !== undefined &&
+        (parsed as ImpersonatePayload).mode !== "read_only_preview")
     ) {
       return { valid: false, reason: "invalid_payload" };
     }

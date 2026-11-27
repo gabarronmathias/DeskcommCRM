@@ -19,6 +19,7 @@ export interface ImpersonatingInfo {
   tenantId: string;
   tenantName: string;
   expiresAt: string; // ISO-8601
+  mode?: "read_only_preview";
 }
 
 interface Props {
@@ -62,7 +63,9 @@ export function ImpersonateBanner({ impersonating }: Props) {
       <div className="flex items-center gap-2">
         <span aria-hidden>🛡️</span>
         <span>
-          Modo Impersonate — atuando como{" "}
+          {impersonating.mode === "read_only_preview"
+            ? "PREVIEW ADMINISTRATIVO — tenant em onboarding, somente leitura: "
+            : "Modo Impersonate — atuando como "}
           <strong className="font-semibold">{impersonating.tenantName}</strong>
         </span>
       </div>
