@@ -51,6 +51,7 @@ vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
 }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u-1" }, activeOrg: { orgId: "org-1", role: "manager" } }),
+  useActiveOrg: () => ({ orgId: "org-1", role: "manager" }),
 }));
 
 const conversation = {
