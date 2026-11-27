@@ -16,7 +16,7 @@ import { publicarMemoriaDaOrg } from "@/lib/ai/memoria-da-org";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { buildOnboardingChecklist, missingOnboardingRequirements } from "@/lib/admin-onboarding/checklist";
 import { buildSarahMemoryContent, isSarahMemoryPublished } from "@/lib/admin-onboarding/sarah-memory";
-import { deliverySettingsFromSarahRules } from "@/lib/foodservice/delivery-policy";
+import { synchronizeDeliveryPolicy } from "@/lib/foodservice/delivery-policy";
 import {
   companyProfileSchema,
   operationSchema,
@@ -71,9 +71,25 @@ async function saveSetup(
       updated_at: new Date().toISOString(),
     },
   };
-  const nextSettings = settingsPatch
-    ? { ...settings, foodservice: { ...record(settings.foodservice), ...settingsPatch } }
-    : settings;
+  let nextSettings = settings;
+  if (settingsPatch) {
+    const currentFoodservice = record(settings.foodservice);
+    const nextFoodservice = { ...currentFoodservice, ...settingsPatch };
+    if ("operation" in settingsPatch || "sarah" in settingsPatch) {
+      const operation = record(nextFoodservice.operation);
+      const sarah = record(nextFoodservice.sarah);
+      const rules = typeof sarah.rules === "string" ? sarah.rules : "";
+      const requestedOperation = record(settingsPatch.operation);
+      nextFoodservice.operation = synchronizeDeliveryPolicy(
+        operation,
+        rules,
+        Object.prototype.hasOwnProperty.call(requestedOperation, "delivery_policy")
+          ? requestedOperation.delivery_policy
+          : undefined,
+      );
+    }
+    nextSettings = { ...settings, foodservice: nextFoodservice };
+  }
   const { error } = await admin.from("organizations")
     .update({ onboarding_state: nextState, settings: nextSettings })
     .eq("id", organizationId);
