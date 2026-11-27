@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deliverySettingsFromSarahRules, quoteDelivery, type DeliveryPolicy } from "./delivery-policy";
+import { deliverySettingsFromSarahRules, quoteDelivery, synchronizeDeliveryPolicy, type DeliveryPolicy } from "./delivery-policy";
 
 const policy: DeliveryPolicy = {
   timezone: "America/Sao_Paulo",
@@ -59,5 +59,37 @@ describe("política de entrega foodservice", () => {
       weekday_before_cutoff_fee_cents: 500, weekday_from_cutoff_fee_cents: 0, weekend_fee_cents: 0,
       cutoff_local_time: "19:00", blocked_neighborhoods: ["Rio Cumprido", "Cidade Salvador", "Príncipes"] });
     expect(settings?.service_areas).toEqual(["Jacareí"]);
+  });
+
+  it("ignora a introdução em prosa e mantém a lista real de bairros bloqueados", () => {
+    const settings = deliverySettingsFromSarahRules(`
+      Pedidos de até R$ 100,00: taxa de entrega de R$ 10,00.
+      Pedidos acima de R$ 100,00, de segunda a sexta-feira antes das 19h: taxa de entrega de R$ 5,00.
+      Pedidos acima de R$ 100,00, de segunda a sexta-feira a partir das 19h: entrega grátis.
+      Aos sábados e domingos, pedidos acima de R$ 100,00: entrega grátis.
+
+      REGIÕES NÃO ATENDIDAS:
+      A Chopperia NÃO realiza entrega nas seguintes regiões:
+
+      Rio Cumprido; Cidade Salvador; Príncipes; Meia Lua.
+      `, ["Jacareí"]);
+
+    expect(settings?.policy.blocked_neighborhoods).toEqual([
+      "Rio Cumprido", "Cidade Salvador", "Príncipes", "Meia Lua",
+    ]);
+  });
+
+  it("torna a política obrigatória e recusa falha de parsing sem reutilizar taxa antiga", () => {
+    const result = synchronizeDeliveryPolicy({
+      delivery_enabled: true,
+      delivery_policy_required: false,
+      delivery_policy: policy,
+      minimum_order_cents: 2_000,
+      service_areas: ["Jacareí"],
+    }, "orientações incompletas");
+
+    expect(result.delivery_policy_required).toBe(true);
+    expect(result.minimum_order_cents).toBe(0);
+    expect(result).not.toHaveProperty("delivery_policy");
   });
 });
