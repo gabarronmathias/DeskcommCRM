@@ -107,6 +107,7 @@ export function quoteDelivery(input: {
 export function synchronizeDeliveryPolicy(
   operation: Record<string, unknown>,
   rules: string,
+  explicitPolicy?: unknown,
 ): Record<string, unknown> {
   const serviceAreas = Array.isArray(operation.service_areas)
     ? operation.service_areas.filter((area): area is string => typeof area === "string")
@@ -120,6 +121,9 @@ export function synchronizeDeliveryPolicy(
     if (parsed) {
       next.delivery_policy = parsed.policy;
       next.service_areas = parsed.service_areas;
+    } else if (explicitPolicy !== undefined) {
+      // Um valor vindo do formulário já foi validado pelo schema do onboarding.
+      next.delivery_policy = explicitPolicy;
     } else {
       // Sem uma regra interpretável, o checkout deve recusar entrega.
       delete next.delivery_policy;
