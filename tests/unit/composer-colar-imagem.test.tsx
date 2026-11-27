@@ -28,6 +28,11 @@ vi.mock("@/hooks/inbox/useSendMessage", () => ({
   useSendMessage: () => ({ mutate: sendMock, isPending: false }),
 }));
 
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  useAuth: () => ({ user: { id: "u-1" }, activeOrg: { orgId: "org-1", role: "manager" } }),
+  useActiveOrg: () => ({ orgId: "org-1", role: "manager" }),
+}));
+
 import { Composer } from "@/components/inbox/Composer";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
 
