@@ -63,6 +63,7 @@ function conversationRow(shape: ConversationShape = {}): Row {
     is_group: shape.isGroup ?? false,
     group_chat_id: shape.groupChatId ?? null,
     contacts: {
+      organization_id: ORG,
       phone_number: shape.phoneNumber === undefined ? '+5531999998888' : shape.phoneNumber,
       wa_identity: shape.waIdentity ?? null,
       is_blocked: shape.isBlocked ?? false,
