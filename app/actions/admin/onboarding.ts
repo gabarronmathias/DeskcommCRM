@@ -16,7 +16,7 @@ import { publicarMemoriaDaOrg } from "@/lib/ai/memoria-da-org";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { buildOnboardingChecklist, missingOnboardingRequirements } from "@/lib/admin-onboarding/checklist";
 import { buildSarahMemoryContent, isSarahMemoryPublished } from "@/lib/admin-onboarding/sarah-memory";
-import { synchronizeDeliveryPolicy } from "@/lib/foodservice/delivery-policy";
+import { deliverySettingsFromSarahRules, synchronizeDeliveryPolicy } from "@/lib/foodservice/delivery-policy";
 import {
   companyProfileSchema,
   operationSchema,
