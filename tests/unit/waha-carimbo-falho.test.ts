@@ -38,12 +38,20 @@ function adminQueFalhaEm(rpcQueFalha: string): {
       };
       return q;
     },
-    select: () => ({
-      eq: () => ({
+    select: () => {
+      const q = {
+        eq: () => q,
+        neq: () => q,
+        contains: () => q,
+        order: () => q,
+        limit: () => q,
         maybeSingle: async () => ({ data: null, error: null }),
-        order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-      }),
-    }),
+        single: async () => ({ data: null, error: null }),
+        then: (resolve: (value: { data: null; error: null }) => unknown) =>
+          Promise.resolve({ data: null, error: null }).then(resolve),
+      };
+      return q;
+    },
   };
   const admin = {
     from: () => retornoDeTabela,
