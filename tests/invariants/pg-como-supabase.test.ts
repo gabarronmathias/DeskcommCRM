@@ -338,6 +338,6 @@ describe("rpc — argumentos NOMEADOS, como o PostgREST", () => {
 describe("o que NÃO está implementado estoura", () => {
   it("método ausente lança em vez de devolver vazio — vazio silencioso é teste verde medindo nada", () => {
     expect(() => db.from("crm_pipelines").delete()).toThrow(/não está implementado/);
-    expect(() => db.from("crm_pipelines").select("id").neq("id", "x")).toThrow(/não está implementado/);
+    expect(() => db.from("crm_pipelines").select("id").in("id", ["x"])).toThrow(/não está implementado/);
   });
 });
