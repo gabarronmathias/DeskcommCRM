@@ -37,6 +37,9 @@ function bancoDeMentira(): Duplo {
   const consulta = () => {
     const q = {
       eq: () => q,
+      neq: () => q,
+      contains: () => q,
+      order: () => q,
       in: () => q,
       limit: () => q,
       maybeSingle: async () => ({ data: null, error: null }),
