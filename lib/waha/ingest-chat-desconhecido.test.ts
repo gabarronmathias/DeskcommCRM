@@ -46,6 +46,15 @@ function bancoDeMentira(): Duplo {
   const admin = {
     from: () => ({
       select: () => consulta(),
+      update: () => {
+        const q = {
+          eq: () => q,
+          contains: () => q,
+          then: (resolve: (value: { error: null }) => unknown) =>
+            Promise.resolve({ error: null }).then(resolve),
+        };
+        return q;
+      },
       insert: (linha: Record<string, unknown>) => ({
         select: () => ({
           maybeSingle: async () => {
