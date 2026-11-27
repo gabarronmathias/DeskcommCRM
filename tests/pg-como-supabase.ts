@@ -276,7 +276,7 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
     });
     const onde = this.filtros.map(([op, c, v]) => {
       valores.push(v);
-      return `"${c}" ${op} ${valores.length}`;
+      return `"${c}" ${op} $${valores.length}`;
     });
     let texto = `update public."${this.tabela}" set ${sets.join(", ")}`;
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;
