@@ -74,6 +74,7 @@ function conversationRow(shape: ConversationShape = {}): Row {
             // `provider` sai do banco desde a migration 0087 â€” o handler nÃ£o
             // supÃµe mais o canal, entÃ£o a linha falsa tambÃ©m nÃ£o pode supor.
             provider: shape.provider ?? 'waha',
+            organization_id: ORG,
             waha_session_name: shape.provider === 'meta_cloud' ? null : 'test-session',
             meta_phone_number_id:
               shape.provider === 'meta_cloud' ? shape.metaPhoneNumberId ?? '1103328999528818' : null,
