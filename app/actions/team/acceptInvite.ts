@@ -43,6 +43,29 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
   // token HMAC verificado + email do usuário autenticado === email do convite; org e
   // role vêm do token assinado (fonte confiável), nunca do body.
   const db = createAdminClient();
+  if (payload.source === "admin_onboarding") {
+    const { data: org, error } = await db.from("organizations")
+      .select("onboarding_state")
+      .eq("id", payload.organization_id)
+      .maybeSingle();
+    const onboardingState = org?.onboarding_state;
+    const setup = onboardingState && typeof onboardingState === "object" && !Array.isArray(onboardingState)
+      ? (onboardingState as Record<string, unknown>).foodservice_setup
+      : null;
+    const invitation = setup && typeof setup === "object" && !Array.isArray(setup)
+      ? (setup as Record<string, unknown>).team_invite
+      : null;
+    const current = invitation && typeof invitation === "object" && !Array.isArray(invitation)
+      ? invitation as Record<string, unknown>
+      : {};
+    if (error || !org || current.invite_id !== payload.invite_id
+      || String(current.email ?? "").trim().toLowerCase() !== inviteEmail
+      || current.role !== payload.role
+      || typeof current.expires_at !== "string"
+      || Date.parse(current.expires_at) <= Date.now()) {
+      return { ok: false, error: "invalid_or_expired" };
+    }
+  }
   const { data: existing, error: fetchErr } = await db
     .from("user_organizations")
     .select("id, revoked_at")

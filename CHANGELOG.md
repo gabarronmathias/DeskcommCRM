@@ -8,6 +8,10 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+### Corrigido
+
+- Na etapa Equipe do onboarding administrativo, trocar de aba não dispara salvamentos ocultos; a configuração do operador e o avanço são gravados juntos. Convites agora usam a ação de plataforma autorizada, ficam registrados no estado do tenant e só são reenviados por ação explícita.
+
 ## [1.3.0] — 2026-08-13
 
 Esta versão mexe em como o sistema **chega e se atualiza** no seu servidor. Em uso, três

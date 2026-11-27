@@ -5,6 +5,8 @@ import {
   goToOnboardingStep,
   publishSarahMemory,
   saveSarahDraftSettings,
+  saveOperatorSettings,
+  sendOperatorInvite,
 } from "@/app/actions/admin/onboarding";
 
 const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
@@ -20,7 +22,8 @@ vi.mock("@/app/actions/admin/onboarding", () => ({
   saveCompanyProfile: vi.fn(),
   saveOperationSettings: vi.fn(),
   saveSarahDraftSettings: vi.fn().mockResolvedValue({ ok: true }),
-  saveOperatorSettings: vi.fn(),
+  saveOperatorSettings: vi.fn().mockResolvedValue({ ok: true }),
+  sendOperatorInvite: vi.fn().mockResolvedValue({ status: "sent", email: "agent@example.com" }),
   updateCatalogProduct: vi.fn(),
 }));
 
@@ -32,7 +35,7 @@ const props = {
       name: "Sarah", greeting: "Olá", rules: "", commercial_guidance: "",
       priority_products: "", upsell_guidance: "", handoff_guidance: "",
     },
-    operator: {}, completedSteps: [], currentStep: "sarah", status: null,
+    operator: {}, completedSteps: [], currentStep: "sarah", status: null, inviteStatus: "none" as const,
   },
   catalog: { categories: [], products: [] },
   checklist: [], canActivate: false, activeProducts: 0,
@@ -46,14 +49,49 @@ describe("navegação e publicação da memória da Sarah", () => {
     vi.mocked(publishSarahMemory).mockResolvedValue({ ok: true, versionNumber: 1, unchanged: false });
   });
 
-  it("Voltar só muda a etapa e não salva nem publica as orientações", async () => {
+  it("Voltar só muda a etapa local e não salva nem publica as orientações", async () => {
     render(<OnboardingWizard {...props} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
 
-    await waitFor(() => expect(goToOnboardingStep).toHaveBeenCalledWith("org-1", "catalog"));
+    await waitFor(() => expect(screen.getByText("Etapa 3 de 7 · Cardápio")).toBeInTheDocument());
+    expect(goToOnboardingStep).not.toHaveBeenCalled();
     expect(saveSarahDraftSettings).not.toHaveBeenCalled();
     expect(publishSarahMemory).not.toHaveBeenCalled();
+  });
+
+  it("abrir Equipe não dispara gravações da etapa atual nem chamadas de navegação", async () => {
+    render(<OnboardingWizard {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /5\s*Equipe/ }));
+
+    expect(screen.getByText("Etapa 5 de 7 · Equipe")).toBeInTheDocument();
+    expect(goToOnboardingStep).not.toHaveBeenCalled();
+    expect(saveSarahDraftSettings).not.toHaveBeenCalled();
+    expect(publishSarahMemory).not.toHaveBeenCalled();
+  });
+
+  it("salvar Equipe persiste configuração e destino no mesmo fluxo", async () => {
+    render(<OnboardingWizard {...props} initial={{ ...props.initial, operator: { name: "Operador", email: "agent@example.com", role: "agent", handoff_responsible: true }, currentStep: "team" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar e continuar" }));
+
+    await waitFor(() => expect(saveOperatorSettings).toHaveBeenCalledWith("org-1", {
+      name: "Operador", email: "agent@example.com", role: "agent", handoff_responsible: true,
+    }, "whatsapp"));
+    expect(goToOnboardingStep).not.toHaveBeenCalled();
+  });
+
+  it("usa ação explícita para reenviar convite pendente", async () => {
+    render(<OnboardingWizard {...props} initial={{
+      ...props.initial,
+      operator: { name: "Operador", email: "agent@example.com", role: "agent", handoff_responsible: true },
+      completedSteps: ["team"], currentStep: "team", inviteStatus: "pending",
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reenviar convite" }));
+
+    await waitFor(() => expect(sendOperatorInvite).toHaveBeenCalledWith("org-1", true));
   });
 
   it("salvar e continuar persiste como rascunho sem publicar", async () => {

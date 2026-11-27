@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buildOnboardingChecklist } from "@/lib/admin-onboarding/checklist";
 import { companyProfileSchema, operationSchema, operatorSettingsSchema } from "@/lib/admin-onboarding/schema";
 import { isSarahMemoryPublished } from "@/lib/admin-onboarding/sarah-memory";
+import { hasAcceptedTeamMembership } from "@/lib/admin-onboarding/team-membership";
 import { OnboardingWizard } from "./_client";
 
 export const dynamic = "force-dynamic";
@@ -21,13 +22,11 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
     .eq("id", id).maybeSingle();
   if (!org) notFound();
 
-  const [categoriesRes, productsRes, groupsRes, modifiersRes, memberRes, agentsRes, memoryRes, channelRes] = await Promise.all([
+  const [categoriesRes, productsRes, groupsRes, modifiersRes, agentsRes, memoryRes, channelRes] = await Promise.all([
     admin.from("food_categories").select("id,name,is_active,sort_order").eq("organization_id", id).order("sort_order"),
     admin.from("food_products").select("id,category_id,name,description,price_cents,is_available,sort_order").eq("organization_id", id).order("sort_order").limit(250),
     admin.from("food_modifier_groups").select("id,product_id,name,min_select,max_select,is_required,is_active,sort_order").eq("organization_id", id).order("sort_order"),
     admin.from("food_modifiers").select("id,group_id,name,price_delta_cents,is_available,sort_order").eq("organization_id", id).order("sort_order"),
-    admin.from("user_organizations").select("user_id", { count: "exact", head: true })
-      .eq("organization_id", id).eq("role", "agent").not("accepted_at", "is", null).is("revoked_at", null),
     admin.from("ai_agents").select("id,name,published_version_id").eq("organization_id", id).not("published_version_id", "is", null),
     admin.from("org_memory_pointers").select("version_id").eq("organization_id", id).maybeSingle(),
     admin.from("channel_sessions").select("id,status").eq("organization_id", id).eq("provider", "meta_cloud").eq("status", "WORKING").limit(1),
@@ -40,6 +39,10 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
   const operation = obj(foodservice.operation ?? setup.operation);
   const sarah = obj(foodservice.sarah ?? setup.sarah);
   const operator = obj(foodservice.operator ?? setup.operator);
+  const operatorRole = operator.role === "manager" ? "manager" : "agent";
+  const operatorMembership = await hasAcceptedTeamMembership(
+    admin, id, String(operator.email ?? ""), operatorRole,
+  );
   const publishedVersionId = memoryRes.data?.version_id;
   const memoryVersionRes = publishedVersionId
     ? await admin.from("org_memory_versions").select("id,content")
@@ -73,7 +76,7 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
     operation: operationReady,
     sarah: memoryReady && publishedAgents.length > 0,
     catalog: catalogReady,
-    operator: operatorSettingsSchema.safeParse(operator).success && (memberRes.count ?? 0) > 0,
+    operator: operatorSettingsSchema.safeParse(operator).success && operatorMembership === "accepted",
     whatsapp: metaReady,
     oms: true,
     handoff: true,
@@ -82,10 +85,14 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
   const rawCompleted = setup.completed_steps;
   const completedSteps = Array.isArray(rawCompleted) ? rawCompleted.filter((value): value is string => typeof value === "string") : [];
   const currentStep = typeof setup.current_step === "string" ? setup.current_step : "company";
+  const storedInvite = obj(setup.team_invite);
+  const inviteIsPending =
+    typeof storedInvite.invite_id === "string";
+  const inviteStatus = operatorMembership === "accepted" ? "accepted" as const : inviteIsPending ? "pending" as const : "none" as const;
 
   return <OnboardingWizard
     organization={{ id: org.id, slug: org.slug, name: org.display_name, legalName: org.legal_name ?? "" }}
-    initial={{ company, operation, sarah, operator, completedSteps, currentStep, status: typeof setup.status === "string" ? setup.status : null }}
+    initial={{ company, operation, sarah, operator, completedSteps, currentStep, status: typeof setup.status === "string" ? setup.status : null, inviteStatus }}
     catalog={{ categories, products }}
     checklist={checklist}
     canActivate={canActivate}

@@ -21,6 +21,7 @@ import {
   saveOperationSettings,
   saveSarahDraftSettings,
   saveOperatorSettings,
+  sendOperatorInvite,
   updateCatalogProduct,
 } from "@/app/actions/admin/onboarding";
 import type { OnboardingStep } from "@/lib/admin-onboarding/schema";
@@ -61,7 +62,7 @@ type Check = { key: string; label: string; pass: boolean };
 
 interface Props {
   organization: { id: string; slug: string; name: string; legalName: string };
-  initial: { company: Company; operation: Operation; sarah: Sarah; operator: Operator; completedSteps: string[]; currentStep: string; status: string | null };
+  initial: { company: Company; operation: Operation; sarah: Sarah; operator: Operator; completedSteps: string[]; currentStep: string; status: string | null; inviteStatus: "none" | "pending" | "accepted" };
   catalog: { categories: Category[]; products: Product[] };
   checklist: Check[];
   canActivate: boolean;
@@ -116,6 +117,7 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
   function saveCurrentAndMove(target: number) {
     startTransition(async () => {
       let result: { ok: boolean; error?: string } = { ok: true };
+      const next = Math.max(0, Math.min(STEPS.length - 1, target));
       if (step.key === "company") result = await saveCompanyProfile(organization.id, company);
       if (step.key === "operation") result = await saveOperationSettings(organization.id, {
         ...operation,
@@ -124,26 +126,23 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
         average_prep_minutes: Number(operation.average_prep_minutes),
       });
       if (step.key === "sarah") result = await saveSarahDraftSettings(organization.id, sarah);
-      if (step.key === "team") result = await saveOperatorSettings(organization.id, operator);
-      if (["catalog", "team", "whatsapp", "checklist"].includes(step.key)) {
+      if (step.key === "team") result = await saveOperatorSettings(organization.id, operator, STEPS[next]!.key);
+      if (["catalog", "whatsapp", "checklist"].includes(step.key)) {
         result = await goToOnboardingStep(organization.id, step.key);
       }
       if (!notifyResult(result)) return;
       if (step.key === "team") setTeamSaved(true);
-      const next = Math.max(0, Math.min(STEPS.length - 1, target));
       setActiveIndex(next);
-      const progress = await goToOnboardingStep(organization.id, STEPS[next]!.key);
-      if (!progress.ok) toast.error(progress.error ?? "Não foi possível salvar o ponto de retomada.");
+      if (step.key !== "team") {
+        const progress = await goToOnboardingStep(organization.id, STEPS[next]!.key);
+        if (!progress.ok) toast.error(progress.error ?? "Não foi possível salvar o ponto de retomada.");
+      }
     });
   }
 
   function navigateOnly(target: number) {
     const next = Math.max(0, Math.min(STEPS.length - 1, target));
     setActiveIndex(next);
-    startTransition(async () => {
-      const result = await goToOnboardingStep(organization.id, STEPS[next]!.key);
-      if (!result.ok) toast.error(result.error ?? "Não foi possível atualizar a etapa atual.");
-    });
   }
 
   function publishSarah() {
@@ -200,7 +199,7 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
         <ol className="grid grid-cols-4 gap-2 sm:grid-cols-7">
           {STEPS.map((item, index) => (
             <li key={item.key}>
-              <button type="button" onClick={() => saveCurrentAndMove(index)}
+              <button type="button" onClick={() => navigateOnly(index)}
                 aria-current={index === activeIndex ? "step" : undefined}
                 className={`w-full rounded-md border px-2 py-2 text-left text-xs ${index === activeIndex ? "border-primary bg-primary/5 font-semibold" : "hover:bg-muted/50"}`}>
                 <span className="block text-muted-foreground">{index + 1} {isCompleted(item.key) ? "✓" : ""}</span>
@@ -295,8 +294,21 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
             </div>
             <p className="text-sm text-muted-foreground">O convite será enviado como atendente. Depois que a pessoa aceitar, poderá visualizar pedidos e assumir conversas.</p>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={operator.handoff_responsible} onChange={(e) => { setTeamSaved(false); setOperator({ ...operator, handoff_responsible: e.target.checked }); }} />Responsável principal pelo handoff</label>
-            <ImpersonateButton organizationId={organization.id} displayName={organization.name} redirectTo="/app/team/invite" disabled={!operator.email || !teamSaved} disabledReason="Informe nome e e-mail e salve esta etapa antes de abrir o convite." />
-            <p className="text-xs text-muted-foreground">Salve e avance para gravar estes dados. O e-mail ficará preenchido na tela de convite do CRM.</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" disabled={!teamSaved || pending || !operator.email || initial.inviteStatus === "accepted"} onClick={() => startTransition(async () => {
+                const result = await sendOperatorInvite(organization.id, initial.inviteStatus === "pending");
+                if (result.status === "sent") toast.success(`Convite enviado para ${result.email}.`);
+                else if (result.status === "pending") toast.info("Já existe um convite pendente. Use Reenviar convite para emitir um novo link.");
+                else if (result.status === "accepted") toast.info("Este e-mail já tem uma membership ativa nesta empresa.");
+                else toast.error(result.error ?? "Não foi possível enviar o convite.");
+                router.refresh();
+              })}>
+                {initial.inviteStatus === "pending" ? "Reenviar convite" : initial.inviteStatus === "accepted" ? "Membership ativa" : "Enviar convite"}
+              </Button>
+              {initial.inviteStatus === "pending" && <Badge variant="warning">Convite pendente</Badge>}
+              {initial.inviteStatus === "accepted" && <Badge variant="success">Convite aceito</Badge>}
+            </div>
+            <p className="text-xs text-muted-foreground">O convite é enviado pelo fluxo oficial. A membership só será criada quando a pessoa abrir o link e aceitar usando o e-mail convidado.</p>
           </div>}
 
           {step.key === "whatsapp" && <div className="space-y-4">

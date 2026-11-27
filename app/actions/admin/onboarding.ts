@@ -1,9 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { audit } from "@/lib/audit";
+import { env } from "@/lib/env";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
+import { buildInviteEmail } from "@/lib/email/templates/invite";
+import { sendEmail } from "@/lib/email/resend";
+import { marcaDaSaida } from "@/lib/branding/saida";
+import { hasAcceptedTeamMembership } from "@/lib/admin-onboarding/team-membership";
 import { publicarMemoriaDaOrg } from "@/lib/ai/memoria-da-org";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { buildOnboardingChecklist, missingOnboardingRequirements } from "@/lib/admin-onboarding/checklist";
@@ -35,7 +42,7 @@ function slugify(value: string): string {
 async function orgState(organizationId: string) {
   const admin = createAdminClient();
   const { data, error } = await admin.from("organizations")
-    .select("id,display_name,settings,onboarding_state,onboarded_at")
+    .select("id,display_name,settings,onboarding_state,onboarded_at,updated_at")
     .eq("id", organizationId).maybeSingle();
   if (error || !data) throw new Error("Empresa não encontrada.");
   return { admin, org: data, settings: record(data.settings), state: record(data.onboarding_state) };
@@ -119,15 +126,105 @@ export async function publishSarahMemory(organizationId: string, input: unknown)
   return { ok: true as const, versionNumber: memory.versionNumber, unchanged: memory.unchanged ?? false };
 }
 
-export async function saveOperatorSettings(organizationId: string, input: unknown) {
+export async function saveOperatorSettings(organizationId: string, input: unknown, nextStep?: unknown) {
   const { user } = await requirePlatformAdmin();
   const parsed = operatorSettingsSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Confira o nome e o e-mail do operador." };
-  await saveSetup(organizationId, { step: "team", operator: parsed.data }, { operator: parsed.data });
+  const next = nextStep === undefined ? undefined : onboardingStepSchema.safeParse(nextStep);
+  if (next && !next.success) return { ok: false as const, error: "Etapa seguinte inválida." };
+  await saveSetup(organizationId, {
+    step: "team", operator: parsed.data,
+    ...(next?.success ? { current_step: next.data } : {}),
+  }, { operator: parsed.data });
   await audit({ action: "platform_admin.onboarding_operator_saved", actorUserId: user.id,
     actingAsPlatformAdmin: true, bypassedRls: true, organizationId,
     metadata: { role: parsed.data.role, handoff_responsible: parsed.data.handoff_responsible } });
   return { ok: true as const };
+}
+
+export async function sendOperatorInvite(organizationId: string, resend = false) {
+  const { user } = await requirePlatformAdmin();
+  const { admin, org, state } = await orgState(organizationId);
+  const setup = record(state.foodservice_setup);
+  const foodservice = record(record(org.settings).foodservice);
+  const operator = operatorSettingsSchema.safeParse(foodservice.operator ?? setup.operator);
+  if (!operator.success) return { status: "error" as const, error: "Salve os dados válidos do operador antes de convidar." };
+
+  const email = operator.data.email.trim().toLowerCase();
+  const role = operator.data.role;
+  const membershipStatus = await hasAcceptedTeamMembership(admin, organizationId, email, role);
+  if (membershipStatus === "error") {
+    return { status: "error" as const, error: "Não foi possível verificar a equipe desta empresa." };
+  }
+  if (membershipStatus === "accepted") {
+    return { status: "accepted" as const, email };
+  }
+
+  const oldInvite = record(setup.team_invite);
+  const expiresAt = typeof oldInvite.expires_at === "string" ? Date.parse(oldInvite.expires_at) : 0;
+  const pending = expiresAt > Date.now();
+  if (pending && !resend) return { status: "pending" as const, email };
+
+  const inviteId = randomUUID();
+  const exp = Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS;
+  const invitation = {
+    invite_id: inviteId,
+    email,
+    role,
+    expires_at: new Date(exp * 1000).toISOString(),
+    reserved_at: new Date().toISOString(),
+  };
+  const nextState = {
+    ...state,
+    foodservice_setup: { ...setup, team_invite: invitation },
+  };
+  const updatedAt = new Date(Math.max(Date.now(), Date.parse(String(org.updated_at)) + 1)).toISOString();
+  const { data: reserved, error: reserveError } = await admin.from("organizations")
+    .update({ onboarding_state: nextState, updated_at: updatedAt })
+    .eq("id", organizationId).eq("updated_at", org.updated_at)
+    .select("id").maybeSingle();
+  if (reserveError || !reserved) {
+    return { status: "error" as const, error: "A equipe foi atualizada em paralelo. Recarregue a etapa antes de convidar." };
+  }
+
+  const token = signInviteToken({ invite_id: inviteId, email, organization_id: organizationId, role, exp, source: "admin_onboarding" });
+  const acceptUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/team/accept-invite/${token}`;
+  const marca = await marcaDaSaida(organizationId);
+  const { subject, html, text } = buildInviteEmail({
+    inviterName: user.email ?? "Administrador da plataforma",
+    orgName: org.display_name,
+    acceptUrl,
+    role,
+    expiresAt: new Date(exp * 1000),
+    marca,
+  });
+  let emailDispatched = false;
+  try {
+    const result = await sendEmail({
+      to: email,
+      subject,
+      html,
+      text,
+      fromName: marca.nome,
+      tags: [{ name: "kind", value: "team_invite" }, { name: "org", value: organizationId }],
+    });
+    emailDispatched = result.ok;
+  } catch {
+    // A reserva persistida permite reenvio explícito sem criar outro convite.
+  }
+  await audit({
+    action: "member.invited",
+    actorUserId: user.id,
+    organizationId,
+    resourceType: "membership",
+    resourceId: inviteId,
+    actingAsPlatformAdmin: true,
+    bypassedRls: true,
+    metadata: { email, role, email_dispatched: emailDispatched, source: "admin_onboarding" },
+  });
+  if (!emailDispatched) return { status: "error" as const, error: "O convite foi registrado, mas o e-mail não pôde ser enviado. Use Reenviar convite após verificar o serviço de e-mail." };
+  revalidatePath(`/admin/tenants/${organizationId}/onboarding`);
+  return { status: "sent" as const, email };
 }
 
 export async function updateCatalogProduct(organizationId: string, input: unknown) {
@@ -205,13 +302,11 @@ export async function goToOnboardingStep(organizationId: string, rawStep: unknow
 export async function activateFoodservice(organizationId: string) {
   const { user } = await requirePlatformAdmin();
   const admin = createAdminClient();
-  const [orgResult, productsResult, agentsResult, memoryResult, teamResult, metaChannels] = await Promise.all([
+  const [orgResult, productsResult, agentsResult, memoryResult, metaChannels] = await Promise.all([
     admin.from("organizations").select("id,display_name,settings,onboarding_state,onboarded_at").eq("id", organizationId).maybeSingle(),
     admin.from("food_products").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("is_available", true),
     admin.from("ai_agents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).not("published_version_id", "is", null),
     admin.from("org_memory_pointers").select("version_id").eq("organization_id", organizationId).maybeSingle(),
-    admin.from("user_organizations").select("user_id", { count: "exact", head: true })
-      .eq("organization_id", organizationId).eq("role", "agent").not("accepted_at", "is", null).is("revoked_at", null),
     listSelectableChannels(admin, organizationId)
       .then((channels) => channels.filter((channel) => channel.provider === "meta_cloud" && channel.status === "WORKING"))
       .catch(() => []),
@@ -224,6 +319,10 @@ export async function activateFoodservice(organizationId: string) {
   const operation = food.operation ?? setup.operation;
   const sarah = food.sarah ?? setup.sarah;
   const operator = food.operator ?? setup.operator;
+  const parsedOperator = operatorSettingsSchema.safeParse(operator);
+  const operatorMembership = parsedOperator.success
+    ? await hasAcceptedTeamMembership(admin, organizationId, parsedOperator.data.email, parsedOperator.data.role)
+    : "missing";
   const publishedVersionId = memoryResult.data?.version_id;
   const memoryVersion = publishedVersionId
     ? await admin.from("org_memory_versions").select("id,content")
@@ -236,7 +335,7 @@ export async function activateFoodservice(organizationId: string) {
       && !memoryVersion.error
       && isSarahMemoryPublished(sarah, publishedVersionId, setup.memory_version_id, memoryVersion.data?.content),
     catalog: (productsResult.count ?? 0) > 0,
-    operator: operatorSettingsSchema.safeParse(operator).success && (teamResult.count ?? 0) > 0,
+    operator: parsedOperator.success && operatorMembership === "accepted",
     whatsapp: metaChannels.length > 0,
     // OMS e handoff são recursos internos já presentes no app; não representam
     // uma conexão externa nem substituem a verificação real da Meta acima.
