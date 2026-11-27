@@ -5,6 +5,10 @@ import type { HandlerCtx } from "@/lib/api/handlers/types";
 
 import { pgComoSupabase } from "../pg-como-supabase";
 
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+
+import { createAdminClient } from "@/lib/supabase/admin";
+
 /**
  * ARQUIVO DE TRIAGEM (PR #194) — NÃO É PARA MERGE.
  *
@@ -37,6 +41,7 @@ const pool = new pg.Pool({
   max: 3,
 });
 const db = pgComoSupabase(pool);
+vi.mocked(createAdminClient).mockReturnValue(db);
 
 const ORG = "d194b000-0000-4000-8000-000000000001";
 const USUARIO = "d194b000-0000-4000-8000-0000000000a1";

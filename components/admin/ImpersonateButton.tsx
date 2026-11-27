@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 interface ImpersonateButtonProps {
   organizationId: string;
   displayName: string;
+  redirectTo?: string;
   disabled?: boolean;
   disabledReason?: string;
 }
@@ -35,6 +36,7 @@ interface ImpersonateButtonProps {
 export function ImpersonateButton({
   organizationId,
   displayName,
+  redirectTo,
   disabled,
   disabledReason,
 }: ImpersonateButtonProps) {
@@ -58,6 +60,7 @@ export function ImpersonateButton({
         return;
       }
       const redirectUrl =
+        redirectTo ??
         (json as { data?: { redirect_url?: string } })?.data?.redirect_url ??
         "/app/inbox";
       setOpen(false);

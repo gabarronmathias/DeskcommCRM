@@ -29,13 +29,29 @@ function adminQueFalhaEm(rpcQueFalha: string): {
     insert: () => ({
       select: () => ({ maybeSingle: async () => ({ data: { id: "msg-1" }, error: null }) }),
     }),
-    update: () => ({ eq: async () => ({ error: null }) }),
-    select: () => ({
-      eq: () => ({
+    update: () => {
+      const q = {
+        eq: () => q,
+        contains: () => q,
+        then: (resolve: (value: { error: null }) => unknown) =>
+          Promise.resolve({ error: null }).then(resolve),
+      };
+      return q;
+    },
+    select: () => {
+      const q = {
+        eq: () => q,
+        neq: () => q,
+        contains: () => q,
+        order: () => q,
+        limit: () => q,
         maybeSingle: async () => ({ data: null, error: null }),
-        order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-      }),
-    }),
+        single: async () => ({ data: null, error: null }),
+        then: (resolve: (value: { data: null; error: null }) => unknown) =>
+          Promise.resolve({ data: null, error: null }).then(resolve),
+      };
+      return q;
+    },
   };
   const admin = {
     from: () => retornoDeTabela,

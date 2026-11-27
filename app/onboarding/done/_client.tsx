@@ -11,9 +11,11 @@ import type { PecaDoSistema } from "@/lib/onboarding/o-que-mais-existe";
 export function DoneClient({
   itens,
   pecas,
+  foodserviceActivationPending,
 }: {
   itens: ItemDoResumo[];
   pecas: PecaDoSistema[];
+  foodserviceActivationPending: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const pendentes = itens.filter((i) => !i.feito);
@@ -21,11 +23,15 @@ export function DoneClient({
   return (
     <div className="space-y-6 rounded-lg border bg-background p-6">
       <div className="space-y-1 text-center">
-        <h2 className="text-2xl font-semibold tracking-tight">Tudo pronto!</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">
+          {foodserviceActivationPending ? "Configuração inicial concluída" : "Tudo pronto!"}
+        </h2>
         <p className="text-sm text-muted-foreground">
-          {pendentes.length === 0
-            ? "Seu funcionário está montado. Daqui em diante é só acompanhar."
-            : "Seu funcionário já está de pé. O que ficou para depois continua te esperando."}
+          {foodserviceActivationPending
+            ? "O CRM será liberado depois que um administrador concluir e aprovar o checklist de ativação Foodservice."
+            : pendentes.length === 0
+              ? "Seu funcionário está montado. Daqui em diante é só acompanhar."
+              : "Seu funcionário já está de pé. O que ficou para depois continua te esperando."}
         </p>
       </div>
 
@@ -112,20 +118,32 @@ export function DoneClient({
         </ul>
       </section>
 
-      <div className="flex justify-center">
-        <Button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            startTransition(async () => {
-              const res = await finishOnboarding();
-              if (res && !res.ok) toast.error(`Falha: ${res.error}`);
-            })
-          }
-        >
-          {pending ? "Finalizando..." : "Começar a usar"}
-        </Button>
-      </div>
+      {foodserviceActivationPending ? (
+        <p role="status" className="text-center text-sm text-muted-foreground">
+          A liberação depende da confirmação dos requisitos de catálogo, Sarah, equipe e WhatsApp oficial.
+        </p>
+      ) : (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const res = await finishOnboarding();
+                if (res && !res.ok) {
+                  toast.error(
+                    res.error === "foodservice_activation_required"
+                      ? "A ativação Foodservice ainda está pendente no checklist administrativo."
+                      : `Falha: ${res.error}`,
+                  );
+                }
+              })
+            }
+          >
+            {pending ? "Finalizando..." : "Começar a usar"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ export interface ImpersonatePayload {
   tenantId: string;
   platformAdminId: string;
   exp: number;
+  mode?: "read_only_preview";
 }
 
 export interface EdgeVerifyResult {
@@ -97,7 +98,9 @@ export async function verifyImpersonateCookieEdge(
       parsed === null ||
       typeof (parsed as ImpersonatePayload).tenantId !== "string" ||
       typeof (parsed as ImpersonatePayload).platformAdminId !== "string" ||
-      typeof (parsed as ImpersonatePayload).exp !== "number"
+      typeof (parsed as ImpersonatePayload).exp !== "number" ||
+      ((parsed as ImpersonatePayload).mode !== undefined &&
+        (parsed as ImpersonatePayload).mode !== "read_only_preview")
     ) {
       return { valid: false, reason: "invalid_payload" };
     }

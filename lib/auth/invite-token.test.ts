@@ -17,6 +17,11 @@ describe("invite-token", () => {
     expect(out).toEqual(payload);
   });
 
+  it("preserves the admin-onboarding source used to invalidate replaced invites", () => {
+    const payload = { ...base(), source: "admin_onboarding" as const };
+    expect(verifyInviteToken(signInviteToken(payload))).toEqual(payload);
+  });
+
   it("returns null for expired token", () => {
     const expired = { ...base(), exp: Math.floor(Date.now() / 1000) - 10 };
     const token = signInviteToken(expired);

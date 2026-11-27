@@ -23,6 +23,7 @@
     "e2e:env": "bash scripts/gerar-env-e2e.sh",
     "test:journeys": "playwright test -c tests/journeys/playwright.config.ts",
     "test:unit": "vitest run",
+  "test:production-critical": "vitest run lib/query/tenant-scope.test.ts lib/impersonate/preview.test.ts lib/admin-onboarding/checklist.test.ts lib/admin-onboarding/team-membership.test.ts lib/admin-onboarding/sarah-memory.test.ts lib/onboarding/foodservice-activation-gate.test.ts lib/foodservice/delivery-policy.test.ts tests/unit/catalogo-servido.test.ts tests/unit/athos-order-state.test.ts tests/unit/athos-order-replay.test.ts tests/unit/athos-order-recovery.test.ts tests/unit/athos-bridge-handler-integration.test.ts tests/unit/meta-webhook.test.ts tests/unit/meta-webhook-inbound.test.ts tests/unit/channel-adapter-meta.test.ts tests/unit/mcp-handoff-assignment.test.ts lib/agent-engine/edge/crm/get-lead-context-tenant-isolation.test.ts lib/channels/meta/ingest.tenant-routing.test.ts \"app/api/v1/orders/[id]/status/route.test.ts\" app/actions/onboarding/finishOnboarding.test.ts \"app/admin/(protected)/tenants/[id]/onboarding/_client.test.tsx\"",
     "test:db": "bash scripts/test-db.sh",
     "test:shell": "bash tests/shell/update-guard.test.sh && bash tests/shell/scheduler-entrypoint.test.sh && bash hostgator-setup-kit/test-validators.sh",
     "test:invariants": "bash scripts/test-db.sh",

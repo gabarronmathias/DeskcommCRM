@@ -110,6 +110,21 @@ describe("o adaptador COMPARA — `lt`/`gt`, não só igualdade", () => {
   });
 });
 
+describe("o adaptador compara por desigualdade", () => {
+  it("neq exclui apenas o valor indicado, sem ignorar filtros anteriores", async () => {
+    const { data, error } = await db
+      .from("crm_pipelines")
+      .select("name")
+      .eq("organization_id", ORG)
+      .eq("is_default", false)
+      .neq("slug", "zulu")
+      .order("position", { ascending: true });
+
+    expect(error).toBeNull();
+    expect((data as Array<{ name: string }>).map((x) => x.name)).toEqual(["Bravo", "Alfa"]);
+  });
+});
+
 describe("o adaptador ORDENA", () => {
   it("`.order(asc).limit(1)` traz o de menor valor, não o primeiro que o Postgres devolver", async () => {
     // Sem ordenação real o Postgres devolveria em ordem de heap — que aqui é a
@@ -323,6 +338,6 @@ describe("rpc — argumentos NOMEADOS, como o PostgREST", () => {
 describe("o que NÃO está implementado estoura", () => {
   it("método ausente lança em vez de devolver vazio — vazio silencioso é teste verde medindo nada", () => {
     expect(() => db.from("crm_pipelines").delete()).toThrow(/não está implementado/);
-    expect(() => db.from("crm_pipelines").select("id").neq("id", "x")).toThrow(/não está implementado/);
+    expect(() => db.from("crm_pipelines").select("id").in("id", ["x"])).toThrow(/não está implementado/);
   });
 });

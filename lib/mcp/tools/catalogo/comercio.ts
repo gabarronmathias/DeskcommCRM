@@ -20,10 +20,10 @@ export const TOOLS_COMERCIO = declararTools([
   {
     name: "crm_search_products",
     category: "read",
-    rotulo: "Procurar produto na loja",
+    rotulo: "Procurar produto no cardápio",
     explicacao:
-      "Procura um produto pelo nome e devolve preço e quantidade em estoque, para o assistente responder com o dado da loja em vez de estimar.",
-    oQueToca: "Catálogo da loja",
+      "Busca um produto pelo nome e devolve descrição, preço e disponibilidade do cardápio oficial do estabelecimento.",
+    oQueToca: "Cardápio, produtos, preços e disponibilidade",
     risco: "seguro",
     pacotes: ["vender", "atender"],
   },

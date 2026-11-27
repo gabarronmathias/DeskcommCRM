@@ -9,8 +9,7 @@
  *  - o indicador mostrava um passo "Loja" que não existia naquela instalação;
  *  - ele aparecia CONCLUÍDO enquanto a pessoa estava no passo seguinte, porque
  *    "feito" era só "índice menor que o atual";
- *  - e a tela final listava "Loja Nuvemshop (pulado)" — o wizard acusando o
- *    usuário de ter deixado de fazer uma tela que nunca lhe foi oferecida.
+ *  - e a tela final listava um passo de loja que o produto foodservice não usa.
  *
  * Aqui, quem decide se um passo EXISTE é o próprio passo, e a mesma resposta
  * alimenta o roteador, o indicador e o resumo. Um passo que não se aplica não
@@ -27,16 +26,11 @@ export interface PassoDoOnboarding {
    * O passo existe nesta instalação? Integração desligada não vira passo
    * fantasma.
    */
-  existe: (ctx: ContextoDoPasso) => boolean;
+  existe: () => boolean;
   /** Já foi resolvido? (inclusive quando a pessoa escolheu pular) */
   cumprido: (state: OnboardingState) => boolean;
   /** Foi resolvido de verdade, ou a pessoa pulou? Alimenta o resumo final. */
   pulado: (state: OnboardingState) => boolean;
-}
-
-export interface ContextoDoPasso {
-  /** A integração de loja está ligada nesta instalação? */
-  lojaLigada: boolean;
 }
 
 /** Um passo marcado no estado — com ou sem `skipped`. */
@@ -64,13 +58,6 @@ export const PASSOS: readonly PassoDoOnboarding[] = [
     existe: () => true,
     cumprido: (s) => marcado(s.whatsapp),
     pulado: (s) => foiPulado(s.whatsapp),
-  },
-  {
-    segmento: "connect-nuvemshop",
-    rotulo: "Sua loja",
-    existe: (ctx) => ctx.lojaLigada,
-    cumprido: (s) => marcado(s.nuvemshop),
-    pulado: (s) => foiPulado(s.nuvemshop),
   },
   {
     segmento: "setup-ai",
@@ -110,8 +97,8 @@ export const PASSOS: readonly PassoDoOnboarding[] = [
 ] as const;
 
 /** Os passos que existem NESTA instalação, na ordem. */
-export function passosVisiveis(ctx: ContextoDoPasso): PassoDoOnboarding[] {
-  return PASSOS.filter((p) => p.existe(ctx));
+export function passosVisiveis(): PassoDoOnboarding[] {
+  return PASSOS.filter((p) => p.existe());
 }
 
 /**
@@ -120,9 +107,8 @@ export function passosVisiveis(ctx: ContextoDoPasso): PassoDoOnboarding[] {
  */
 export function proximoPasso(
   state: OnboardingState,
-  ctx: ContextoDoPasso,
 ): PassoDoOnboarding | null {
-  return passosVisiveis(ctx).find((p) => !p.cumprido(state)) ?? null;
+  return passosVisiveis().find((p) => !p.cumprido(state)) ?? null;
 }
 
 export interface ItemDoResumo {
@@ -139,9 +125,8 @@ export interface ItemDoResumo {
  */
 export function resumoDoOnboarding(
   state: OnboardingState,
-  ctx: ContextoDoPasso,
 ): ItemDoResumo[] {
-  return passosVisiveis(ctx).map((p) => ({
+  return passosVisiveis().map((p) => ({
     segmento: p.segmento,
     rotulo: p.rotulo,
     feito: p.cumprido(state) && !p.pulado(state),

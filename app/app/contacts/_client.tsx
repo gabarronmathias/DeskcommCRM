@@ -17,12 +17,12 @@ import { useContactList } from "@/hooks/contacts/useContactList";
 import { ContactsTable } from "@/components/contacts/ContactsTable";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
 import { EmptyContacts } from "@/components/empty";
+import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 
 const SOURCE_OPTIONS = [
   { value: undefined, label: "Todas as origens" },
   { value: "manual", label: "Manual" },
   { value: "whatsapp", label: "WhatsApp" },
-  { value: "nuvemshop", label: "Nuvemshop" },
 ];
 
 export function ContactsListClient() {
@@ -39,12 +39,10 @@ export function ContactsListClient() {
   }, [searchInput]);
 
   const filters = useMemo(() => ({ search, tag, source }), [search, tag, source]);
-  const q = useContactList(filters);
+  const activeOrg = useActiveOrg();
+  const q = useContactList(filters, activeOrg?.orgId ?? null);
 
-  const allContacts = useMemo(
-    () => q.data?.pages.flatMap((p) => p.data) ?? [],
-    [q.data],
-  );
+  const allContacts = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
 
   const tagOptions = useMemo(() => {
     const set = new Set<string>();
@@ -141,12 +139,7 @@ export function ContactsListClient() {
       ) : q.isError ? (
         <Card className="p-6 text-center">
           <p className="text-sm text-error-fg">Erro ao carregar contatos.</p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-2"
-            onClick={() => q.refetch()}
-          >
+          <Button size="sm" variant="outline" className="mt-2" onClick={() => q.refetch()}>
             Tentar novamente
           </Button>
         </Card>

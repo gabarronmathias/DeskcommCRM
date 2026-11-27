@@ -110,8 +110,9 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
   in(): never {
     return naoImplementado("in");
   }
-  neq(): never {
-    return naoImplementado("neq");
+  neq(coluna: string, valor: unknown): this {
+    this.filtros.push(["<>", coluna, valor]);
+    return this;
   }
 
   private montar(): { texto: string; valores: unknown[] } {
@@ -242,7 +243,7 @@ class InsercaoPg<T> implements PromiseLike<RespostaFalsa<null>> {
  * nada). O `naoImplementado` fez o trabalho dele.
  */
 class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
-  private filtros: Array<[string, unknown]> = [];
+  private filtros: Array<[string, string, unknown]> = [];
   private colunasDeVolta: string | null = null;
 
   constructor(
@@ -252,7 +253,12 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
   ) {}
 
   eq(coluna: string, valor: unknown): this {
-    this.filtros.push([coluna, valor]);
+    this.filtros.push(["=", coluna, valor]);
+    return this;
+  }
+
+  neq(coluna: string, valor: unknown): this {
+    this.filtros.push(["<>", coluna, valor]);
     return this;
   }
 
@@ -268,9 +274,9 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
       valores.push(v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : v);
       return `"${k}" = $${valores.length}`;
     });
-    const onde = this.filtros.map(([c, v]) => {
+    const onde = this.filtros.map(([op, c, v]) => {
       valores.push(v);
-      return `"${c}" = $${valores.length}`;
+      return `"${c}" ${op} $${valores.length}`;
     });
     let texto = `update public."${this.tabela}" set ${sets.join(", ")}`;
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;

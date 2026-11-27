@@ -328,15 +328,6 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     healthDot: true,
   },
   {
-    href: "/app/integrations/nuvemshop",
-    label: "Nuvemshop",
-    description: "Conecte a loja para trazer pedidos e clientes para dentro do CRM.",
-    icon: Storefront,
-    group: "canais",
-    minRole: "admin",
-    sidebar: true,
-  },
-  {
     href: "/app/webhooks",
     label: "Webhooks",
     description: "Avise outros sistemas quando algo acontecer aqui dentro.",

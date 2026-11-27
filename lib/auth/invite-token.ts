@@ -21,6 +21,7 @@ export interface InvitePayload {
   organization_id: string;
   role: string;
   exp: number; // epoch seconds
+  source?: "admin_onboarding";
 }
 
 function b64url(buf: Buffer): string {
@@ -62,7 +63,8 @@ export function verifyInviteToken(token: string): InvitePayload | null {
     typeof payload.email !== "string" ||
     typeof payload.organization_id !== "string" ||
     typeof payload.role !== "string" ||
-    typeof payload.exp !== "number"
+    typeof payload.exp !== "number" ||
+    (payload.source !== undefined && payload.source !== "admin_onboarding")
   ) {
     return null;
   }

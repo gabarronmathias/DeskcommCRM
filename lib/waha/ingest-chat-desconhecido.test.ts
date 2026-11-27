@@ -37,6 +37,9 @@ function bancoDeMentira(): Duplo {
   const consulta = () => {
     const q = {
       eq: () => q,
+      neq: () => q,
+      contains: () => q,
+      order: () => q,
       in: () => q,
       limit: () => q,
       maybeSingle: async () => ({ data: null, error: null }),
@@ -46,6 +49,15 @@ function bancoDeMentira(): Duplo {
   const admin = {
     from: () => ({
       select: () => consulta(),
+      update: () => {
+        const q = {
+          eq: () => q,
+          contains: () => q,
+          then: (resolve: (value: { error: null }) => unknown) =>
+            Promise.resolve({ error: null }).then(resolve),
+        };
+        return q;
+      },
       insert: (linha: Record<string, unknown>) => ({
         select: () => ({
           maybeSingle: async () => {

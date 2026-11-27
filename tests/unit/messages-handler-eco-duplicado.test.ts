@@ -59,8 +59,8 @@ function conversationRow(): Row {
     channel_session_id: SESSION,
     is_group: false,
     group_chat_id: null,
-    contacts: { phone_number: '+5531999998888', wa_identity: null, is_blocked: false },
-    channel_sessions: { provider: 'waha', waha_session_name: 'test-session', status: 'WORKING' },
+    contacts: { organization_id: ORG, phone_number: '+5531999998888', wa_identity: null, is_blocked: false },
+    channel_sessions: { organization_id: ORG, provider: 'waha', waha_session_name: 'test-session', status: 'WORKING' },
   };
 }
 
@@ -77,7 +77,13 @@ function makeSupabase(preexistentes: Row[] = []) {
   const from = (table: string) => {
     if (table === 'conversations') {
       return {
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: conversationRow(), error: null }) }) }),
+        select: () => {
+          const query = {
+            eq: () => query,
+            maybeSingle: async () => ({ data: conversationRow(), error: null }),
+          };
+          return query;
+        },
         update: () => ({ eq: async () => ({ error: null }) }),
       };
     }

@@ -76,6 +76,7 @@ const LINHA = {
   id: "canal-1",
   display_name: "Vendas",
   status: "WORKING",
+  provider: "waha",
   phone_number: "5511999999999",
   waha_session_name: "org_1111_aaa",
 };

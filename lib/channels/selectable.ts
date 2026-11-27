@@ -28,15 +28,17 @@ export interface SelectableChannel {
   id: string;
   display_name: string;
   status: string;
+  provider: string;
   phone_number: string | null;
 }
 
-const COLUNAS = "id, display_name, status, phone_number, waha_session_name";
+const COLUNAS = "id, display_name, status, provider, phone_number, waha_session_name";
 
 interface LinhaCanal {
   id: string;
   display_name: string | null;
   status: string;
+  provider: string;
   phone_number: string | null;
   waha_session_name: string | null;
 }
@@ -71,6 +73,7 @@ export async function listSelectableChannels(
     // sem nome, e dizer isso é melhor do que inventar um.
     display_name: nomeDoCanal(c),
     status: c.status,
+    provider: c.provider,
     phone_number: c.phone_number ?? null,
   }));
 }

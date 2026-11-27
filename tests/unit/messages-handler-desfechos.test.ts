@@ -63,6 +63,7 @@ function conversationRow(shape: ConversationShape = {}): Row {
     is_group: shape.isGroup ?? false,
     group_chat_id: shape.groupChatId ?? null,
     contacts: {
+      organization_id: ORG,
       phone_number: shape.phoneNumber === undefined ? '+5531999998888' : shape.phoneNumber,
       wa_identity: shape.waIdentity ?? null,
       is_blocked: shape.isBlocked ?? false,
@@ -74,6 +75,7 @@ function conversationRow(shape: ConversationShape = {}): Row {
             // `provider` sai do banco desde a migration 0087 â€” o handler nÃ£o
             // supÃµe mais o canal, entÃ£o a linha falsa tambÃ©m nÃ£o pode supor.
             provider: shape.provider ?? 'waha',
+            organization_id: ORG,
             waha_session_name: shape.provider === 'meta_cloud' ? null : 'test-session',
             meta_phone_number_id:
               shape.provider === 'meta_cloud' ? shape.metaPhoneNumberId ?? '1103328999528818' : null,
@@ -102,8 +104,9 @@ function makeSupabase(
     from(table: string) {
       if (table === 'conversations') {
         return {
-          select: (cols?: string) => ({
-            eq: () => ({
+          select: (cols?: string) => {
+            const query = {
+              eq: () => query,
               maybeSingle: async () =>
                 opts.semColunaArquivada === true && (cols ?? '').includes('archived_at')
                   ? {
@@ -114,8 +117,9 @@ function makeSupabase(
                       },
                     }
                   : { data: conversation, error: null },
-            }),
-          }),
+            };
+            return query;
+          },
           update: () => ({ eq: async () => ({ error: null }) }),
         };
       }
@@ -137,6 +141,16 @@ function makeSupabase(
       }
       if (table === 'messages') {
         return {
+          delete: () => {
+            const query = {
+              eq: () => query,
+              neq: () => query,
+              in: () => query,
+              then: (resolve: (value: { error: null }) => unknown) =>
+                Promise.resolve({ error: null }).then(resolve),
+            };
+            return query;
+          },
           insert: (row: Row) => {
             state.message = {
               id: 'msg-1',

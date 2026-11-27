@@ -101,7 +101,13 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       channel_session_id: filterValue.channel_session_id,
       tag: filterValue.tag,
     }),
-    [filterValue.tab, filterValue.delivery, filterValue.search, filterValue.channel_session_id, filterValue.tag],
+    [
+      filterValue.tab,
+      filterValue.delivery,
+      filterValue.search,
+      filterValue.channel_session_id,
+      filterValue.tag,
+    ],
   );
 
   const clientFilter = useMemo(
@@ -124,7 +130,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // busca única RLS-scoped. 404/vazio ⇒ inacessível ⇒ estado vazio claro (GAP D),
   // nunca stack trace. A RLS (G4-01) é quem garante o não-vazamento.
   const needsFetch = !!selectedId && !inList && !listQ.isLoading;
-  const single = useConversation(selectedId, needsFetch);
+  const single = useConversation(selectedId, needsFetch, orgId);
   const selectedConversation: ConversationWithContact | null = inList ?? single.data ?? null;
   const selectionNotFound =
     needsFetch && !single.isPending && !single.data && isNotFound(single.error);

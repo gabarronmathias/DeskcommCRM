@@ -10,11 +10,12 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { welcomeSchema } from "@/lib/schemas/onboarding";
-import { requireOnboardingCtx, patchOnboardingState, OnboardingError } from "./_shared";
+import { foodserviceSetupExists } from "@/lib/onboarding/foodservice-activation-gate";
+import { requireOnboardingCtx, loadOnboardingState, patchOnboardingState, OnboardingError } from "./_shared";
 
 export type AcceptWelcomeResult =
   | { ok: true }
-  | { ok: false; error: "auth_required" | "no_active_org" | "invalid_input" | "db_error"; details?: unknown };
+  | { ok: false; error: "auth_required" | "no_active_org" | "invalid_input" | "db_error" | "foodservice_activation_required"; details?: unknown };
 
 export async function acceptWelcome(formData: FormData): Promise<AcceptWelcomeResult> {
   let ctx;
@@ -22,6 +23,16 @@ export async function acceptWelcome(formData: FormData): Promise<AcceptWelcomeRe
     ctx = await requireOnboardingCtx();
   } catch (err) {
     if (err instanceof OnboardingError) return { ok: false, error: err.code as never };
+    throw err;
+  }
+
+  try {
+    const { state } = await loadOnboardingState(ctx.orgId);
+    if (foodserviceSetupExists(state)) {
+      return { ok: false, error: "foodservice_activation_required" };
+    }
+  } catch (err) {
+    if (err instanceof OnboardingError) return { ok: false, error: "db_error", details: err.message };
     throw err;
   }
 

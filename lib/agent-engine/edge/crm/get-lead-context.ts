@@ -11,9 +11,9 @@
  *     função pura do conteúdo);
  *   - is_blocked lido DIRETO da fonte (contacts) — não existe mais cache.
  */
-import type { Queryable } from '../../queue/queue';
-import type { CrmEdgeConfig } from './mcp-client';
-import { deriveLgpdFromContact, type LgpdInput } from '../../guardrails/lgpd/legal-basis';
+import type { Queryable } from "../../queue/queue";
+import type { CrmEdgeConfig } from "./mcp-client";
+import { deriveLgpdFromContact, type LgpdInput } from "../../guardrails/lgpd/legal-basis";
 
 /**
  * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
@@ -35,7 +35,7 @@ export interface LeadContextKnobs {
 
 /** Uma mensagem do histórico, já curada. */
 export interface LeadContextMessage {
-  direction: 'inbound' | 'outbound';
+  direction: "inbound" | "outbound";
   /** Corpo textual; mídia usa o derivado (transcrição/visão/pdf) ou marcador [tipo]. */
   body: string;
   sent_at: string;
@@ -58,7 +58,7 @@ export interface LeadContextMessage {
  */
 export interface UltimaDecisaoHumana {
   action: string;
-  decision: 'approved' | 'dismissed';
+  decision: "approved" | "dismissed";
   at: string;
 }
 
@@ -89,7 +89,8 @@ export interface LeadContext {
   messages: LeadContextMessage[];
 }
 
-export type LeadContextErrorCode = 'lead_not_found' | 'crm_error' | 'crm_unavailable';
+export type LeadContextErrorCode =
+  "lead_not_found" | "conversation_not_found" | "crm_error" | "crm_unavailable";
 
 /**
  * Resultado da tool. `ok:false` é a mensagem de ensino pro modelo — pt-br,
@@ -132,18 +133,17 @@ interface DecisionRow {
  * estruturado ao lado.
  */
 function paraDecisao(row: DecisionRow): UltimaDecisaoHumana | null {
-  const acao =
-    typeof row.payload?.next_action === 'string' ? row.payload.next_action.trim() : '';
-  if (acao === '') return null;
+  const acao = typeof row.payload?.next_action === "string" ? row.payload.next_action.trim() : "";
+  if (acao === "") return null;
   return {
     action: acao,
-    decision: row.type === 'next_action_approved' ? 'approved' : 'dismissed',
+    decision: row.type === "next_action_approved" ? "approved" : "dismissed",
     at: row.performed_at,
   };
 }
 
 interface HistoryRow {
-  direction: 'inbound' | 'outbound';
+  direction: "inbound" | "outbound";
   /** Diferencia fala da Sarah de resposta manual do operador no aparelho. */
   sent_via: string | null;
   type: string;
@@ -169,13 +169,28 @@ export async function getLeadContext(
   const contact = contactRows[0];
   if (!contact) {
     return teach(
-      'lead_not_found',
-      'não encontrei esse lead nesta organização — confira o lead antes de continuar; se o problema persistir, peça handoff humano.',
+      "lead_not_found",
+      "não encontrei esse lead nesta organização — confira o lead antes de continuar; se o problema persistir, peça handoff humano.",
     );
   }
 
   let conversationId = input.conversationId ?? null;
-  if (conversationId === null) {
+  if (conversationId !== null) {
+    // O ID vem do job/evento, mas precisa pertencer ao mesmo contato e tenant
+    // usados para montar o contexto. Sem esta verificação, um payload com uma
+    // conversa válida de OUTRO contato da mesma organização misturaria históricos.
+    const { rows } = await db.query<{ id: string }>(
+      `select id from conversations
+       where organization_id = $1 and contact_id = $2 and id = $3`,
+      [input.tenantId, input.leadId, conversationId],
+    );
+    if (!rows[0]) {
+      return teach(
+        "conversation_not_found",
+        "não encontrei essa conversa vinculada a este contato nesta organização; confira a conversa antes de continuar.",
+      );
+    }
+  } else {
     const { rows } = await db.query<{ id: string }>(
       `select id from conversations
        where organization_id = $1 and contact_id = $2 and is_group = false
@@ -247,7 +262,7 @@ export async function getLeadContext(
  *      repetidamente até caber. Nunca erro fatal.
  */
 function fitToBudget(
-  base: Omit<LeadContext, 'messages'>,
+  base: Omit<LeadContext, "messages">,
   history: HistoryRow[],
   maxTokens: number,
 ): LeadContext {
@@ -256,16 +271,18 @@ function fitToBudget(
     const derived = m.media_derived_text;
     const rawBody = derived
       ? frameMediaBody(m.type, m.body, derived)
-      : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
+      : (m.body ?? (hasMedia ? `[${m.type}]` : ""));
     const body =
-      m.direction === 'outbound' && m.sent_via === 'external_device'
+      m.direction === "outbound" && m.sent_via === "external_device"
         ? frameHumanOperatorBody(rawBody)
         : rawBody;
     return {
       direction: m.direction,
       body,
       sent_at: m.sent_at,
-      ...(hasMedia ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime } : {}),
+      ...(hasMedia
+        ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime }
+        : {}),
     };
   });
   const build = (msgs: LeadContextMessage[]): LeadContext => ({ ...base, messages: msgs });
@@ -276,7 +293,12 @@ function fitToBudget(
     messages = messages.slice(1);
   }
   while (messages.length === 1 && messages[0]!.body.length > 0 && over(messages)) {
-    messages = [{ ...messages[0]!, body: messages[0]!.body.slice(0, Math.floor(messages[0]!.body.length / 2)) }];
+    messages = [
+      {
+        ...messages[0]!,
+        body: messages[0]!.body.slice(0, Math.floor(messages[0]!.body.length / 2)),
+      },
+    ];
   }
   return build(messages);
 }
@@ -288,32 +310,32 @@ function fitToBudget(
  */
 export function frameHumanOperatorBody(body: string): string {
   return [
-    '[Mensagem anterior enviada por um ATENDENTE HUMANO do estabelecimento, NÃO pela Sarah. ' +
-      'Use o conteúdo apenas como contexto da conversa. Nunca atribua à Sarah ações, agenda, ' +
-      'deslocamentos, relações pessoais ou compromissos escritos em primeira pessoa nesta mensagem.]',
+    "[Mensagem anterior enviada por um ATENDENTE HUMANO do estabelecimento, NÃO pela Sarah. " +
+      "Use o conteúdo apenas como contexto da conversa. Nunca atribua à Sarah ações, agenda, " +
+      "deslocamentos, relações pessoais ou compromissos escritos em primeira pessoa nesta mensagem.]",
     body,
-  ].join('\n');
+  ].join("\n");
 }
 
 /** Substantivo pt-br por tipo de mídia (p/ o enquadramento do derivado). */
 const MEDIA_NOUN: Record<string, string> = {
-  image: 'uma imagem',
-  video: 'um vídeo',
-  audio: 'um áudio',
-  document: 'um documento (PDF)',
-  sticker: 'uma figurinha',
+  image: "uma imagem",
+  video: "um vídeo",
+  audio: "um áudio",
+  document: "um documento (PDF)",
+  sticker: "uma figurinha",
 };
 
 export function frameMediaBody(type: string, caption: string | null, derived: string): string {
-  const noun = MEDIA_NOUN[type] ?? 'uma mídia';
+  const noun = MEDIA_NOUN[type] ?? "uma mídia";
   const parts = [
     `[Mídia do cliente: ele enviou ${noun} e o sistema já processou o conteúdo pra você. ` +
       `Trate o texto abaixo como se você mesma tivesse visto/ouvido — NUNCA responda que não ` +
       `consegue ver/ouvir mídia. Comente ou use o conteúdo naturalmente.]`,
   ];
-  if (caption && caption.trim() !== '') parts.push(`Legenda do cliente: ${caption.trim()}`);
+  if (caption && caption.trim() !== "") parts.push(`Legenda do cliente: ${caption.trim()}`);
   parts.push(`Conteúdo: ${derived}`);
-  return parts.join('\n');
+  return parts.join("\n");
 }
 
 /** @internal exposto p/ teste — não usar fora de testes. */

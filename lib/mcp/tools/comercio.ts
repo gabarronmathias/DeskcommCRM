@@ -71,8 +71,8 @@ const produtosInputShape = {
 export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
   name: "crm_search_products",
   description:
-    "Busca produtos do catálogo da loja por parte do nome. Devolve preço, quantidade disponível " +
-    "e link. Use para responder preço e disponibilidade com o dado da loja em vez de estimar.",
+    "Busca produtos do cardápio pelo nome e devolve nome, descrição, preço e disponibilidade. " +
+    "Use para responder perguntas sobre produtos, preços e disponibilidade usando o cardápio oficial do estabelecimento.",
   inputSchema: produtosInputShape,
   category: "read",
   requiresRole: "agent",
@@ -80,15 +80,13 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
   requiresAdditionalScopes: ["products:read"],
   handler: async (input, ctx) => {
     let q = ctx.supabase
-      .from("nuvemshop_products")
-      .select("id, external_id, title, description, price_cents, available_qty, url, image_url")
+      .from("food_products")
+      .select("id, name, description, price_cents, is_available, image_url, sku, category_id")
       .eq("organization_id", ctx.organizationId)
-      .ilike("title", `%${input.termo}%`)
+      .ilike("name", `%${input.termo}%`)
       .limit(input.limite);
 
-    // Oferecer o que está sem estoque é pior que não achar: o cliente ouve um
-    // sim e recebe um não depois.
-    if (input.somente_disponiveis) q = q.gt("available_qty", 0);
+    if (input.somente_disponiveis) q = q.eq("is_available", true);
 
     const { data, error } = await q;
     if (error) throw new Error(`buscar_produtos_falhou: ${error.message}`);
@@ -96,7 +94,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     return {
       produtos: data ?? [],
       ...(data && data.length === 0
-        ? { aviso: input.somente_disponiveis ? "nada com esse nome em estoque" : "nada com esse nome no catálogo" }
+        ? { aviso: input.somente_disponiveis ? "nenhum produto disponível com esse nome no cardápio" : "nenhum produto com esse nome no cardápio" }
         : {}),
     };
   },
