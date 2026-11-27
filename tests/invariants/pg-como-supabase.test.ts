@@ -110,6 +110,21 @@ describe("o adaptador COMPARA — `lt`/`gt`, não só igualdade", () => {
   });
 });
 
+describe("o adaptador compara por desigualdade", () => {
+  it("neq exclui apenas o valor indicado, sem ignorar filtros anteriores", async () => {
+    const { data, error } = await db
+      .from("crm_pipelines")
+      .select("name")
+      .eq("organization_id", ORG)
+      .eq("is_default", false)
+      .neq("slug", "zulu")
+      .order("position", { ascending: true });
+
+    expect(error).toBeNull();
+    expect((data as Array<{ name: string }>).map((x) => x.name)).toEqual(["Bravo", "Alfa"]);
+  });
+});
+
 describe("o adaptador ORDENA", () => {
   it("`.order(asc).limit(1)` traz o de menor valor, não o primeiro que o Postgres devolver", async () => {
     // Sem ordenação real o Postgres devolveria em ordem de heap — que aqui é a
