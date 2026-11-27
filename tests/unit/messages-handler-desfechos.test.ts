@@ -141,6 +141,16 @@ function makeSupabase(
       }
       if (table === 'messages') {
         return {
+          delete: () => {
+            const query = {
+              eq: () => query,
+              neq: () => query,
+              in: () => query,
+              then: (resolve: (value: { error: null }) => unknown) =>
+                Promise.resolve({ error: null }).then(resolve),
+            };
+            return query;
+          },
           insert: (row: Row) => {
             state.message = {
               id: 'msg-1',
