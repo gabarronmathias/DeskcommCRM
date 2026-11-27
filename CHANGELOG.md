@@ -11,6 +11,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 ### Corrigido
 
 - Na etapa Equipe do onboarding administrativo, trocar de aba não dispara salvamentos ocultos; a configuração do operador e o avanço são gravados juntos. Convites agora usam a ação de plataforma autorizada, ficam registrados no estado do tenant e só são reenviados por ação explícita.
+- Quando o serviço de e-mail não estiver configurado, Platform Admin pode copiar o link assinado do convite pendente existente. O token é reconstruído sob demanda, não fica armazenado em texto puro e é invalidado no aceite.
 
 ## [1.3.0] — 2026-08-13
 

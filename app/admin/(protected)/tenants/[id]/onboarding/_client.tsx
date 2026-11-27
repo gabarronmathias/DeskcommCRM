@@ -22,6 +22,7 @@ import {
   saveSarahDraftSettings,
   saveOperatorSettings,
   sendOperatorInvite,
+  getPendingOperatorInviteLink,
   updateCatalogProduct,
 } from "@/app/actions/admin/onboarding";
 import type { OnboardingStep } from "@/lib/admin-onboarding/schema";
@@ -305,6 +306,22 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
               })}>
                 {initial.inviteStatus === "pending" ? "Reenviar convite" : initial.inviteStatus === "accepted" ? "Membership ativa" : "Enviar convite"}
               </Button>
+                {initial.inviteStatus === "pending" && <Button variant="outline" disabled={pending} onClick={() => startTransition(async () => {
+                  const result = await getPendingOperatorInviteLink(organization.id);
+                  if (result.status === "ready") {
+                    try {
+                      await navigator.clipboard.writeText(result.url);
+                      toast.success("Link do convite copiado. Compartilhe somente com o usuário convidado.");
+                    } catch {
+                      toast.error("Não foi possível copiar o link neste navegador.");
+                    }
+                  } else if (result.status === "accepted") {
+                    toast.info("Este usuário já tem uma membership ativa nesta empresa.");
+                    router.refresh();
+                  } else {
+                    toast.error("O link pendente expirou ou não corresponde aos dados salvos da equipe.");
+                  }
+                })}>Copiar link de convite</Button>}
               {initial.inviteStatus === "pending" && <Badge variant="warning">Convite pendente</Badge>}
               {initial.inviteStatus === "accepted" && <Badge variant="success">Convite aceito</Badge>}
             </div>

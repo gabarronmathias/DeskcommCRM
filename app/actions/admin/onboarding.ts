@@ -11,6 +11,7 @@ import { buildInviteEmail } from "@/lib/email/templates/invite";
 import { sendEmail } from "@/lib/email/resend";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { hasAcceptedTeamMembership } from "@/lib/admin-onboarding/team-membership";
+import { buildPendingInviteLink } from "@/lib/admin-onboarding/team-invite-link";
 import { publicarMemoriaDaOrg } from "@/lib/ai/memoria-da-org";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { buildOnboardingChecklist, missingOnboardingRequirements } from "@/lib/admin-onboarding/checklist";
@@ -225,6 +226,51 @@ export async function sendOperatorInvite(organizationId: string, resend = false)
   if (!emailDispatched) return { status: "error" as const, error: "O convite foi registrado, mas o e-mail não pôde ser enviado. Use Reenviar convite após verificar o serviço de e-mail." };
   revalidatePath(`/admin/tenants/${organizationId}/onboarding`);
   return { status: "sent" as const, email };
+}
+
+/** Entrega o link pendente somente a Platform Admin, sem salvar o token. */
+export async function getPendingOperatorInviteLink(organizationId: string) {
+  const { user } = await requirePlatformAdmin();
+  const { admin, org, state } = await orgState(organizationId);
+  const setup = record(state.foodservice_setup);
+  const foodservice = record(record(org.settings).foodservice);
+  const operator = operatorSettingsSchema.safeParse(foodservice.operator ?? setup.operator);
+  const invite = record(setup.team_invite);
+  if (!operator.success || typeof invite.invite_id !== "string"
+    || typeof invite.email !== "string" || typeof invite.role !== "string"
+    || typeof invite.expires_at !== "string") {
+    return { status: "unavailable" as const };
+  }
+
+  const email = invite.email.trim().toLowerCase();
+  if (email !== operator.data.email.trim().toLowerCase() || invite.role !== operator.data.role) {
+    return { status: "unavailable" as const };
+  }
+  const membership = await hasAcceptedTeamMembership(admin, organizationId, email, operator.data.role);
+  if (membership === "error") return { status: "error" as const };
+  if (membership === "accepted") return { status: "accepted" as const };
+
+  const url = buildPendingInviteLink({
+    inviteId: invite.invite_id,
+    email,
+    organizationId,
+    role: operator.data.role,
+    expiresAt: invite.expires_at,
+    baseUrl: env.NEXT_PUBLIC_APP_URL,
+  });
+  if (!url) return { status: "unavailable" as const };
+
+  await audit({
+    action: "platform_admin.onboarding_invite_link_requested",
+    actorUserId: user.id,
+    organizationId,
+    resourceType: "membership",
+    resourceId: invite.invite_id,
+    actingAsPlatformAdmin: true,
+    bypassedRls: true,
+    metadata: { role: operator.data.role, delivery: "admin_copy_link" },
+  });
+  return { status: "ready" as const, url };
 }
 
 export async function updateCatalogProduct(organizationId: string, input: unknown) {

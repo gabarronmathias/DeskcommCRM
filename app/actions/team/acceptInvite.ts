@@ -16,10 +16,52 @@ import { audit } from "@/lib/audit";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { consumePendingInviteState } from "@/lib/admin-onboarding/team-invite-link";
 
 export type AcceptInviteResult =
   | { ok: true }
   | { ok: false; error: "invalid_or_expired" | "email_mismatch" | "not_authenticated" | "internal_error"; message?: string; expectedEmail?: string };
+
+async function consumeOnboardingInvite(
+  db: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  inviteId: string,
+  acceptedAt: string,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data: org, error } = await db.from("organizations")
+      .select("onboarding_state,updated_at")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (error || !org) return false;
+
+    const nextState = consumePendingInviteState(org.onboarding_state, inviteId, acceptedAt);
+    if (!nextState) {
+      const state = org.onboarding_state && typeof org.onboarding_state === "object" && !Array.isArray(org.onboarding_state)
+        ? org.onboarding_state as Record<string, unknown>
+        : {};
+      const setup = state.foodservice_setup && typeof state.foodservice_setup === "object" && !Array.isArray(state.foodservice_setup)
+        ? state.foodservice_setup as Record<string, unknown>
+        : {};
+      const invite = setup.team_invite && typeof setup.team_invite === "object" && !Array.isArray(setup.team_invite)
+        ? setup.team_invite as Record<string, unknown>
+        : {};
+      return invite.accepted_invite_id === inviteId && invite.invite_id === null;
+    }
+
+    const latestUpdatedAt = Date.parse(String(org.updated_at ?? ""));
+    const updatedAt = new Date(Math.max(Date.now(), Number.isFinite(latestUpdatedAt) ? latestUpdatedAt + 1 : 0)).toISOString();
+    const { data: updated, error: updateError } = await db.from("organizations")
+      .update({ onboarding_state: nextState, updated_at: updatedAt })
+      .eq("id", organizationId)
+      .eq("updated_at", org.updated_at)
+      .select("id")
+      .maybeSingle();
+    if (updateError) return false;
+    if (updated) return true;
+  }
+  return false;
+}
 
 export async function acceptInviteAction(token: string): Promise<AcceptInviteResult> {
   const payload = verifyInviteToken(token);
@@ -90,6 +132,11 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
       .eq("id", existing.id);
     if (updErr) return { ok: false, error: "internal_error", message: updErr.message };
 
+    if (payload.source === "admin_onboarding"
+      && !await consumeOnboardingInvite(db, payload.organization_id, payload.invite_id, nowIso)) {
+      return { ok: false, error: "internal_error", message: "Não foi possível invalidar o link de convite após o aceite." };
+    }
+
     await audit({
       action: "member.accepted",
       actorUserId: user.id,
@@ -111,6 +158,11 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
       .select("id")
       .single();
     if (insErr) return { ok: false, error: "internal_error", message: insErr.message };
+
+    if (payload.source === "admin_onboarding"
+      && !await consumeOnboardingInvite(db, payload.organization_id, payload.invite_id, nowIso)) {
+      return { ok: false, error: "internal_error", message: "Não foi possível invalidar o link de convite após o aceite." };
+    }
 
     await audit({
       action: "member.accepted",

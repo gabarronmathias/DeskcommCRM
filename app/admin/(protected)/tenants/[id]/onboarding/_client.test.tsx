@@ -7,6 +7,7 @@ import {
   saveSarahDraftSettings,
   saveOperatorSettings,
   sendOperatorInvite,
+  getPendingOperatorInviteLink,
 } from "@/app/actions/admin/onboarding";
 
 const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
@@ -24,6 +25,7 @@ vi.mock("@/app/actions/admin/onboarding", () => ({
   saveSarahDraftSettings: vi.fn().mockResolvedValue({ ok: true }),
   saveOperatorSettings: vi.fn().mockResolvedValue({ ok: true }),
   sendOperatorInvite: vi.fn().mockResolvedValue({ status: "sent", email: "agent@example.com" }),
+  getPendingOperatorInviteLink: vi.fn().mockResolvedValue({ status: "ready", url: "https://crm.example.com/team/accept-invite/test-token" }),
   updateCatalogProduct: vi.fn(),
 }));
 
@@ -92,6 +94,21 @@ describe("navegação e publicação da memória da Sarah", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reenviar convite" }));
 
     await waitFor(() => expect(sendOperatorInvite).toHaveBeenCalledWith("org-1", true));
+  });
+
+  it("copia link apenas ao pedir explicitamente o link de convite pendente", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<OnboardingWizard {...props} initial={{
+      ...props.initial,
+      operator: { name: "Operador", email: "agent@example.com", role: "agent", handoff_responsible: true },
+      completedSteps: ["team"], currentStep: "team", inviteStatus: "pending",
+    }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copiar link de convite" }));
+
+    await waitFor(() => expect(getPendingOperatorInviteLink).toHaveBeenCalledWith("org-1"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://crm.example.com/team/accept-invite/test-token"));
   });
 
   it("salvar e continuar persiste como rascunho sem publicar", async () => {
