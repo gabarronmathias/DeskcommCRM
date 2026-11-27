@@ -5,6 +5,7 @@ import { buildOnboardingChecklist } from "@/lib/admin-onboarding/checklist";
 import { companyProfileSchema, operationSchema, operatorSettingsSchema } from "@/lib/admin-onboarding/schema";
 import { isSarahMemoryPublished } from "@/lib/admin-onboarding/sarah-memory";
 import { hasAcceptedTeamMembership } from "@/lib/admin-onboarding/team-membership";
+import { deliverySettingsFromSarahRules } from "@/lib/foodservice/delivery-policy";
 import { OnboardingWizard } from "./_client";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +37,20 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
   const foodservice = obj(settings.foodservice);
   const setup = obj(obj(org.onboarding_state).foodservice_setup);
   const company = obj(foodservice.company ?? setup.company);
-  const operation = obj(foodservice.operation ?? setup.operation);
   const sarah = obj(foodservice.sarah ?? setup.sarah);
+  const operation = obj(foodservice.operation ?? setup.operation);
+  const storedPolicy = obj(operation.delivery_policy);
+  const deliverySeed = Object.keys(storedPolicy).length > 0
+    ? null
+    : deliverySettingsFromSarahRules(
+      typeof sarah.rules === "string" ? sarah.rules : "",
+      Array.isArray(operation.service_areas) ? operation.service_areas.filter((area): area is string => typeof area === "string") : [],
+    );
+  const operationForWizard = {
+    ...operation,
+    ...(deliverySeed ? { delivery_policy: deliverySeed.policy } : {}),
+    delivery_policy_required: operation.delivery_policy_required === true || deliverySeed !== null,
+  };
   const operator = obj(foodservice.operator ?? setup.operator);
   const operatorRole = operator.role === "manager" ? "manager" : "agent";
   const operatorMembership = await hasAcceptedTeamMembership(
@@ -69,7 +82,8 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
   );
   const metaReady = (channelRes.data ?? []).length > 0;
   const companyReady = companyProfileSchema.safeParse(company).success;
-  const operationReady = operationSchema.safeParse(operation).success;
+  const operationReady = operationSchema.safeParse(operationForWizard).success
+    && (!operation.delivery_enabled || operationForWizard.delivery_policy_required !== true || Object.keys(storedPolicy).length > 0);
   const catalogReady = activeProducts > 0;
   const checklist = buildOnboardingChecklist({
     company: companyReady,
@@ -79,9 +93,11 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
     operator: operatorSettingsSchema.safeParse(operator).success && operatorMembership === "accepted",
     whatsapp: metaReady,
     oms: true,
+    omsTested: false,
     handoff: true,
+    handoffTested: false,
   });
-  const canActivate = checklist.every((item) => item.pass);
+  const canActivate = checklist.every((item) => item.activationReady);
   const rawCompleted = setup.completed_steps;
   const completedSteps = Array.isArray(rawCompleted) ? rawCompleted.filter((value): value is string => typeof value === "string") : [];
   const currentStep = typeof setup.current_step === "string" ? setup.current_step : "company";
@@ -92,7 +108,7 @@ export default async function TenantOnboardingPage({ params }: PageProps) {
 
   return <OnboardingWizard
     organization={{ id: org.id, slug: org.slug, name: org.display_name, legalName: org.legal_name ?? "" }}
-    initial={{ company, operation, sarah, operator, completedSteps, currentStep, status: typeof setup.status === "string" ? setup.status : null, inviteStatus }}
+    initial={{ company, operation: operationForWizard, sarah, operator, completedSteps, currentStep, status: typeof setup.status === "string" ? setup.status : null, inviteStatus }}
     catalog={{ categories, products }}
     checklist={checklist}
     canActivate={canActivate}

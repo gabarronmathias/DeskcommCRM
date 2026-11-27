@@ -13,13 +13,26 @@ export const operationSchema = z.object({
   closes_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   delivery_enabled: z.boolean(),
   pickup_enabled: z.boolean(),
+  delivery_policy_required: z.boolean().optional().default(false),
   service_areas: z.array(z.string().trim().min(2).max(100)).max(80),
   delivery_fee_cents: z.number().int().min(0).max(100000),
   minimum_order_cents: z.number().int().min(0).max(1000000),
+  delivery_policy: z.object({
+    timezone: z.literal("America/Sao_Paulo"),
+    threshold_cents: z.number().int().min(0).max(1000000),
+    up_to_threshold_fee_cents: z.number().int().min(0).max(100000),
+    weekday_before_cutoff_fee_cents: z.number().int().min(0).max(100000),
+    weekday_from_cutoff_fee_cents: z.number().int().min(0).max(100000),
+    weekend_fee_cents: z.number().int().min(0).max(100000),
+    cutoff_local_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    blocked_neighborhoods: z.array(z.string().trim().min(2).max(100)).max(300),
+  }).optional(),
   average_prep_minutes: z.number().int().min(1).max(600),
   payment_methods: z.array(z.enum(["pix", "cash", "credit_card", "debit_card"])).min(1),
 }).refine((value) => value.delivery_enabled || value.pickup_enabled, {
   message: "Ative entrega, retirada ou ambas.",
+}).refine((value) => !value.delivery_enabled || !value.delivery_policy_required || value.delivery_policy !== undefined, {
+  message: "Configure e salve as taxas e a área de entrega antes de habilitar a entrega.",
 });
 
 export const sarahSettingsSchema = z.object({

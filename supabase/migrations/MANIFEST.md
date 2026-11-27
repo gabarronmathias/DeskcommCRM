@@ -232,3 +232,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 - **Integrations**: tenant_integrations, orders, nuvemshop_products
 - **Compliance**: lgpd_requests
 - **Ops**: incidents
+
+| `20261127150842` | `0184_food_delivery_fee_policy` | Persiste política de taxa/área de entrega por tenant e recalcula frete no checkout transacional, com bloqueio de regiões e grants fechados na RPC de cálculo. |

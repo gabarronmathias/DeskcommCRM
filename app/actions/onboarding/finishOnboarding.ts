@@ -8,12 +8,13 @@
 import { redirect } from "next/navigation";
 
 import { audit } from "@/lib/audit";
+import { foodserviceActivationPending } from "@/lib/onboarding/foodservice-activation-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireOnboardingCtx, OnboardingError } from "./_shared";
 
 export type FinishOnboardingResult =
   | { ok: true; alreadyOnboarded: boolean }
-  | { ok: false; error: "auth_required" | "no_active_org" | "db_error"; details?: unknown };
+  | { ok: false; error: "auth_required" | "no_active_org" | "db_error" | "foodservice_activation_required"; details?: unknown };
 
 export async function finishOnboarding(): Promise<FinishOnboardingResult> {
   let ctx;
@@ -26,13 +27,17 @@ export async function finishOnboarding(): Promise<FinishOnboardingResult> {
 
   const admin = createAdminClient();
 
-  const { data: existing } = await admin
+  const { data: existing, error: readError } = await admin
     .from("organizations")
-    .select("onboarded_at")
+    .select("onboarded_at,onboarding_state")
     .eq("id", ctx.orgId)
     .maybeSingle();
+  if (readError || !existing) return { ok: false, error: "db_error" };
 
-  const alreadyOnboarded = Boolean(existing?.onboarded_at);
+  const alreadyOnboarded = Boolean(existing.onboarded_at);
+  if (foodserviceActivationPending(existing.onboarding_state)) {
+    return { ok: false, error: "foodservice_activation_required" };
+  }
 
   if (!alreadyOnboarded) {
     const { error } = await admin

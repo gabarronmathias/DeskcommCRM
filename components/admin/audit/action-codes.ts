@@ -100,6 +100,7 @@ export const ACTION_CODES: string[] = [
   "platform_admin.onboarding_operation_saved",
   "platform_admin.onboarding_sarah_saved",
   "platform_admin.onboarding_operator_saved",
+  "platform_admin.onboarding_invite_link_requested",
   "platform_admin.onboarding_catalog_product_updated",
   "platform_admin.onboarding_catalog_category_created",
   "platform_admin.onboarding_catalog_product_created",

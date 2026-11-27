@@ -85,6 +85,8 @@ type CheckoutResult = {
   order_id: string;
   contact_id: string;
   total_cents: number;
+  subtotal_cents?: number;
+  delivery_fee_cents?: number;
   currency: string;
   status: string;
 };
@@ -125,6 +127,8 @@ export default function FoodStorefrontPage() {
   const [fulfillment, setFulfillment] = useState<"retirada" | "entrega">("retirada");
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "cartao" | "dinheiro">("pix");
   const [addressNotes, setAddressNotes] = useState("");
+  const [deliveryCity, setDeliveryCity] = useState("");
+  const [deliveryNeighborhood, setDeliveryNeighborhood] = useState("");
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -381,6 +385,8 @@ const quickCards =
           fulfillment,
           payment_method: paymentMethod,
           address_notes: fulfillment === "entrega" ? addressNotes : "",
+          delivery_city: fulfillment === "entrega" ? deliveryCity : "",
+          delivery_neighborhood: fulfillment === "entrega" ? deliveryNeighborhood : "",
           marketing_consent: marketingConsent,
           items: cart.map((line) => ({
             product_id: line.product.id,
@@ -876,16 +882,29 @@ const quickCards =
             </div>
 
             {fulfillment === "entrega" ? (
-              <div className="field">
-                <label htmlFor="co-address">Endereço de entrega</label>
-                <textarea
-                  id="co-address"
-                  rows={3}
-                  value={addressNotes}
-                  onChange={(e) => setAddressNotes(e.target.value)}
-                  placeholder="Rua, número, bairro, complemento e referência"
-                  required
-                />
+              <div className="space-y-3">
+                <div className="cols">
+                  <div className="field">
+                    <label htmlFor="co-city">Cidade</label>
+                    <input id="co-city" value={deliveryCity} onChange={(e) => setDeliveryCity(e.target.value)} placeholder="Cidade" required maxLength={100} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="co-neighborhood">Bairro</label>
+                    <input id="co-neighborhood" value={deliveryNeighborhood} onChange={(e) => setDeliveryNeighborhood(e.target.value)} placeholder="Bairro" required maxLength={100} />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="co-address">Endereço e referência</label>
+                  <textarea
+                    id="co-address"
+                    rows={3}
+                    value={addressNotes}
+                    onChange={(e) => setAddressNotes(e.target.value)}
+                    placeholder="Rua, número, complemento e referência"
+                    required
+                    maxLength={500}
+                  />
+                </div>
               </div>
             ) : null}
 
@@ -902,6 +921,8 @@ const quickCards =
             </label>
 
             <div className="summary">
+              {success?.subtotal_cents !== undefined && <div className="sumrow"><span>Subtotal</span><span>{money(success.subtotal_cents, currency)}</span></div>}
+              {success?.delivery_fee_cents !== undefined && <div className="sumrow"><span>Entrega</span><span>{money(success.delivery_fee_cents, currency)}</span></div>}
               <div className="sumrow total">
                 <span>Total do pedido</span>
                 <span>{money(subtotal, currency)}</span>

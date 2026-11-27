@@ -5,7 +5,9 @@ export type OnboardingChecklistKey =
 export type OnboardingChecklistItem = {
   key: OnboardingChecklistKey;
   label: string;
+  status: "pass" | "configured" | "available" | "tested" | "pending";
   pass: boolean;
+  activationReady: boolean;
 };
 
 export type OnboardingChecklistFacts = {
@@ -16,23 +18,45 @@ export type OnboardingChecklistFacts = {
   operator: boolean;
   whatsapp: boolean;
   oms: boolean;
+  omsTested?: boolean;
   handoff: boolean;
+  handoffTested?: boolean;
 };
 
 export function buildOnboardingChecklist(facts: OnboardingChecklistFacts): OnboardingChecklistItem[] {
+  const item = (
+    key: OnboardingChecklistKey,
+    label: string,
+    ready: boolean,
+    status: OnboardingChecklistItem["status"] = ready ? "pass" : "pending",
+    activationReady = ready,
+  ): OnboardingChecklistItem => ({ key, label, status, pass: status === "pass" || status === "tested", activationReady });
+
   return [
-    { key: "company", label: "Empresa configurada", pass: facts.company },
-    { key: "operation", label: "Operação configurada", pass: facts.operation },
-    { key: "sarah", label: "Sarah configurada e publicada", pass: facts.sarah },
-    { key: "catalog", label: "Catálogo disponível", pass: facts.catalog },
-    { key: "operator", label: "Operador associado e convite aceito", pass: facts.operator },
-    { key: "whatsapp", label: "WhatsApp Meta conectado", pass: facts.whatsapp },
-    { key: "cart", label: "Carrinho disponível", pass: facts.catalog },
-    { key: "oms", label: "Pedidos e OMS disponíveis", pass: facts.oms },
-    { key: "handoff", label: "Handoff disponível", pass: facts.handoff },
+    item("company", "Empresa configurada", facts.company),
+    item("operation", "Operação configurada", facts.operation),
+    item("sarah", "Sarah configurada e publicada", facts.sarah),
+    item("catalog", "Catálogo disponível", facts.catalog),
+    item("operator", "Operador associado e convite aceito", facts.operator),
+    item("whatsapp", "WhatsApp Meta conectado", facts.whatsapp),
+    item("cart", "Carrinho disponível", facts.catalog),
+    item(
+      "oms",
+      facts.omsTested ? "OMS homologado" : "OMS disponível — homologação operacional pendente",
+      facts.oms,
+      facts.omsTested ? "tested" : facts.oms ? "available" : "pending",
+      facts.omsTested === true,
+    ),
+    item(
+      "handoff",
+      facts.handoffTested ? "Handoff homologado" : "Handoff disponível — homologação operacional pendente",
+      facts.handoff,
+      facts.handoffTested ? "tested" : facts.handoff ? "available" : "pending",
+      facts.handoffTested === true,
+    ),
   ];
 }
 
 export function missingOnboardingRequirements(items: OnboardingChecklistItem[]): string[] {
-  return items.filter((item) => !item.pass).map((item) => item.label);
+  return items.filter((item) => !item.activationReady).map((item) => item.label);
 }

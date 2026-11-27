@@ -16,6 +16,7 @@ import { publicarMemoriaDaOrg } from "@/lib/ai/memoria-da-org";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { buildOnboardingChecklist, missingOnboardingRequirements } from "@/lib/admin-onboarding/checklist";
 import { buildSarahMemoryContent, isSarahMemoryPublished } from "@/lib/admin-onboarding/sarah-memory";
+import { deliverySettingsFromSarahRules } from "@/lib/foodservice/delivery-policy";
 import {
   companyProfileSchema,
   operationSchema,
@@ -364,6 +365,16 @@ export async function activateFoodservice(organizationId: string) {
   const company = food.company ?? setup.company;
   const operation = food.operation ?? setup.operation;
   const sarah = food.sarah ?? setup.sarah;
+  const operationRecord = record(operation);
+  const sarahRecord = record(sarah);
+  const serviceAreas = Array.isArray(operationRecord.service_areas)
+    ? operationRecord.service_areas.filter((area): area is string => typeof area === "string")
+    : [];
+  const deliverySeed = deliverySettingsFromSarahRules(
+    typeof sarahRecord.rules === "string" ? sarahRecord.rules : "",
+    serviceAreas,
+  );
+  const deliveryPolicyRequired = operationRecord.delivery_policy_required === true || deliverySeed !== null;
   const operator = food.operator ?? setup.operator;
   const parsedOperator = operatorSettingsSchema.safeParse(operator);
   const operatorMembership = parsedOperator.success
@@ -376,7 +387,7 @@ export async function activateFoodservice(organizationId: string) {
     : { data: null, error: null };
   const checklist = buildOnboardingChecklist({
     company: companyProfileSchema.safeParse(company).success,
-    operation: operationSchema.safeParse(operation).success,
+    operation: operationSchema.safeParse({ ...operationRecord, delivery_policy_required: deliveryPolicyRequired }).success,
     sarah: (agentsResult.count ?? 0) > 0
       && !memoryVersion.error
       && isSarahMemoryPublished(sarah, publishedVersionId, setup.memory_version_id, memoryVersion.data?.content),

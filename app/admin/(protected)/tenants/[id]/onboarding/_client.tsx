@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ImpersonateButton } from "@/components/admin/ImpersonateButton";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   activateFoodservice,
   createCatalogCategory,
@@ -45,8 +46,13 @@ const PAYMENTS = [["pix", "Pix"], ["cash", "Dinheiro"], ["credit_card", "Crédit
 type Company = { responsible_name?: string; address?: string; phone?: string; sarah_name?: string };
 type Operation = {
   business_days?: string[]; opens_at?: string; closes_at?: string; delivery_enabled?: boolean;
-  pickup_enabled?: boolean; service_areas?: string[]; delivery_fee_cents?: number;
+  pickup_enabled?: boolean; delivery_policy_required?: boolean; service_areas?: string[]; delivery_fee_cents?: number;
   minimum_order_cents?: number; average_prep_minutes?: number; payment_methods?: string[];
+  delivery_policy?: {
+    timezone: "America/Sao_Paulo"; threshold_cents: number; up_to_threshold_fee_cents: number;
+    weekday_before_cutoff_fee_cents: number; weekday_from_cutoff_fee_cents: number;
+    weekend_fee_cents: number; cutoff_local_time: string; blocked_neighborhoods: string[];
+  };
 };
 type Sarah = {
   name?: string; greeting?: string; rules?: string; commercial_guidance?: string;
@@ -88,8 +94,16 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
     business_days: initial.operation.business_days ?? ["mon", "tue", "wed", "thu", "fri", "sat"],
     opens_at: text(initial.operation.opens_at, "18:00"), closes_at: text(initial.operation.closes_at, "23:00"),
     delivery_enabled: initial.operation.delivery_enabled ?? true, pickup_enabled: initial.operation.pickup_enabled ?? true,
+    delivery_policy_required: initial.operation.delivery_policy_required ?? false,
     service_areas: (initial.operation.service_areas ?? []).join(", "),
     delivery_fee: amount(initial.operation.delivery_fee_cents), minimum_order: amount(initial.operation.minimum_order_cents),
+    delivery_threshold: amount(initial.operation.delivery_policy?.threshold_cents, 10000),
+    delivery_up_to_fee: amount(initial.operation.delivery_policy?.up_to_threshold_fee_cents, 1000),
+    delivery_weekday_before_fee: amount(initial.operation.delivery_policy?.weekday_before_cutoff_fee_cents, 500),
+    delivery_weekday_after_fee: amount(initial.operation.delivery_policy?.weekday_from_cutoff_fee_cents, 0),
+    delivery_weekend_fee: amount(initial.operation.delivery_policy?.weekend_fee_cents, 0),
+    delivery_cutoff: text(initial.operation.delivery_policy?.cutoff_local_time, "19:00"),
+    blocked_neighborhoods: (initial.operation.delivery_policy?.blocked_neighborhoods ?? []).join("; "),
     average_prep_minutes: String(initial.operation.average_prep_minutes ?? 45),
     payment_methods: initial.operation.payment_methods ?? ["pix", "credit_card", "debit_card"],
   });
@@ -124,6 +138,16 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
         ...operation,
         service_areas: operation.service_areas.split(/[,\n]/).map((area) => area.trim()).filter(Boolean),
         delivery_fee_cents: parseCents(operation.delivery_fee), minimum_order_cents: parseCents(operation.minimum_order),
+        ...(operation.delivery_policy_required ? { delivery_policy: {
+          timezone: "America/Sao_Paulo",
+          threshold_cents: parseCents(operation.delivery_threshold),
+          up_to_threshold_fee_cents: parseCents(operation.delivery_up_to_fee),
+          weekday_before_cutoff_fee_cents: parseCents(operation.delivery_weekday_before_fee),
+          weekday_from_cutoff_fee_cents: parseCents(operation.delivery_weekday_after_fee),
+          weekend_fee_cents: parseCents(operation.delivery_weekend_fee),
+          cutoff_local_time: operation.delivery_cutoff,
+          blocked_neighborhoods: operation.blocked_neighborhoods.split(/[;,\n]/).map((area) => area.trim()).filter(Boolean),
+        } } : {}),
         average_prep_minutes: Number(operation.average_prep_minutes),
       });
       if (step.key === "sarah") result = await saveSarahDraftSettings(organization.id, sarah);
@@ -238,9 +262,22 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
               <label className="flex items-center gap-2"><input type="checkbox" checked={operation.pickup_enabled} onChange={(e) => setOperation({ ...operation, pickup_enabled: e.target.checked })} />Retirada</label>
             </div>
             {operation.delivery_enabled && <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Bairros/regiões atendidos"><Input value={operation.service_areas} onChange={(e) => setOperation({ ...operation, service_areas: e.target.value })} placeholder="Centro, Jardim das Flores" /></Field>
+              <Field label="Cidades/regiões atendidas"><Input value={operation.service_areas} onChange={(e) => setOperation({ ...operation, service_areas: e.target.value })} placeholder="Jacareí" /></Field>
               <Field label="Taxa de entrega (R$)"><Input type="number" min="0" step="0.01" value={operation.delivery_fee} onChange={(e) => setOperation({ ...operation, delivery_fee: e.target.value })} /></Field>
               <Field label="Pedido mínimo (R$)"><Input type="number" min="0" step="0.01" value={operation.minimum_order} onChange={(e) => setOperation({ ...operation, minimum_order: e.target.value })} /></Field>
+            </div>}
+            {operation.delivery_enabled && operation.delivery_policy_required && <div className="space-y-3 rounded-md border p-4">
+              <h3 className="text-sm font-semibold">Taxa calculada por pedido</h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Limite (R$)"><Input type="number" min="0" step="0.01" value={operation.delivery_threshold} onChange={(e) => setOperation({ ...operation, delivery_threshold: e.target.value })} /></Field>
+                <Field label="Até o limite (R$)"><Input type="number" min="0" step="0.01" value={operation.delivery_up_to_fee} onChange={(e) => setOperation({ ...operation, delivery_up_to_fee: e.target.value })} /></Field>
+                <Field label="Acima, dia útil antes do corte (R$)"><Input type="number" min="0" step="0.01" value={operation.delivery_weekday_before_fee} onChange={(e) => setOperation({ ...operation, delivery_weekday_before_fee: e.target.value })} /></Field>
+                <Field label="Acima, dia útil a partir do corte (R$)"><Input type="number" min="0" step="0.01" value={operation.delivery_weekday_after_fee} onChange={(e) => setOperation({ ...operation, delivery_weekday_after_fee: e.target.value })} /></Field>
+                <Field label="Acima, fim de semana (R$)"><Input type="number" min="0" step="0.01" value={operation.delivery_weekend_fee} onChange={(e) => setOperation({ ...operation, delivery_weekend_fee: e.target.value })} /></Field>
+                <Field label="Horário de corte"><Input type="time" value={operation.delivery_cutoff} onChange={(e) => setOperation({ ...operation, delivery_cutoff: e.target.value })} /></Field>
+              </div>
+              <Field label="Bairros/regiões não atendidos (separados por ponto e vírgula)"><Input value={operation.blocked_neighborhoods} onChange={(e) => setOperation({ ...operation, blocked_neighborhoods: e.target.value })} placeholder="Bairro A; Bairro B" /></Field>
+              <p className="text-xs text-muted-foreground">O cálculo usa o subtotal validado no banco, o horário de São Paulo e o bairro informado no checkout.</p>
             </div>}
             <div className="space-y-2"><Label>Formas de pagamento</Label><div className="flex flex-wrap gap-4">
               {PAYMENTS.map(([id, label]) => <label key={id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={operation.payment_methods.includes(id)} onChange={(e) => setOperation({ ...operation, payment_methods: e.target.checked ? [...operation.payment_methods, id] : operation.payment_methods.filter((method) => method !== id) })} />{label}</label>)}
@@ -310,8 +347,12 @@ export function OnboardingWizard({ organization, initial, catalog, checklist, ca
                   const result = await getPendingOperatorInviteLink(organization.id);
                   if (result.status === "ready") {
                     try {
-                      await navigator.clipboard.writeText(result.url);
-                      toast.success("Link do convite copiado. Compartilhe somente com o usuário convidado.");
+                      const copied = await copyToClipboard(result.url);
+                      if (copied) {
+                        toast.success("Link do convite copiado. Compartilhe somente com o usuário convidado.");
+                      } else {
+                        toast.error("Não foi possível copiar o link neste navegador.");
+                      }
                     } catch {
                       toast.error("Não foi possível copiar o link neste navegador.");
                     }

@@ -2,6 +2,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { redirect } from "next/navigation";
 import { loadOnboardingState } from "@/app/actions/onboarding/_shared";
 import { resumoDoOnboarding } from "@/lib/onboarding/passos";
+import { foodserviceActivationPending } from "@/lib/onboarding/foodservice-activation-gate";
 import { oQueMaisExiste } from "@/lib/onboarding/o-que-mais-existe";
 import { DoneClient } from "./_client";
 
@@ -20,5 +21,11 @@ export default async function DonePage() {
   // acusando a pessoa de não fazer o que ninguém lhe pediu.
   const itens = resumoDoOnboarding(state);
 
-  return <DoneClient itens={itens} pecas={oQueMaisExiste()} />;
+  return (
+    <DoneClient
+      itens={itens}
+      pecas={oQueMaisExiste()}
+      foodserviceActivationPending={foodserviceActivationPending(state)}
+    />
+  );
 }

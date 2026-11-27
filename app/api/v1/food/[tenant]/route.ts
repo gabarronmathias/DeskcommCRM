@@ -29,6 +29,8 @@ const checkoutSchema = z.object({
   fulfillment: z.enum(["retirada", "entrega"]),
   payment_method: z.enum(["pix", "cartao", "cartão", "dinheiro"]),
   address_notes: z.string().max(500).optional().default(""),
+  delivery_city: z.string().trim().max(100).optional().default(""),
+  delivery_neighborhood: z.string().trim().max(100).optional().default(""),
   marketing_consent: z.boolean().optional().default(false),
   items: z.array(itemSchema).min(1).max(50),
 });
@@ -132,7 +134,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     p_phone: body.phone,
     p_fulfillment: body.fulfillment,
     p_payment_method: body.payment_method,
-    p_address_notes: body.address_notes,
+    // A assinatura RPC permanece compatível. O envelope privado carrega cidade,
+    // bairro e observação para o cálculo server-side e nunca é salvo como endereço.
+    p_address_notes: body.fulfillment === "entrega"
+      ? `FOOD_DELIVERY_V1:${JSON.stringify({ city: body.delivery_city, neighborhood: body.delivery_neighborhood, notes: body.address_notes })}`
+      : body.address_notes,
     p_marketing_consent: body.marketing_consent,
     p_items: body.items.map((item) => ({
       ...item,
@@ -150,6 +156,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     });
     if (status >= 500) {
       return fail("internal_error", "Não foi possível criar o pedido.", 500, { requestId });
+    }
+    if (error.message.includes("delivery_unavailable:blocked_neighborhood")) {
+      return fail("invalid_request", "Não realizamos entrega nesse bairro. Escolha retirada, se disponível.", 422, { requestId });
+    }
+    if (error.message.includes("delivery_unavailable:outside_service_area")) {
+      return fail("invalid_request", "Esse endereço está fora da área de entrega. Escolha retirada, se disponível.", 422, { requestId });
+    }
+    if (error.message.includes("delivery_unavailable:location_required")) {
+      return fail("invalid_request", "Informe a cidade e o bairro para verificar a entrega.", 422, { requestId });
+    }
+    if (error.message.includes("delivery_unavailable:policy_unconfigured")) {
+      return fail("invalid_request", "A entrega ainda não está configurada. Escolha retirada, se disponível.", 422, { requestId });
     }
     const publicMessage =
       status === 404
