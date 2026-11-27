@@ -27,12 +27,20 @@ export function deliverySettingsFromSarahRules(rules: string, serviceAreas: read
   const weekdayBefore = rules.match(/Pedidos acima de R\$\s*[\d.,]+, de segunda a sexta-feira antes d(?:a|as)\s*(\d{1,2})(?::00)?h?[^\n]*?taxa de entrega de R\$\s*([\d.,]+)/i);
   const weekdayAfter = rules.match(/Pedidos acima de R\$\s*[\d.,]+, de segunda a sexta-feira a partir d(?:a|as)\s*(\d{1,2})(?::00)?h?[^\n]*?entrega gr[aá]tis/i);
   const weekend = rules.match(/Aos s[aá]bados e domingos, pedidos acima de R\$\s*[\d.,]+[^\n]*entrega gr[aá]tis/i);
-  const blockedSection = rules.match(/(?:REGI[ÕO]ES|BAIRROS) N[ÃA]O ATENDID[OA]S:\s*([\s\S]*?)(?:\r?\n\s*\r?\n|$)/i)?.[1];
-  if (!threshold || !weekdayBefore || !weekdayAfter || !weekend || !blockedSection || serviceAreas.length === 0) return null;
+  const blockedSection = rules.match(/(?:REGI[ÕO]ES|BAIRROS) N[ÃA]O ATENDID[OA]S:\s*([\s\S]*)/i)?.[1];
+  const blockedListParagraph = blockedSection
+    ?.split(/\r?\n\s*\r?\n/)
+    .map((paragraph) => paragraph.trim())
+    .find((paragraph) => paragraph.includes(";"));
+  if (!threshold || !weekdayBefore || !weekdayAfter || !weekend || !blockedListParagraph || serviceAreas.length === 0) return null;
   const cents = (value: string) => Math.round(Number(value.replace(/\./g, "").replace(",", ".")) * 100);
   const cutoffHour = Number(weekdayBefore[1]);
   if (cutoffHour !== Number(weekdayAfter[1])) return null;
-  const blockedNeighborhoods = blockedSection.split(";").map((item) => item.trim().replace(/[.,]+$/, "")).filter(Boolean);
+  const blockedNeighborhoods = blockedListParagraph
+    .replace(/\s*\r?\n\s*/g, " ")
+    .split(";")
+    .map((item) => item.trim().replace(/[.,]+$/, ""))
+    .filter(Boolean);
   if (!blockedNeighborhoods.length) return null;
 
   return {
@@ -92,4 +100,31 @@ export function quoteDelivery(input: {
       ? input.policy.weekday_from_cutoff_fee_cents
       : input.policy.weekday_before_cutoff_fee_cents,
   };
+}
+
+
+/** Sincroniza a regra legível da Sarah com a política usada pelo checkout. */
+export function synchronizeDeliveryPolicy(
+  operation: Record<string, unknown>,
+  rules: string,
+): Record<string, unknown> {
+  const serviceAreas = Array.isArray(operation.service_areas)
+    ? operation.service_areas.filter((area): area is string => typeof area === "string")
+    : [];
+  const parsed = deliverySettingsFromSarahRules(rules, serviceAreas);
+  const next = { ...operation };
+
+  if (operation.delivery_enabled === true) {
+    next.delivery_policy_required = true;
+    next.minimum_order_cents = 0;
+    if (parsed) {
+      next.delivery_policy = parsed.policy;
+      next.service_areas = parsed.service_areas;
+    } else {
+      // Sem uma regra interpretável, o checkout deve recusar entrega.
+      delete next.delivery_policy;
+    }
+  }
+
+  return next;
 }
